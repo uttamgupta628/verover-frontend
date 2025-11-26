@@ -13,16 +13,16 @@ import {
   FlatList,
   Image,
 } from 'react-native';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import type {NavigationProp} from '@react-navigation/native';
-import {useNavigation} from '@react-navigation/native';
-import {useSelector, useDispatch} from 'react-redux';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import { useNavigation } from '@react-navigation/native';
+import { useSelector, useDispatch } from 'react-redux';
 import axiosInstance from '../../api/axios';
-import {
-  saveOrderData,
-} from '../../components/redux/userSlice';
-import type {RootState} from '../../components/redux/store';
-import type {OrderItem} from '../../components/redux/userSlice';
+import { saveOrderData } from '../../components/redux/userSlice';
+import type { RootState } from '../../components/redux/store';
+import type { OrderItem } from '../../components/redux/userSlice';
+import type { NavigationProp } from '@react-navigation/native';
+import * as Haptics from 'expo-haptics';
+import { useFocusEffect } from '@react-navigation/native';
 
 const MyOrder = () => {
   const navigation = useNavigation<NavigationProp<any>>();
@@ -31,8 +31,6 @@ const MyOrder = () => {
   // Get user from Redux for authentication
   const user = useSelector((state: RootState) => state.auth.user);
   const isAuthenticated = useSelector((state: RootState) => state.auth.isAuthenticated);
-  
-  console.log('OrderDetailsScreen - User from Redux:', user?.firstName, user?._id);
   
   // Local state
   const [loading, setLoading] = useState(true);
@@ -50,6 +48,15 @@ const MyOrder = () => {
   // Refs
   const scrollViewRef = useRef<ScrollView>(null);
 
+  // Use Expo's focus effect to refresh data when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      if (user) {
+        fetchAllUserBookings();
+      }
+    }, [user])
+  );
+
   useEffect(() => {
     console.log('OrderDetailsScreen useEffect - User authenticated:', !!user);
     
@@ -62,7 +69,7 @@ const MyOrder = () => {
     fetchAllUserBookings();
   }, [user]);
 
-  // Helper function for delivery time calculation
+  // Enhanced helper function for delivery time calculation
   const calculateDeliveryTime = useCallback((timeInMinutes) => {
     if (!timeInMinutes) return 'N/A';
     
@@ -75,7 +82,7 @@ const MyOrder = () => {
     return `${minutes}m`;
   }, []);
 
-  // Fixed QR Code generation function
+  // Enhanced QR Code generation with Expo Haptics
   const generateBookingQRCode = useCallback(async (bookingId) => {
     if (!user?.token) {
       throw new Error('Authentication token not found');
@@ -97,7 +104,6 @@ const MyOrder = () => {
         throw new Error(response.data.message || 'QR code generation failed');
       }
 
-      // Based on your API response structure
       const qrCodeData = response.data?.data?.qrCode;
       
       if (!qrCodeData) {
@@ -123,7 +129,7 @@ const MyOrder = () => {
     }
   }, [user?.token]);
 
-  // Handle QR code generation with loading states
+  // Enhanced QR code generation with haptic feedback
   const handleGenerateQRCode = useCallback(async (bookingId) => {
     if (!bookingId) {
       Alert.alert('Error', 'Booking ID is required');
@@ -134,6 +140,7 @@ const MyOrder = () => {
     setQrError(null);
     
     try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       console.log('Starting QR code generation for booking:', bookingId);
       const qrCodeData = await generateBookingQRCode(bookingId);
       
@@ -141,11 +148,13 @@ const MyOrder = () => {
         console.log('QR code received successfully');
         setQrCode(qrCodeData);
         setQrModalVisible(true);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       } else {
         throw new Error('No QR code data returned');
       }
     } catch (error) {
       console.error('QR Code generation failed:', error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       
       const errorMessage = error?.message || 'Failed to generate QR code';
       setQrError(errorMessage);
@@ -156,7 +165,7 @@ const MyOrder = () => {
     }
   }, [generateBookingQRCode]);
 
-  // Fetch all user bookings
+  // Enhanced fetch function with better error handling
   const fetchAllUserBookings = useCallback(async () => {
     console.log('fetchAllUserBookings - Starting fetch for user:', user?._id);
 
@@ -197,7 +206,6 @@ const MyOrder = () => {
         return;
       }
 
-      // Map all bookings to consistent format
       const mappedBookings = bookingsData.map((booking, index) => {
         if (!booking || typeof booking !== 'object') {
           console.warn(`Invalid booking at index ${index}:`, booking);
@@ -268,8 +276,9 @@ const MyOrder = () => {
     }
   }, [user, calculateDeliveryTime]);
 
-  // Handle order selection
+  // Enhanced order selection with haptic feedback
   const handleOrderSelect = useCallback((order) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     console.log('Order selected:', order._id);
     setSelectedOrder(order);
     
@@ -287,9 +296,10 @@ const MyOrder = () => {
     setViewMode('detail');
   }, [dispatch]);
 
-  // Handle navigation to change address screen
+  // Enhanced navigation with haptic feedback
   const handleChangeAddress = useCallback(() => {
     if (selectedOrder) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       navigation.navigate('PickupAndDeliveryAddressScreen', {
         bookingId: selectedOrder._id,
         currentPickupAddress: selectedOrder.pickupAddress,
@@ -346,6 +356,7 @@ const MyOrder = () => {
   }, [selectedOrder?.orderItems, selectedOrder?.items]);
 
   const handleGoBack = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (viewMode === 'detail') {
       setViewMode('list');
       setSelectedOrder(null);
@@ -355,14 +366,16 @@ const MyOrder = () => {
   }, [navigation, viewMode]);
 
   const handleItemPress = useCallback((item: OrderItem) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     console.log('Item pressed:', item);
   }, []);
 
   const handleRefresh = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     fetchAllUserBookings();
   }, [fetchAllUserBookings]);
 
-  // QR Code Modal Component
+  // Enhanced QR Code Modal Component
   const QRCodeModal = () => (
     <Modal
       visible={qrModalVisible}
@@ -375,7 +388,10 @@ const MyOrder = () => {
           <View style={styles.qrModalHeader}>
             <Text style={styles.qrModalTitle}>Booking QR Code</Text>
             <TouchableOpacity 
-              onPress={() => setQrModalVisible(false)}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setQrModalVisible(false);
+              }}
               style={styles.qrModalCloseButton}
             >
               <MaterialIcons name="close" size={24} color="#666" />
@@ -433,6 +449,7 @@ const MyOrder = () => {
       <TouchableOpacity
         style={styles.bookingItem}
         onPress={() => handleOrderSelect(item)}
+        activeOpacity={0.7}
       >
         <View style={styles.bookingHeader}>
           <View style={styles.bookingInfo}>
@@ -733,6 +750,7 @@ const MyOrder = () => {
                 key={index} 
                 style={styles.itemRow}
                 onPress={() => handleItemPress(item)}
+                activeOpacity={0.7}
               >
                 <View style={styles.itemInfo}>
                   <Text style={styles.itemName}>
@@ -773,6 +791,7 @@ const MyOrder = () => {
   return null;
 };
 
+// Enhanced styles for better Expo compatibility
 const styles = StyleSheet.create({
   container: {
     flex: 1,

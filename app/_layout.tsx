@@ -57,6 +57,12 @@ function RootLayoutNav() {
       <Stack.Screen name="email-otp" />
       <Stack.Screen name="EmailOTPSuccess"  />
       <Stack.Screen name="userHome" options={{ headerShown: false }} />
+      <Stack.Screen name="dryCleanerUser/myOrder" options={{ headerShown: false }} />
+      <Stack.Screen name="dryCleanerUser/allDrycleanerLocation" options={{ headerShown: false }} />
+      <Stack.Screen name="dryCleanerUser/dryCleanersList" options={{ headerShown: false }} />
+      <Stack.Screen name="dryCleanerUser/noOfItem" options={{ headerShown: false }} />
+      <Stack.Screen name="dryCleanerUser/pickUpLocation" options={{ headerShown: false }} />
+      <Stack.Screen name="dryCleanerUser/pickUpTimeDate" options={{ headerShown: false }} />
     </Stack>
   );
 }

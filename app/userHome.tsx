@@ -79,7 +79,7 @@ export default function UserHome() {
         <TouchableOpacity
           style={styles.button}
           onPress={() => {
-            router.push('/locate-cleaners');
+            router.push('dryCleanerUser/allDrycleanerLocation');
           }}>
           <Image
             source={images.Cleaning}
@@ -91,7 +91,7 @@ export default function UserHome() {
         <TouchableOpacity
           style={styles.button}
           onPress={() => {
-            router.push('/MyOrder');
+            router.push('dryCleanerUser/myOrder');
           }}>
           <Image
             source={images.Cleaning}
