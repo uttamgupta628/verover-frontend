@@ -67,7 +67,7 @@ export default function UserHome() {
         <TouchableOpacity
           style={styles.button}
           onPress={() => {
-            router.push('/parking');
+            router.push('parkingUser/parking');
           }}>
           <Image
             source={images.Parking}

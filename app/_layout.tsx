@@ -57,6 +57,10 @@ function RootLayoutNav() {
       <Stack.Screen name="email-otp" />
       <Stack.Screen name="EmailOTPSuccess"  />
       <Stack.Screen name="userHome" options={{ headerShown: false }} />
+      <Stack.Screen name="parkingUser/parking" options={{ headerShown: false }} />
+      <Stack.Screen name="parkingUser/historyScreen" options={{ headerShown: false }} />
+      <Stack.Screen name="parkingUser/LiveSessionScreen" options={{ headerShown: false }} />
+      <Stack.Screen name="parkingUser/FindParking" options={{ headerShown: false }} />
     </Stack>
   );
 }
