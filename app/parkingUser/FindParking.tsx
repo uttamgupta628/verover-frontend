@@ -18,7 +18,7 @@ import { useRouter } from 'expo-router';
 import { images } from '../../assets/images/images';
 import colors from '../../assets/color';
 import * as Location from 'expo-location';
-import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps'; 
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const HEADER_MARGIN_TOP = Platform.OS === 'ios' ? 50 : 70;
@@ -28,73 +28,22 @@ interface LocationCoords {
   latitude: number;
 }
 
-const CustomBackButton = ({ onPress, color = colors.brandColor }: { onPress: () => void; color?: string }) => (
+const CustomBackButton = ({ onPress, color = colors.primary }: { onPress: () => void; color?: string }) => (
   <TouchableOpacity onPress={onPress} style={styles.backButton}>
     <Text style={[styles.backButtonText, { color }]}>←</Text>
   </TouchableOpacity>
 );
 
-const LocateDryCleaners: React.FC = () => {
+const FindParking: React.FC = () => {
   const router = useRouter();
   const [currLoc, setCurrLoc] = useState<LocationCoords | null>(null);
   const [selectedLocation, setSelectedLocation] = useState<LocationCoords | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null); 
   const [qLocation, setQLocation] = useState<string>('');
-  const [mapReady, setMapReady] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [lastSearchTime, setLastSearchTime] = useState<number | null>(null);
+  const [mapReady, setMapReady] = useState(false); 
   const mapRef = useRef<MapView>(null);
 
-  // Search location using Nominatim API
-  const searchLocation = async (query: string) => {
-    if (!query.trim()) return;
-
-    const now = Date.now();
-    if (lastSearchTime && now - lastSearchTime < 1000) {
-      Alert.alert('Please wait', 'Searching too quickly. Wait a moment and try again.');
-      return;
-    }
-
-    setLastSearchTime(now);
-    setLoading(true);
-
-    try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&addressdetails=1`
-      );
-      
-      const data = await response.json();
-
-      if (data && data.length > 0) {
-        const firstResult = data[0];
-        const newLocation = {
-          latitude: parseFloat(firstResult.lat),
-          longitude: parseFloat(firstResult.lon),
-        };
-
-        setSelectedLocation(newLocation);
-        setQLocation(firstResult.display_name);
-
-        if (mapRef.current) {
-          const region: Region = {
-            ...newLocation,
-            latitudeDelta: 0.05,
-            longitudeDelta: 0.05,
-          };
-          mapRef.current.animateToRegion(region, 1000);
-        }
-      } else {
-        Alert.alert('Location not found', 'Please try a different search term');
-      }
-    } catch (err: any) {
-      console.error('Search error:', err);
-      Alert.alert('Error', 'Failed to search location');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Get current location using Expo Location
   const getCurrentLocation = useCallback(async () => {
     setLoading(true);
     
@@ -104,18 +53,19 @@ const LocateDryCleaners: React.FC = () => {
       if (status !== 'granted') {
         Alert.alert(
           'Permission Denied',
-          'Please enable location permission in settings to use this feature.',
+          'Please enable location permission in settings.',
           [
             { text: 'Cancel', style: 'cancel' },
             { text: 'Open Settings', onPress: () => Linking.openSettings() },
           ]
         );
+        setError('Location permission denied');
         setLoading(false);
         return;
       }
 
       const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
+        accuracy: Location.Accuracy.Balanced,
         timeout: 15000,
       });
 
@@ -126,12 +76,21 @@ const LocateDryCleaners: React.FC = () => {
       
       setCurrLoc(newLocation);
       setSelectedLocation(newLocation);
+      setError(null);
 
-      const [address] = await Location.reverseGeocodeAsync(newLocation);
-      if (address) {
-        const addressString = `${address.street || ''} ${address.city || ''} ${address.region || ''} ${address.postalCode || ''}`.trim();
-        setQLocation(addressString || 'Current Location');
-      } else {
+      try {
+        const [address] = await Location.reverseGeocodeAsync(newLocation);
+        if (address) {
+          const addressString = [
+            address.street,
+            address.city,
+            address.region,
+            address.postalCode
+          ].filter(Boolean).join(', ') || 'Current Location';
+          setQLocation(addressString);
+        }
+      } catch (geocodeError) {
+        console.log('Reverse geocode error:', geocodeError);
         setQLocation('Current Location');
       }
 
@@ -145,13 +104,13 @@ const LocateDryCleaners: React.FC = () => {
       }
     } catch (err: any) {
       console.error('Location error:', err);
+      setError('Unable to get current location');
       Alert.alert('Location Error', 'Unable to get your current location. Please try again.');
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // Initialize location on component mount
   useEffect(() => {
     const initLocation = async () => {
       try {
@@ -160,13 +119,24 @@ const LocateDryCleaners: React.FC = () => {
         if (status === 'granted') {
           getCurrentLocation();
         } else {
-          // Set a default location if permission not granted
           const defaultLocation = {
-            latitude: 40.7128,
-            longitude: -74.0060,
+            latitude: 20.5937, // India coordinates
+            longitude: 78.9629,
           };
           setSelectedLocation(defaultLocation);
-          setQLocation('New York, USA');
+          setQLocation('India');
+          
+          // Animate to default location
+          setTimeout(() => {
+            if (mapRef.current) {
+              const region: Region = {
+                ...defaultLocation,
+                latitudeDelta: 0.05,
+                longitudeDelta: 0.05,
+              };
+              mapRef.current.animateToRegion(region, 1000);
+            }
+          }, 1000);
         }
       } catch (err) {
         console.error('Permission check error:', err);
@@ -176,89 +146,117 @@ const LocateDryCleaners: React.FC = () => {
     initLocation();
   }, [getCurrentLocation]);
 
-  const handleMapReady = useCallback(() => {
-    setMapReady(true);
-  }, []);
+  // FIXED: Search location function
+  const searchLocation = async (query: string) => {
+    if (!query.trim()) return;
+    setLoading(true);
 
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`;
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data && data.length > 0) {
+        const firstResult = data[0];
+        const newLocation = {
+          latitude: parseFloat(firstResult.lat),
+          longitude: parseFloat(firstResult.lon),
+        };
+
+        setSelectedLocation(newLocation);
+        setQLocation(firstResult.display_name);
+        setError(null);
+
+        // FIXED: Proper region animation
+        if (mapRef.current) {
+          const region: Region = {
+            ...newLocation,
+            latitudeDelta: 0.05,
+            longitudeDelta: 0.05,
+          };
+          mapRef.current.animateToRegion(region, 1000);
+        }
+      } else {
+        Alert.alert('Location not found', 'Try another search term');
+      }
+    } catch (err) {
+      console.error('Search error:', err);
+      Alert.alert('Error', 'Failed to search location');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // FIXED: Map press handler
   const handleMapPress = useCallback(async (event: any) => {
     if (event?.nativeEvent?.coordinate) {
       const newLocation = event.nativeEvent.coordinate;
       setSelectedLocation(newLocation);
-      setQLocation('Selected Location');
-
+      
       setLoading(true);
       try {
         const [address] = await Location.reverseGeocodeAsync(newLocation);
         if (address) {
-          const addressString = `${address.street || ''} ${address.city || ''} ${address.region || ''} ${address.postalCode || ''}`.trim();
-          setQLocation(addressString || 'Selected Location');
+          const addressString = [
+            address.street,
+            address.city,
+            address.region,
+            address.postalCode
+          ].filter(Boolean).join(', ') || 'Selected Location';
+          setQLocation(addressString);
+        } else {
+          setQLocation('Selected Location');
         }
       } catch (err) {
         console.error('Reverse geocode error:', err);
+        setQLocation('Selected Location');
       } finally {
         setLoading(false);
       }
     }
   }, []);
 
-  const handleApply = () => {
-    if (qLocation.trim()) {
-      searchLocation(qLocation);
-    }
-  };
+  // FIXED: Map ready handler
+  const handleMapReady = useCallback(() => {
+    setMapReady(true);
+  }, []);
 
   const handleContinue = () => {
     if (selectedLocation) {
       router.push({
-        pathname: '/dryCleanerUser/dryCleanersList',
+        pathname: '/ParkingSlot',
         params: { 
           latitude: selectedLocation.latitude.toString(),
           longitude: selectedLocation.longitude.toString(),
+          address: qLocation,
         }
       });
     } else {
-      Alert.alert('No Location Selected', 'Please select or search for a location first');
-    }
-  };
-
-  const handleOrderHistory = () => {
-    router.push('/dryCleanerUser/myOrder');
-  };
-
-  const handleGoBack = () => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.push('/userHome');
+      Alert.alert('No Location Selected', 'Please select a location first');
     }
   };
 
   const renderMap = () => {
+    // For web, show placeholder
     if (Platform.OS === 'web') {
       return (
         <View style={styles.mapPlaceholder}>
-          <Image
-            source={images.BookingConfirmationMap}
-            style={styles.mapImage}
-            resizeMode="cover"
-          />
-          <View style={styles.placeholderOverlay}>
-            <Text style={styles.placeholderText}>
-              Interactive Google Maps not available on web
-            </Text>
-            <Text style={styles.placeholderSubtext}>
-              Select a location to continue
-            </Text>
-          </View>
+          <Text style={styles.placeholderText}>
+            Google Maps not available on web
+          </Text>
+          <Text style={styles.placeholderSubtext}>
+            Select a location to continue
+          </Text>
         </View>
       );
     }
 
-    const initialRegion = currLoc || selectedLocation || {
-      latitude: 40.7128,
-      longitude: -74.0060,
-      latitudeDelta: 0.0922,
-      longitudeDelta: 0.0421,
+    // FIXED: Proper initial region handling
+    const initialRegion = selectedLocation || currLoc || {
+      latitude: 20.5937,
+      longitude: 78.9629,
+      latitudeDelta: 0.05,
+      longitudeDelta: 0.05,
     };
 
     return (
@@ -268,64 +266,51 @@ const LocateDryCleaners: React.FC = () => {
         provider={PROVIDER_GOOGLE}
         initialRegion={initialRegion}
         onPress={handleMapPress}
-        onMapReady={handleMapReady}
+        onMapReady={handleMapReady} // Added onMapReady
         showsUserLocation={!!currLoc}
         showsMyLocationButton={false}
         showsCompass={true}
         showsScale={true}
         zoomControlEnabled={true}
+        zoomEnabled={true}
+        scrollEnabled={true}
       >
-        {/* Only show selected location marker */}
         {selectedLocation && (
           <Marker
             coordinate={selectedLocation}
             title={qLocation || 'Selected Location'}
-            description="This location will be used to find dry cleaners"
-            pinColor={colors.brandColor}
+            description="This location will be used to find parking"
+            pinColor={colors.primary}
           />
         )}
-        
-        {/* REMOVED: All random dry cleaner markers */}
       </MapView>
     );
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        bounces={false}
-      >
-        {/* Header */}
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
         <View style={styles.header}>
-          <CustomBackButton onPress={handleGoBack} />
-          <Text style={styles.headerTitle}>Locate Dry Cleaners</Text>
+          <CustomBackButton onPress={() => router.back()} />
+          <Text style={styles.headerTitle}>Find Parking</Text>
           <View style={styles.headerSpacer} />
         </View>
 
-        {/* Map Section */}
         <View style={styles.mapContainer}>
           {renderMap()}
-          
           {loading && (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={colors.brandColor} />
+              <ActivityIndicator size="large" color={colors.primary} />
               <Text style={styles.loadingText}>Finding location...</Text>
             </View>
           )}
         </View>
 
-        {/* Location Input Section */}
         <View style={styles.locationSection}>
           <Text style={styles.locationTitle}>Location</Text>
           
           <View style={styles.locationInputContainer}>
-            <Image
-              source={images.location}
-              style={styles.locationIcon}
-              resizeMode="contain"
-            />
+            <Image source={images.location} style={styles.locationIcon} />
             <TextInput
               placeholder="Search location..."
               placeholderTextColor="#707070"
@@ -335,24 +320,27 @@ const LocateDryCleaners: React.FC = () => {
               onSubmitEditing={() => searchLocation(qLocation)}
               returnKeyType="search"
             />
-            <TouchableOpacity
-              style={styles.currentLocationButton}
-              onPress={getCurrentLocation}
+            <TouchableOpacity 
+              onPress={getCurrentLocation} 
               disabled={loading}
+              style={styles.currentLocationButton}
             >
               <Image
                 source={images.gps}
                 style={{ 
                   width: 24, 
-                  height: 24,
+                  height: 24, 
                   opacity: loading ? 0.5 : 1 
                 }}
-                resizeMode="contain"
               />
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity onPress={getCurrentLocation} disabled={loading}>
+          <TouchableOpacity 
+            onPress={getCurrentLocation} 
+            disabled={loading}
+            style={styles.useCurrentLocationButton}
+          >
             <Text style={[styles.useCurrentLocation, loading && styles.disabledText]}>
               Use Current Location
             </Text>
@@ -360,17 +348,25 @@ const LocateDryCleaners: React.FC = () => {
 
           <View style={styles.buttonContainer}>
             <TouchableOpacity
-              style={[styles.actionButton, styles.applyButton, (!qLocation.trim() || loading) && styles.disabledButton]}
-              onPress={handleApply}
+              style={[
+                styles.actionButton, 
+                styles.applyButton,
+                (!qLocation.trim() || loading) && styles.disabledButton
+              ]}
+              onPress={() => searchLocation(qLocation)}
               disabled={!qLocation.trim() || loading}
             >
               <Text style={styles.buttonText}>
-                {loading ? 'Searching...' : 'Apply'}
+                {loading ? 'Searching...' : 'Search'}
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.actionButton, styles.continueButton, (!selectedLocation || loading) && styles.disabledButton]}
+              style={[
+                styles.actionButton, 
+                styles.continueButton,
+                (!selectedLocation || loading) && styles.disabledButton
+              ]}
               onPress={handleContinue}
               disabled={!selectedLocation || loading}
             >
@@ -378,16 +374,9 @@ const LocateDryCleaners: React.FC = () => {
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.disclaimer}>
-            Select your location to find nearby dry cleaners. You'll see available dry cleaners on the next screen.
-          </Text>
-
-          <TouchableOpacity 
-            style={styles.orderHistoryButton}
-            onPress={handleOrderHistory}
-          >
-            <Text style={styles.orderHistoryText}>VIEW ORDER HISTORY</Text>
-          </TouchableOpacity>
+          {error && (
+            <Text style={styles.errorText}>{error}</Text>
+          )}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -397,7 +386,7 @@ const LocateDryCleaners: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#FFFFFF',
   },
   scrollView: {
     flex: 1,
@@ -411,32 +400,26 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     marginTop: HEADER_MARGIN_TOP,
-    height: 60,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#000000',
-    textAlign: 'center',
-    flex: 1,
-  },
-  headerSpacer: {
-    width: 40, // Same as back button for balance
+    marginBottom: 20,
   },
   backButton: {
     padding: 8,
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   backButtonText: {
     fontSize: 24,
-    fontWeight: 'bold',
+    fontWeight: '400',
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: colors.primary,
+    textAlign: 'center',
+  },
+  headerSpacer: {
+    width: 40,
   },
   mapContainer: {
-    width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT * 0.45,
+    height: SCREEN_HEIGHT * 0.4,
     position: 'relative',
   },
   map: {
@@ -446,84 +429,77 @@ const styles = StyleSheet.create({
   mapPlaceholder: {
     width: '100%',
     height: '100%',
-    position: 'relative',
-    backgroundColor: '#f0f0f0',
-  },
-  mapImage: {
-    width: '100%',
-    height: '100%',
-    opacity: 0.7,
-  },
-  placeholderOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    backgroundColor: '#E5E5E5',
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
-    backgroundColor: 'rgba(255,255,255,0.8)',
   },
   placeholderText: {
-    textAlign: 'center',
+    color: '#666666',
     fontSize: 16,
-    color: '#333',
+    fontWeight: '600',
+    textAlign: 'center',
     marginBottom: 8,
-    fontWeight: '500',
   },
   placeholderSubtext: {
-    textAlign: 'center',
+    color: '#888888',
     fontSize: 14,
-    color: '#666',
+    textAlign: 'center',
   },
   loadingContainer: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.3)',
+    backgroundColor: 'rgba(255,255,255,0.8)',
   },
   loadingText: {
-    color: '#fff',
-    marginTop: 10,
-    fontSize: 14,
+    marginTop: 12,
+    fontSize: 16,
+    color: colors.primary,
+    fontWeight: '500',
   },
   locationSection: {
     padding: 20,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#FFFFFF',
   },
   locationTitle: {
-    fontSize: 19,
+    fontSize: 18,
     fontWeight: '600',
-    marginBottom: 20,
-    color: '#000000',
+    color: colors.primary,
+    marginBottom: 16,
   },
   locationInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
-    paddingBottom: 10,
-    marginBottom: 15,
+    backgroundColor: '#F8F8F8',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
   },
   locationIcon: {
-    width: 24,
-    height: 24,
+    width: 20,
+    height: 20,
     marginRight: 12,
+    tintColor: colors.primary,
   },
   locationInput: {
     flex: 1,
     fontSize: 16,
-    color: '#000000',
-    paddingVertical: 8,
+    color: colors.primary,
+    padding: 0,
   },
   currentLocationButton: {
-    padding: 8,
+    padding: 4,
+  },
+  useCurrentLocationButton: {
+    marginBottom: 16,
   },
   useCurrentLocation: {
-    color: colors.brandColor,
+    color: colors.primary,
     fontSize: 16,
-    marginBottom: 20,
     fontWeight: '500',
   },
   disabledText: {
@@ -531,22 +507,21 @@ const styles = StyleSheet.create({
   },
   buttonContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: 12,
     marginBottom: 20,
   },
   actionButton: {
-    borderRadius: 25,
-    height: 50,
-    justifyContent: 'center',
-    alignItems: 'center',
     flex: 1,
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   applyButton: {
     backgroundColor: colors.black,
-    marginRight: 10,
   },
   continueButton: {
-    backgroundColor: colors.brandColor,
+    backgroundColor: colors.primary,
   },
   buttonText: {
     color: '#FFFFFF',
@@ -556,23 +531,12 @@ const styles = StyleSheet.create({
   disabledButton: {
     backgroundColor: '#E0E0E0',
   },
-  disclaimer: {
+  errorText: {
+    color: 'red',
     fontSize: 14,
-    color: '#666666',
-    lineHeight: 20,
-    marginBottom: 20,
-    fontStyle: 'italic',
-  },
-  orderHistoryButton: {
-    alignItems: 'center',
-    marginBottom: 20,
-    paddingVertical: 12,
-  },
-  orderHistoryText: {
-    color: colors.brandColor,
-    fontSize: 16,
-    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: 8,
   },
 });
 
-export default LocateDryCleaners;
+export default FindParking;

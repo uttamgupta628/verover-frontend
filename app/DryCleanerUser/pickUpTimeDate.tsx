@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,7 @@ import {
   SchedulingData,
   saveOrderData,
   OrderData,
+  disableOrderProtection,
 } from '../../components/redux/userSlice';
 
 const { width, height } = Dimensions.get('window');
@@ -28,10 +29,30 @@ const PickupDeliveryScreen = () => {
   const router = useRouter();
   const dispatch = useDispatch();
   
-  // Get saved data from Redux
-  const savedScheduling = useSelector((state: any) => state.user?.scheduling);
-  const existingOrder = useSelector((state: any) => state.user?.order);
-  const selectedItems = useSelector((state: any) => state.user?.selections?.selectedItems);
+  // Get ALL data from Redux
+  const userState = useSelector((state: any) => state.user);
+  const savedScheduling = userState?.scheduling;
+  const existingOrder = userState?.order;
+  const selectedItems = userState?.selections?.selectedItems || [];
+  const selectedCleaner = userState?.order?.selectedCleaner || userState?.selections?.selectedCleaner;
+
+  // Use ref to track the latest state
+  const stateRef = useRef({
+    existingOrder,
+    selectedItems,
+    selectedCleaner,
+    userState
+  });
+
+  // Update ref when state changes
+  useEffect(() => {
+    stateRef.current = {
+      existingOrder,
+      selectedItems,
+      selectedCleaner,
+      userState
+    };
+  }, [existingOrder, selectedItems, selectedCleaner, userState]);
 
   // State with initial values from Redux if available
   const [selectedPickupDate, setSelectedPickupDate] = useState<string>(
@@ -148,38 +169,56 @@ const PickupDeliveryScreen = () => {
     </TouchableOpacity>
   );
 
+  // FIXED: handleContinue - properly builds order from available data
   const handleContinue = () => {
-  console.log('🔄 handleContinue called');
-  console.log('📦 Full Redux state:', useSelector((state: any) => state.user));
-  console.log('📦 Existing order in Redux:', existingOrder);
-  console.log('📦 Selected items:', selectedItems);
-  console.log('📦 Selected items length:', selectedItems?.length);
-
-  // Save scheduling data
-  saveToRedux();
-
-  // Check if we have any order data at all
-  const hasOrderData = existingOrder && existingOrder.items && existingOrder.items.length > 0;
-  const hasSelectedItems = selectedItems && selectedItems.length > 0;
-  const hasItemsWithQuantity = selectedItems?.some((item: any) => item.quantity > 0);
-
-  console.log('📊 Order Status:', {
-    hasOrderData,
-    hasSelectedItems,
-    hasItemsWithQuantity,
-    orderItemsCount: existingOrder?.items?.length || 0,
-    selectedItemsCount: selectedItems?.length || 0,
-    itemsWithQuantity: selectedItems?.filter((item: any) => item.quantity > 0).length || 0
-  });
-
-  // If no order data exists, try to build from selectedItems
-  if (!hasOrderData) {
-    console.warn('⚠️ No order data found in Redux. Checking selected items...');
+    console.log('🔄 handleContinue called');
     
-    if (hasSelectedItems && hasItemsWithQuantity) {
-      console.log('✅ Found selected items with quantity, building order...');
+    // Use the ref to get the latest state
+    const { 
+      existingOrder: latestOrder, 
+      selectedItems: latestSelectedItems,
+      selectedCleaner: latestCleaner,
+      userState: latestUserState 
+    } = stateRef.current;
+    
+    console.log('📦 Latest order in Redux:', latestOrder);
+    console.log('📦 Latest selected items:', latestSelectedItems);
+    console.log('📦 Latest selected items length:', latestSelectedItems?.length);
+    console.log('🏪 Latest cleaner:', latestCleaner);
+    console.log('🔍 Full user state:', latestUserState);
+
+    // Save scheduling data first
+    saveToRedux();
+
+    // Check what data we have available
+    const hasOrderData = latestOrder && latestOrder.items && latestOrder.items.length > 0;
+    const hasSelectedItems = latestSelectedItems && latestSelectedItems.length > 0;
+    const hasItemsWithQuantity = latestSelectedItems?.some((item: any) => item.quantity > 0);
+
+    console.log('📊 Data Status:', {
+      hasOrderData,
+      hasSelectedItems,
+      hasItemsWithQuantity,
+      orderItemsCount: latestOrder?.items?.length || 0,
+      selectedItemsCount: latestSelectedItems?.length || 0,
+      itemsWithQuantity: latestSelectedItems?.filter((item: any) => item.quantity > 0).length || 0
+    });
+
+    let orderDataToSave: OrderData | null = null;
+
+    // CASE 1: We have existing order data - use it
+    if (hasOrderData) {
+      console.log('✅ Using existing order data');
+      orderDataToSave = {
+        ...latestOrder,
+        lastUpdated: new Date().toISOString(),
+      };
+    }
+    // CASE 2: No order data but we have selected items with quantity - build from selectedItems
+    else if (hasSelectedItems && hasItemsWithQuantity) {
+      console.log('🔄 Building order from selected items');
       
-      const itemsWithQuantity = selectedItems.filter((item: any) => item.quantity > 0);
+      const itemsWithQuantity = latestSelectedItems.filter((item: any) => item.quantity > 0);
       console.log('📝 Items with quantity:', itemsWithQuantity);
       
       // Calculate totals
@@ -193,14 +232,14 @@ const PickupDeliveryScreen = () => {
       console.log('💰 Calculated totals:', { totalItems, totalAmount });
 
       // Create proper order structure
-      const orderData: OrderData = {
+      orderDataToSave = {
         items: itemsWithQuantity.map((item: any) => ({
           _id: item.id || item._id || `temp-${Date.now()}-${Math.random()}`,
           name: item.name || 'Unknown Item',
           category: item.category || 'general',
           price: parseFloat(item.price) || 0,
           quantity: parseInt(item.quantity) || 1,
-          starchLevel: item.starchLevel || 3,
+          starchLevel: item.starchLevel || item.strachLevel || 3, // Handle typo in API
           washOnly: item.washOnly || false,
           additionalservice: item.additionalservice || '',
           dryCleanerId: item.dryCleanerId,
@@ -211,29 +250,53 @@ const PickupDeliveryScreen = () => {
             zipper: false,
           },
         })),
-        selectedCleaner: existingOrder?.selectedCleaner,
+        selectedCleaner: latestCleaner || latestOrder?.selectedCleaner,
         totalAmount: totalAmount,
         totalItems: totalItems,
         lastUpdated: new Date().toISOString(),
       };
       
-      console.log('💾 Saving order data to Redux:', orderData);
+      console.log('💾 Order data built from selected items:', orderDataToSave);
+    }
+    // CASE 3: Check if we have items in selections that can be converted
+    else if (latestUserState?.selections?.selectedItems?.some((item: any) => item.quantity > 0)) {
+      console.log('🔍 Found items in selections with quantity');
+      const selectionItems = latestUserState.selections.selectedItems.filter((item: any) => item.quantity > 0);
       
-      // Disable protection first to ensure save goes through
-      dispatch(disableOrderProtection());
-      
-      // Save to Redux
-      dispatch(saveOrderData(orderData));
-      
-      console.log('✅ Order data saved, navigating...');
-      
-      // Navigate after a brief delay to ensure Redux update completes
-      setTimeout(() => {
-        router.push('/DryorderSummary');
-      }, 200);
-      return;
-    } else {
-      console.error('❌ No valid items found to create order');
+      const totalItems = selectionItems.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0);
+      const totalAmount = selectionItems.reduce((sum: number, item: any) => {
+        const price = parseFloat(item.price) || 0;
+        const quantity = parseInt(item.quantity) || 0;
+        return sum + (price * quantity);
+      }, 0);
+
+      orderDataToSave = {
+        items: selectionItems.map((item: any) => ({
+          _id: item.id || item._id || `temp-${Date.now()}-${Math.random()}`,
+          name: item.name || 'Unknown Item',
+          category: item.category || 'general',
+          price: parseFloat(item.price) || 0,
+          quantity: parseInt(item.quantity) || 1,
+          starchLevel: item.starchLevel || item.strachLevel || 3,
+          washOnly: item.washOnly || false,
+          additionalservice: item.additionalservice || '',
+          dryCleanerId: item.dryCleanerId,
+          dryCleanerName: item.dryCleanerName,
+          options: item.options || {
+            washAndFold: false,
+            button: false,
+            zipper: false,
+          },
+        })),
+        selectedCleaner: latestCleaner || latestUserState?.order?.selectedCleaner,
+        totalAmount: totalAmount,
+        totalItems: totalItems,
+        lastUpdated: new Date().toISOString(),
+      };
+    }
+    // CASE 4: No data available
+    else {
+      console.error('❌ No valid order data found anywhere');
       Alert.alert(
         'No Items Selected',
         'Please add items to your order before proceeding to checkout.',
@@ -246,34 +309,45 @@ const PickupDeliveryScreen = () => {
       );
       return;
     }
-  }
 
-  // If order exists, verify it has valid data
-  if (existingOrder.totalItems === 0 || existingOrder.totalAmount === 0) {
-    console.warn('⚠️ Order exists but has zero items or amount');
-    Alert.alert(
-      'Invalid Order',
-      'Your order appears to be empty. Please add items before proceeding.',
-      [
-        {
-          text: 'Go Back',
-          onPress: () => router.back(),
-        },
-      ]
-    );
-    return;
-  }
+    // Validate the order data before saving
+    if (!orderDataToSave || orderDataToSave.totalItems === 0 || orderDataToSave.totalAmount === 0) {
+      console.error('❌ Invalid order data created:', orderDataToSave);
+      Alert.alert(
+        'Invalid Order',
+        'Your order appears to be empty. Please add items before proceeding.',
+        [
+          {
+            text: 'Go Back',
+            onPress: () => router.back(),
+          },
+        ]
+      );
+      return;
+    }
 
-  // All good, navigate
-  console.log('✅ Order data valid, navigating to DryorderSummary');
-  router.push('/DryorderSummary');
-};
+    // Save the order data
+    console.log('💾 Saving order data to Redux:', orderDataToSave);
+    
+    // Disable protection first to ensure save goes through
+    dispatch(disableOrderProtection());
+    
+    // Save to Redux
+    dispatch(saveOrderData(orderDataToSave));
+    
+    console.log('✅ Order data saved, navigating to DryorderSummary');
+    
+    // Navigate after a brief delay to ensure Redux update completes
+    setTimeout(() => {
+      router.push('/DryorderSummary');
+    }, 300);
+  };
 
   const handleGoBack = () => {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.push('/userHome'); // Adjust to your home route
+      router.push('/userHome');
     }
   };
 
@@ -422,9 +496,10 @@ const PickupDeliveryScreen = () => {
           </ScrollView>
         </View>
 
-        {/* Debug info - Shows order status */}
+        {/* Enhanced Debug info */}
         {__DEV__ && (
           <View style={styles.debugContainer}>
+            <Text style={styles.debugTitle}>Debug Information:</Text>
             <Text style={styles.debugText}>
               {`Scheduling saved: ${savedScheduling ? 'Yes' : 'No'}`}
             </Text>
@@ -441,15 +516,20 @@ const PickupDeliveryScreen = () => {
                 </Text>
               </>
             )}
-            {selectedItems && selectedItems.length > 0 && (
+            <Text style={styles.debugText}>
+              {`Selected items count: ${selectedItems.length}`}
+            </Text>
+            <Text style={styles.debugText}>
+              {`Items with quantity: ${selectedItems.filter((i: any) => i.quantity > 0).length}`}
+            </Text>
+            {selectedCleaner && (
               <Text style={styles.debugText}>
-                {`Selected items: ${selectedItems.filter(i => i.quantity > 0).length}`}
+                {`Cleaner: ${selectedCleaner.shopname || selectedCleaner}`}
               </Text>
             )}
           </View>
         )}
 
-        {/* Add bottom padding to ensure button doesn't cover content */}
         <View style={styles.bottomSpacer} />
       </ScrollView>
       
@@ -464,6 +544,8 @@ const PickupDeliveryScreen = () => {
     </SafeAreaView>
   );
 };
+
+
 
 const styles = StyleSheet.create({
   container: {
@@ -664,6 +746,12 @@ const styles = StyleSheet.create({
     fontSize: width * 0.03,
     color: '#666',
     marginBottom: 2,
+  },
+   debugTitle: {
+    fontSize: width * 0.035,
+    color: '#333',
+    fontWeight: 'bold',
+    marginBottom: 5,
   },
 });
 
