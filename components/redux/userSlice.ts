@@ -96,8 +96,7 @@ export interface UserState {
   currentScreen?: string;
   selections: SelectionState;
   ui: UIState;
-  // Add protection flag with timestamp for automatic expiry
-  _orderUpdateProtection: boolean;
+  _orderUpdateProtection?: boolean;
   _protectionTimestamp?: number;
 }
 
@@ -116,11 +115,8 @@ const initialState: UserState = {
     isLoading: false,
     currentScreen: undefined,
   },
-  _orderUpdateProtection: false,
-  _protectionTimestamp: undefined,
 };
 
-// Enhanced calculation function with better validation
 const calculateOrderTotals = (items: OrderItem[]) => {
   if (!Array.isArray(items)) {
     console.warn('calculateOrderTotals: Invalid items array');
@@ -146,7 +142,6 @@ const calculateOrderTotals = (items: OrderItem[]) => {
   return {totalItems, totalAmount};
 };
 
-// Helper function to check if protection should still be active
 const isProtectionExpired = (state: UserState): boolean => {
   if (!state._orderUpdateProtection || !state._protectionTimestamp) {
     return true;
@@ -154,7 +149,7 @@ const isProtectionExpired = (state: UserState): boolean => {
 
   const now = Date.now();
   const elapsed = now - state._protectionTimestamp;
-  return elapsed > 2000; // 2 seconds
+  return elapsed > 2000;
 };
 
 const userSlice = createSlice({
@@ -184,7 +179,6 @@ const userSlice = createSlice({
       state.scheduling = undefined;
     },
 
-    // Check and auto-expire protection before processing
     checkProtectionExpiry: state => {
       if (state._orderUpdateProtection && isProtectionExpired(state)) {
         state._orderUpdateProtection = false;
@@ -194,20 +188,25 @@ const userSlice = createSlice({
     },
 
     saveOrderData: (state, action: PayloadAction<OrderData>) => {
-      // Auto-expire protection if needed
+      const incomingData = action.payload;
+       console.log('💾 saveOrderData called with:', {
+    totalAmount: incomingData.totalAmount,
+    totalItems: incomingData.totalItems,
+    itemsCount: incomingData.items?.length || 0,
+    hasItems: incomingData.items && incomingData.items.length > 0,
+  });
       if (state._orderUpdateProtection && isProtectionExpired(state)) {
         state._orderUpdateProtection = false;
         state._protectionTimestamp = undefined;
         console.log('🛡️ Order update protection AUTO-EXPIRED in saveOrderData');
       }
 
-      // If protection is still active after expiry check, block the save
       if (state._orderUpdateProtection) {
         console.warn('🚫 saveOrderData: BLOCKED due to active protection');
         return;
       }
 
-      const incomingData = action.payload;
+      // const incomingData = action.payload;
 
       console.log('💾 saveOrderData called with:', {
         totalAmount: incomingData.totalAmount,
@@ -215,7 +214,6 @@ const userSlice = createSlice({
         itemsCount: incomingData.items?.length || 0,
       });
 
-      // If we have existing order with items, validate incoming data
       if (
         state.order &&
         state.order.items &&
@@ -225,14 +223,11 @@ const userSlice = createSlice({
         const currentTotals = calculateOrderTotals(state.order.items);
         const incomingTotals = calculateOrderTotals(incomingData.items);
 
-        // If incoming data has mismatched totals or is clearly stale, reject it
         if (
           incomingData.totalAmount !== incomingTotals.totalAmount ||
           incomingData.totalItems !== incomingTotals.totalItems ||
           (incomingData.totalAmount === 280 && incomingData.totalItems === 4)
         ) {
-          // Block the specific bad values
-
           console.warn(
             '🚫 saveOrderData: REJECTED - incoming data appears to be stale/invalid',
           );
@@ -240,7 +235,6 @@ const userSlice = createSlice({
         }
       }
 
-      // Normal save for valid data only
       state.order = {
         ...incomingData,
         lastUpdated: new Date().toISOString(),
@@ -249,14 +243,12 @@ const userSlice = createSlice({
       console.log('✅ saveOrderData: State updated successfully');
     },
 
-    // Enable protection with timestamp
     enableOrderProtection: state => {
       state._orderUpdateProtection = true;
       state._protectionTimestamp = Date.now();
       console.log('🛡️ Order update protection ENABLED');
     },
 
-    // Disable protection manually
     disableOrderProtection: state => {
       state._orderUpdateProtection = false;
       state._protectionTimestamp = undefined;
@@ -264,7 +256,6 @@ const userSlice = createSlice({
     },
 
     addOrderItem: (state, action: PayloadAction<OrderItem>) => {
-      // Enable protection during operation
       state._orderUpdateProtection = true;
       state._protectionTimestamp = Date.now();
 
@@ -298,7 +289,6 @@ const userSlice = createSlice({
         `💰 Order totals after add: Items=${totalItems}, Amount=${totalAmount}`,
       );
 
-      // Track user interaction
       state.selections.userInteractions.push({
         type: 'item_added',
         itemId: action.payload._id,
@@ -306,8 +296,6 @@ const userSlice = createSlice({
         quantity: action.payload.quantity,
         timestamp: new Date().toISOString(),
       });
-
-      // Protection will auto-expire after 2 seconds based on timestamp
     },
 
     updateItemQuantity: (
@@ -318,7 +306,6 @@ const userSlice = createSlice({
         itemName?: string;
       }>,
     ) => {
-      // Enable protection during operation
       state._orderUpdateProtection = true;
       state._protectionTimestamp = Date.now();
 
@@ -343,7 +330,6 @@ const userSlice = createSlice({
         `🔢 Updated quantity for ${item.name}: ${oldQuantity} → ${newQuantity}`,
       );
 
-      // Remove items with quantity 0
       state.order.items = state.order.items.filter(i => i.quantity > 0);
 
       const {totalItems, totalAmount} = calculateOrderTotals(state.order.items);
@@ -355,7 +341,6 @@ const userSlice = createSlice({
         `💰 Order totals after quantity update: Items=${totalItems}, Amount=${totalAmount}`,
       );
 
-      // Track user interaction
       state.selections.userInteractions.push({
         type: 'quantity_update',
         itemId: action.payload.itemId,
@@ -363,12 +348,9 @@ const userSlice = createSlice({
         quantity: newQuantity,
         timestamp: new Date().toISOString(),
       });
-
-      // Protection will auto-expire after 2 seconds based on timestamp
     },
 
     removeOrderItem: (state, action: PayloadAction<string>) => {
-      // Enable protection during operation
       state._orderUpdateProtection = true;
       state._protectionTimestamp = Date.now();
 
@@ -391,7 +373,6 @@ const userSlice = createSlice({
         `💰 Order totals after removal: Items=${totalItems}, Amount=${totalAmount}`,
       );
 
-      // Track user interaction
       if (itemToRemove) {
         state.selections.userInteractions.push({
           type: 'item_removed',
@@ -400,8 +381,6 @@ const userSlice = createSlice({
           timestamp: new Date().toISOString(),
         });
       }
-
-      // Protection will auto-expire after 2 seconds based on timestamp
     },
 
     updateItemOptions: (
@@ -438,7 +417,6 @@ const userSlice = createSlice({
 
       console.log(`⚙️ Updated options for ${item.name}`);
 
-      // Track user interaction
       state.selections.userInteractions.push({
         type: 'options_update',
         itemId: action.payload.itemId,
@@ -484,7 +462,6 @@ const userSlice = createSlice({
     setSelectedCategory: (state, action: PayloadAction<string>) => {
       state.selections.selectedCategory = action.payload;
 
-      // Track user interaction
       state.selections.userInteractions.push({
         type: 'category_selection',
         category: action.payload,
@@ -498,7 +475,6 @@ const userSlice = createSlice({
     ) => {
       const {items, selectedCleaner} = action.payload;
 
-      // Initialize order if it doesn't exist
       if (!state.order) {
         state.order = {
           items: [],
@@ -508,12 +484,10 @@ const userSlice = createSlice({
         };
       }
 
-      // Set selected cleaner if provided
       if (selectedCleaner) {
         state.order.selectedCleaner = selectedCleaner;
       }
 
-      // Update available items (this is different from ordered items)
       if (items) {
         state.selections.selectedItems = items;
       }
@@ -530,25 +504,20 @@ const userSlice = createSlice({
     resetUserData: state => {
       return initialState;
     },
+
     clearOrderAfterPlacement: state => {
       state.order = undefined;
       state.scheduling = undefined;
-
       state.selections.userInteractions = [];
-
       state.selections.selectedCategory = 'All';
-
       state.selections.selectedItems = [];
-
       state._orderUpdateProtection = false;
       state._protectionTimestamp = undefined;
-
       state.ui.isLoading = false;
       state.currentScreen = undefined;
       state.ui.currentScreen = undefined;
     },
   },
-  
 });
 
 export const {
@@ -575,4 +544,5 @@ export const {
   checkProtectionExpiry,
   clearOrderAfterPlacement,
 } = userSlice.actions;
+
 export default userSlice.reducer;
