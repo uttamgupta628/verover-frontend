@@ -13,7 +13,7 @@ import {
   StatusBar,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native'; 
 import { useSelector, useDispatch } from 'react-redux';
 import { useStripeWrapper } from '../stripWrapper';
 import axiosInstance from '../../api/axios';
@@ -37,12 +37,30 @@ const generateTrackingId = () => {
 
 export default function OrderSummaryApp() {
   const navigation = useNavigation();
+  const route = useRoute();
   const dispatch = useDispatch();
 
   const authToken = useSelector((state) => state.auth?.token);
   const user = useSelector((state) => state.auth.user);
   const scheduling = useSelector((state) => state.user?.scheduling);
   const addresses = useSelector((state) => state.user?.addresses);
+  const orderData = useSelector((state) => state.user?.order); // ← KEEP THIS ONE
+
+  // Get route params and determine selected address
+  const routeParams = route.params || {};
+  
+  const selectedAddress = useMemo(() => {
+    if (routeParams.pickupAddress) {
+      return routeParams.pickupAddress;
+    }
+    if (addresses?.home?.fullAddress) {
+      return addresses.home.fullAddress;
+    }
+    if (addresses?.office?.fullAddress) {
+      return addresses.office.fullAddress;
+    }
+    return 'Address not specified';
+  }, [routeParams, addresses]);
 
   const {
     initializedPaymentSheet,
@@ -53,7 +71,8 @@ export default function OrderSummaryApp() {
   const paymentReadyRef = useRef(false);
   const [localPaymentReady, setLocalPaymentReady] = useState(false);
 
-  const orderData = useSelector((state) => state.user?.order);
+  // ❌ REMOVE THIS LINE - IT'S A DUPLICATE:
+  // const orderData = useSelector((state) => state.user?.order);
 
   const hasItems = useMemo(() => {
     return orderData?.items && orderData.items.length > 0;
@@ -202,255 +221,368 @@ export default function OrderSummaryApp() {
     };
   }, [orderData?.items, globalPricing]);
 
-  const handlePayment = async () => {
-    if (!orderData || !orderData.selectedCleaner) {
-      Alert.alert(
-        'Error',
-        'Please select a dry cleaner and add items to your order'
-      );
-      return;
-    }
-
-    if (!scheduling) {
-      Alert.alert('Error', 'Please schedule your pickup and delivery times');
-      return;
-    }
-
-    const freshOrderNumber = generateFreshOrderNumber();
-    const freshTrackingId = generateTrackingId();
-    setOrderNumber(freshOrderNumber);
-    setTrackingId(freshTrackingId);
-
-    setPaymentLoading(true);
-    setLocalPaymentReady(false);
-    paymentReadyRef.current = false;
-
-    let createdBookingId = null;
-    let currentStep = '';
-
-    try {
-      currentStep = 'Building booking data';
-      const monthMap = {
-        January: 1,
-        February: 2,
-        March: 3,
-        April: 4,
-        May: 5,
-        June: 6,
-        July: 7,
-        August: 8,
-        September: 9,
-        October: 10,
-        November: 11,
-        December: 12,
-      };
-
-    function buildISODate(date: string, month: string, time: string) {
-  if (!date || !month || !time) return null;
+  const getScheduledDateTime = (scheduling: any, type: 'pickup' | 'delivery'): string => {
+  const isPickup = type === 'pickup';
   
-  const monthMap = {
-    January: 1, February: 2, March: 3, April: 4, May: 5, June: 6,
-    July: 7, August: 8, September: 9, October: 10, November: 11, December: 12,
-  };
-
-  const now = new Date();
-  const currentYear = now.getFullYear();
-  const currentMonth = now.getMonth() + 1;
-  
-  let [hourStr, minuteStr] = time.replace(/AM|PM/i, '').split(':');
-  let hours = parseInt(hourStr, 10);
-  const minutes = parseInt(minuteStr, 10);
-  const isPM = time.toUpperCase().includes('PM');
-
-  if (isPM && hours < 12) hours += 12;
-  if (!isPM && hours === 12) hours = 0;
-
-  const monthNum = monthMap[month];
-  if (!monthNum) return null;
-
-  const day = parseInt(date, 10);
-  
-  // Start with next year if month is before current month
-  let year = currentYear;
-  if (monthNum < currentMonth) {
-    year = currentYear + 1;
-  } else if (monthNum === currentMonth && day < now.getDate()) {
-    // If same month but past day, use next year
-    year = currentYear + 1;
+  // First, try to get the pre-formatted ISO string
+  const isoDateTime = isPickup 
+    ? scheduling?.scheduledPickupDateTime 
+    : scheduling?.scheduledDeliveryDateTime;
+    
+  if (isoDateTime) {
+    return isoDateTime;
   }
   
-  // Create the date
-  const jsDate = new Date(year, monthNum - 1, day, hours, minutes, 0, 0);
+  // Fallback: construct it from individual fields
+  const date = isPickup ? scheduling?.pickupDate : scheduling?.deliveryDate;
+  const month = isPickup ? scheduling?.pickupMonth : scheduling?.deliveryMonth;
+  const time = isPickup ? scheduling?.pickupTime : scheduling?.deliveryTime;
   
-  // Double check it's in the future
-  if (jsDate <= now) {
-    // Add a year if still in past
-    jsDate.setFullYear(jsDate.getFullYear() + 1);
+  if (!date || !month || !time) {
+    console.error(`Missing ${type} scheduling data:`, { date, month, time });
+    return new Date().toISOString();
   }
   
-  return jsDate.toISOString();
-}
-
-      const scheduledPickupDateTime = buildISODate(
-        scheduling?.pickupDate,
-        scheduling?.pickupMonth,
-        scheduling?.pickupTime
-      );
-
-      const scheduledDeliveryDateTime = buildISODate(
-        scheduling?.deliveryDate,
-        scheduling?.deliveryMonth,
-        scheduling?.deliveryTime
-      );
-
-      if (!user?._id) {
-        throw new Error('User ID is missing');
-      }
-
-      if (!orderData.selectedCleaner?._id) {
-        throw new Error('Dry cleaner ID is missing');
-      }
-
-      if (!scheduledPickupDateTime || !scheduledDeliveryDateTime) {
-        throw new Error('Invalid scheduling dates');
-      }
-
-      const bookingData = {
-  user: user._id,
-  dryCleaner: orderData.selectedCleaner._id,
-  orderNumber: freshOrderNumber,
-  Tracking_ID: freshTrackingId,
-  pickupAddress: addresses?.home?.fullAddress || 'Default pickup address',
-  dropoffAddress: addresses?.office?.fullAddress || 
-                 addresses?.home?.fullAddress || 
-                 'Default dropoff address',
-  distance: 10,
-  time: 30,
-  price: Number(calculations.total) || 0,
-  
-  // FIX 1: ADD THIS - deliveryCharge at top level (required by schema)
-  deliveryCharge: Number(calculations.deliveryCharge) || 0,
-  
-  status: 'pending',
-  bookingType: 'pickup',
-  message: `Order ${freshOrderNumber} for ${orderData.items.length} items from ${orderData.selectedCleaner.shopname}`,
-  
-  // Order items
-  orderItems: orderData.items.map(item => ({
-    itemId: item._id || '',
-    name: item.name || '',
-    category: item.category || 'general',
-    quantity: Number(item.quantity) || 1,
-    price: Number(item.price) || 0,
-    starchLevel: Math.min(Number(item.starchLevel) || 3, 4),
-    washOnly: Boolean(item.washOnly),
-    options: item.options || {},
-    additionalservice: item.additionalservice || '',
-  })),
-  
-  // Pricing object
-  pricing: {
-    subtotal: Number(calculations.subtotal) || 0,
-    serviceFees: Number(calculations.serviceFees) || 0,
-    deliveryCharge: Number(calculations.deliveryCharge) || 0,
-    platformFee: Number(calculations.platformFee) || 0,
-    totalAmount: Number(calculations.total) || 0,
-  },
-  
-  // Payment info
-  paymentMethod: paymentMethod.toUpperCase(),
-  paymentStatus: 'pending',
-  
-  // Scheduling
-  isScheduled: true,
-  scheduledPickupDateTime,
-  scheduledDeliveryDateTime,
-  
-  // Timestamp
-  requestedAt: new Date().toISOString(),
+  // Format it
+  try {
+    const currentYear = new Date().getFullYear();
+    const monthNumber = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ].indexOf(month) + 1;
+    
+    const timeMatch = time.match(/(\d+):(\d+)(AM|PM)/);
+    if (!timeMatch) return new Date().toISOString();
+    
+    let hours = parseInt(timeMatch[1]);
+    const minutes = parseInt(timeMatch[2]);
+    const period = timeMatch[3];
+    
+    if (period === 'PM' && hours !== 12) hours += 12;
+    if (period === 'AM' && hours === 12) hours = 0;
+    
+    return new Date(
+      currentYear,
+      monthNumber - 1,
+      parseInt(date),
+      hours,
+      minutes
+    ).toISOString();
+  } catch (error) {
+    console.error(`Error formatting ${type} date:`, error);
+    return new Date().toISOString();
+  }
 };
 
-      // Add validation before the booking creation
-currentStep = 'Validating booking data';
 
-// Validate required fields
-const validationErrors = [];
+ const buildISODate = (date: string, month: string, time: string): string => {
+  try {
+    const currentYear = new Date().getFullYear();
+    const currentDate = new Date();
+    
+    // Convert month name to number
+    const monthNumber = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ].indexOf(month) + 1;
+    
+    if (monthNumber === 0) {
+      console.error('❌ Invalid month:', month);
+      throw new Error(`Invalid month: ${month}`);
+    }
+    
+    // Parse time (e.g., "10:00AM" or "04:00PM")
+    const timeMatch = time.match(/(\d+):(\d+)(AM|PM)/i);
+    if (!timeMatch) {
+      console.error('❌ Invalid time format:', time);
+      throw new Error(`Invalid time format: ${time}`);
+    }
+    
+    let hours = parseInt(timeMatch[1], 10);
+    const minutes = parseInt(timeMatch[2], 10);
+    const period = timeMatch[3].toUpperCase();
+    
+    // Convert to 24-hour format
+    if (period === 'PM' && hours !== 12) {
+      hours += 12;
+    } else if (period === 'AM' && hours === 12) {
+      hours = 0;
+    }
+    
+    // Validate parsed values
+    if (isNaN(hours) || isNaN(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+      throw new Error(`Invalid time values: ${hours}:${minutes}`);
+    }
+    
+    const dateNum = parseInt(date, 10);
+    if (isNaN(dateNum) || dateNum < 1 || dateNum > 31) {
+      throw new Error(`Invalid date: ${date}`);
+    }
+    
+    // Create the date object with current year first
+    let scheduledDate = new Date(currentYear, monthNumber - 1, dateNum, hours, minutes, 0, 0);
+    
+    // If the scheduled date is in the past, use next year
+    if (scheduledDate <= currentDate) {
+      console.log(`📅 Date ${date} ${month} is in the past, using next year`);
+      scheduledDate = new Date(currentYear + 1, monthNumber - 1, dateNum, hours, minutes, 0, 0);
+    }
+    
+    // Validate the created date
+    if (isNaN(scheduledDate.getTime())) {
+      throw new Error('Invalid date created');
+    }
+    
+    const isoString = scheduledDate.toISOString();
+    console.log(`📅 Built ISO date: ${date} ${month} ${time} → ${isoString}`);
+    
+    return isoString;
+  } catch (error: any) {
+    console.error('❌ Error building ISO date:', error.message);
+    throw error;
+  }
+};
 
-if (!user?._id) validationErrors.push('User ID is missing');
-if (!orderData.selectedCleaner?._id) validationErrors.push('Dry cleaner ID is missing');
-if (!scheduledPickupDateTime) validationErrors.push('Scheduled pickup date/time is invalid');
-if (!scheduledDeliveryDateTime) validationErrors.push('Scheduled delivery date/time is invalid');
+// ============================================
+// UPDATED handlePayment function
+// ============================================
 
-// Check if dates are in the future
-const now = new Date();
-if (scheduledPickupDateTime && new Date(scheduledPickupDateTime) <= now) {
-  validationErrors.push('Scheduled pickup date must be in the future');
-}
-if (scheduledDeliveryDateTime && new Date(scheduledDeliveryDateTime) <= new Date(scheduledPickupDateTime)) {
-  validationErrors.push('Scheduled delivery date must be after pickup date');
-}
+const handlePayment = async () => {
+  if (!orderData || !orderData.selectedCleaner) {
+    Alert.alert(
+      'Error',
+      'Please select a dry cleaner and add items to your order'
+    );
+    return;
+  }
 
-if (!orderData.items || orderData.items.length === 0) {
-  validationErrors.push('No items in order');
-}
+  if (!scheduling) {
+    Alert.alert('Error', 'Please schedule your pickup and delivery times');
+    return;
+  }
 
-// Check for deliveryCharge
-if (!calculations.deliveryCharge && calculations.deliveryCharge !== 0) {
-  validationErrors.push('Delivery charge is required');
-}
+  const freshOrderNumber = generateFreshOrderNumber();
+  const freshTrackingId = generateTrackingId();
+  setOrderNumber(freshOrderNumber);
+  setTrackingId(freshTrackingId);
 
-if (validationErrors.length > 0) {
-  console.error('Validation errors:', validationErrors);
-  throw new Error(`Validation failed: ${validationErrors.join(', ')}`);
-}
+  setPaymentLoading(true);
+  setLocalPaymentReady(false);
+  paymentReadyRef.current = false;
 
-// Log the validated data
-console.log('✅ Validated booking data:', {
-  deliveryCharge: calculations.deliveryCharge,
-  scheduledPickupDateTime: new Date(scheduledPickupDateTime).toISOString(),
-  scheduledDeliveryDateTime: new Date(scheduledDeliveryDateTime).toISOString(),
-  isPickupInFuture: new Date(scheduledPickupDateTime) > now,
-  isDeliveryAfterPickup: new Date(scheduledDeliveryDateTime) > new Date(scheduledPickupDateTime),
-});
+  let createdBookingId: string | null = null;
+  let currentStep = '';
 
-      currentStep = 'Creating booking';
-      let bookingResponse;
-      try {
-        console.log("📦 Booking Payload Sent:", bookingData);
-        bookingResponse = await axiosInstance.post(
-          '/users/create',
-          bookingData,
-          {
-            headers: {
-              Authorization: `Bearer ${authToken}`,
-              'Content-Type': 'application/json',
-            },
-            timeout: 15000,
-          }
+  try {
+    currentStep = 'Building booking data';
+    
+    // ✅ BUILD THE ISO DATETIME STRINGS FROM REDUX SCHEDULING DATA
+    let scheduledPickupDateTime: string;
+    let scheduledDeliveryDateTime: string;
+    
+    try {
+      // Try to use pre-formatted ISO strings if they exist
+      if (scheduling.scheduledPickupDateTime && scheduling.scheduledDeliveryDateTime) {
+        scheduledPickupDateTime = scheduling.scheduledPickupDateTime;
+        scheduledDeliveryDateTime = scheduling.scheduledDeliveryDateTime;
+        console.log('✅ Using pre-formatted datetime strings from Redux');
+      } else {
+        // Build them from individual fields
+        console.log('🔨 Building datetime strings from scheduling data:', {
+          pickup: { date: scheduling.pickupDate, month: scheduling.pickupMonth, time: scheduling.pickupTime },
+          delivery: { date: scheduling.deliveryDate, month: scheduling.deliveryMonth, time: scheduling.deliveryTime }
+        });
+        
+        scheduledPickupDateTime = buildISODate(
+          scheduling.pickupDate,
+          scheduling.pickupMonth,
+          scheduling.pickupTime
         );
-      } catch (bookingError) {
-        console.error('❌ Booking creation failed:', bookingError);
-        throw new Error(`Booking creation failed: ${bookingError.message}`);
+        
+        scheduledDeliveryDateTime = buildISODate(
+          scheduling.deliveryDate,
+          scheduling.deliveryMonth,
+          scheduling.deliveryTime
+        );
       }
+    } catch (dateError: any) {
+      console.error('❌ Failed to build datetime strings:', dateError);
+      Alert.alert(
+        'Invalid Schedule',
+        'There was an error with your pickup/delivery schedule. Please go back and select your times again.'
+      );
+      return;
+    }
 
-      if (!bookingResponse.data.success) {
-        throw new Error(bookingResponse.data.message || 'Failed to create booking');
+    // Build the booking data
+    const bookingData = {
+      userId: user?._id,
+      dryCleanerId: orderData.selectedCleaner._id,
+      items: orderData.items.map((item: any) => ({
+        itemId: item._id,
+        itemName: item.name,
+        quantity: item.quantity,
+        price: item.price,
+        starchLevel: item.starchLevel,
+        washOnly: item.washOnly,
+        additionalService: item.additionalservice || '',
+        options: item.options || {},
+      })),
+      scheduledPickupDateTime,
+      scheduledDeliveryDateTime,
+      pickupAddress: selectedAddress || 'Not specified',
+      deliveryAddress: selectedAddress || 'Not specified',
+      orderNumber: freshOrderNumber,
+      trackingId: freshTrackingId,
+      status: 'pending',
+      totalAmount: calculations.total,
+      subtotal: calculations.subtotal,
+      deliveryCharge: calculations.deliveryCharge,
+      discount: calculations.discount || 0,
+    };
+
+    // Validation
+    currentStep = 'Validating booking data';
+    const validationErrors: string[] = [];
+    if (!user?._id) validationErrors.push('User ID is missing');
+    if (!orderData.selectedCleaner?._id) validationErrors.push('Dry cleaner ID is missing');
+    if (!scheduledPickupDateTime) validationErrors.push('Scheduled pickup date/time is invalid');
+    if (!scheduledDeliveryDateTime) validationErrors.push('Scheduled delivery date/time is invalid');
+
+    const now = new Date();
+    if (scheduledPickupDateTime && new Date(scheduledPickupDateTime) <= now) {
+      validationErrors.push('Scheduled pickup date must be in the future');
+    }
+    if (scheduledDeliveryDateTime && new Date(scheduledDeliveryDateTime) <= new Date(scheduledPickupDateTime)) {
+      validationErrors.push('Scheduled delivery date must be after pickup date');
+    }
+    if (!orderData.items || orderData.items.length === 0) {
+      validationErrors.push('No items in order');
+    }
+    if (calculations.deliveryCharge === undefined || calculations.deliveryCharge === null) {
+      validationErrors.push('Delivery charge is required');
+    }
+
+    if (validationErrors.length > 0) {
+      console.error('❌ Validation errors:', validationErrors);
+      throw new Error(`Validation failed: ${validationErrors.join(', ')}`);
+    }
+
+    console.log('✅ Validated booking data:', {
+      deliveryCharge: calculations.deliveryCharge,
+      scheduledPickupDateTime: new Date(scheduledPickupDateTime).toISOString(),
+      scheduledDeliveryDateTime: new Date(scheduledDeliveryDateTime).toISOString(),
+      isPickupInFuture: new Date(scheduledPickupDateTime) > now,
+      isDeliveryAfterPickup: new Date(scheduledDeliveryDateTime) > new Date(scheduledPickupDateTime),
+    });
+
+    currentStep = 'Creating booking';
+    let bookingResponse;
+    try {
+      console.log("📦 Booking Payload Sent:", bookingData);
+      bookingResponse = await axiosInstance.post(
+        '/users/create',
+        bookingData,
+        {
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+          timeout: 15000,
+        }
+      );
+    } catch (bookingError: any) {
+      console.error('❌ Booking creation failed:', bookingError);
+      throw new Error(`Booking creation failed: ${bookingError.message}`);
+    }
+
+    if (!bookingResponse.data.success) {
+      throw new Error(bookingResponse.data.message || 'Failed to create booking');
+    }
+
+    const createdBooking = bookingResponse.data.data;
+    createdBookingId = createdBooking._id;
+    setCompletedBookingId(createdBooking._id);
+
+    currentStep = 'Creating payment intent';
+    let paymentIntentResponse;
+    try {
+      paymentIntentResponse = await axiosInstance.post(
+        '/users/payment-intent',
+        {
+          bookingId: createdBooking._id,
+          orderNumber: freshOrderNumber,
+          amount: Math.round(calculations.total * 100),
+          currency: 'usd',
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+    } catch (paymentError: any) {
+      console.error('❌ Payment intent creation failed:', paymentError);
+      throw new Error(`Payment initialization failed: ${paymentError.message}`);
+    }
+
+    if (!paymentIntentResponse.data.success) {
+      throw new Error('Failed to create payment intent');
+    }
+
+    const { paymentIntent, ephemeralKey, customerId, paymentIntentId } =
+      paymentIntentResponse.data.data;
+
+    currentStep = 'Initializing payment sheet';
+    if (!paymentIntent || !ephemeralKey || !customerId) {
+      throw new Error('Missing required payment data from server');
+    }
+
+    const initialized = await initializedPaymentSheet(
+      paymentIntent,
+      ephemeralKey,
+      customerId,
+      paymentIntentId
+    );
+
+    if (!initialized) {
+      throw new Error('Failed to initialize payment sheet');
+    }
+
+    setLocalPaymentReady(true);
+    paymentReadyRef.current = true;
+
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    if (!paymentReadyRef.current) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      if (!paymentReadyRef.current) {
+        throw new Error('Payment sheet failed to become ready');
       }
+    }
 
-      const createdBooking = bookingResponse.data.data;
-      createdBookingId = createdBooking._id;
-      setCompletedBookingId(createdBooking._id);
+    currentStep = 'Opening payment sheet';
+    let paymentResult;
+    try {
+      paymentResult = await openPayment();
+    } catch (paymentOpenError: any) {
+      console.error('❌ Error opening payment sheet:', paymentOpenError);
+      throw new Error(`Failed to open payment sheet: ${paymentOpenError.message}`);
+    }
 
-      currentStep = 'Creating payment intent';
-      let paymentIntentResponse;
+    // Payment result handling
+    if (paymentResult === true) {
+      // Payment succeeded — confirm on backend
+      currentStep = 'Confirming payment';
+      let confirmResponse;
       try {
-        paymentIntentResponse = await axiosInstance.post(
-          '/users/payment-intent',
+        confirmResponse = await axiosInstance.post(
+          '/users/confirm-payment',
           {
             bookingId: createdBooking._id,
             orderNumber: freshOrderNumber,
-            amount: Math.round(calculations.total * 100),
-            currency: 'usd',
+            paymentIntentId: paymentIntentId || paymentIntent,
           },
           {
             headers: {
@@ -459,120 +591,141 @@ console.log('✅ Validated booking data:', {
             },
           }
         );
-      } catch (paymentError) {
-        console.error('❌ Payment intent creation failed:', paymentError);
-        throw new Error(`Payment initialization failed: ${paymentError.message}`);
+      } catch (confirmError: any) {
+        console.error('❌ Payment confirmation failed:', confirmError);
+        throw new Error(`Payment confirmation failed: ${confirmError.message}`);
       }
 
-      if (!paymentIntentResponse.data.success) {
-        throw new Error('Failed to create payment intent');
-      }
-
-      const { paymentIntent, ephemeralKey, customerId, paymentIntentId } =
-        paymentIntentResponse.data.data;
-
-      currentStep = 'Initializing payment sheet';
-      if (!paymentIntent || !ephemeralKey || !customerId) {
-        throw new Error('Missing required payment data from server');
-      }
-
-      const initialized = await initializedPaymentSheet(
-        paymentIntent,
-        ephemeralKey,
-        customerId,
-        paymentIntentId
-      );
-
-      if (!initialized) {
-        throw new Error('Failed to initialize payment sheet');
-      }
-
-      setLocalPaymentReady(true);
-      paymentReadyRef.current = true;
-
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      if (!paymentReadyRef.current) {
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        if (!paymentReadyRef.current) {
-          throw new Error('Payment sheet failed to become ready');
-        }
-      }
-
-      currentStep = 'Opening payment sheet';
-      let paymentResult;
-      try {
-        paymentResult = await openPayment();
-      } catch (paymentOpenError) {
-        console.error('❌ Error opening payment sheet:', paymentOpenError);
-        throw new Error(`Failed to open payment sheet: ${paymentOpenError.message}`);
-      }
-
-      if (paymentResult === true) {
-        currentStep = 'Confirming payment';
-        let confirmResponse;
-        try {
-          confirmResponse = await axiosInstance.post(
-            '/users/confirm-payment',
-            {
-              bookingId: createdBooking._id,
-              orderNumber: freshOrderNumber,
-              paymentIntentId: paymentIntentId || paymentIntent,
-            },
-            {
-              headers: {
-                Authorization: `Bearer ${authToken}`,
-                'Content-Type': 'application/json',
-              },
-            }
-          );
-        } catch (confirmError) {
-          console.error('❌ Payment confirmation failed:', confirmError);
-          throw new Error(`Payment confirmation failed: ${confirmError.message}`);
-        }
-
-        if (confirmResponse.data.success) {
-          setShowPaymentModal(false);
-          setShowSuccessModal(true);
-          console.log('✅ Payment completed successfully for order:', freshOrderNumber);
-        } else {
-          throw new Error('Payment confirmation failed');
-        }
-      } else if (paymentResult === false) {
-
-        await handleBookingCancellation(createdBookingId, freshOrderNumber);
-        Alert.alert(
-          'Payment Cancelled',
-          `Payment was cancelled for order ${freshOrderNumber}. Your booking has been cancelled.`,
-          [{ text: 'OK' }]
-        );
+      if (confirmResponse.data.success) {
+        setShowPaymentModal(false);
+        setShowSuccessModal(true);
+        console.log('✅ Payment completed successfully for order:', freshOrderNumber);
       } else {
-        throw new Error('Payment result unclear');
+        throw new Error('Payment confirmation failed');
       }
-    } catch (err) {
-      console.error('❌ Payment error at step:', currentStep, err);
-      
-      if (createdBookingId) {
-        await handleBookingCancellation(
-          createdBookingId,
-          freshOrderNumber,
-          `Payment failed at: ${currentStep}`
-        );
-      }
-
-      if (!err.message.includes('cancelled by user')) {
-        let errorMessage = 'Payment failed. Please try again.';
-        Alert.alert(
-          'Payment Failed',
-          `${errorMessage}\n\nOrder: ${freshOrderNumber}\nStep: ${currentStep}`
-        );
-      }
-    } finally {
-      setPaymentLoading(false);
-      setLocalPaymentReady(false);
-      paymentReadyRef.current = false;
+    } else if (paymentResult === false) {
+      // User cancelled or dismissed the payment sheet
+      Alert.alert(
+        'Payment Cancelled',
+        'You have cancelled the payment. Would you like to try again or cancel the booking?',
+        [
+          {
+            text: 'Try Again',
+            onPress: async () => {
+              try {
+                const tryAgainResult = await openPayment();
+                if (tryAgainResult === true) {
+                  const confirmResp = await axiosInstance.post(
+                    '/users/confirm-payment',
+                    {
+                      bookingId: createdBookingId,
+                      orderNumber: freshOrderNumber,
+                      paymentIntentId: paymentIntentId || paymentIntent,
+                    },
+                    {
+                      headers: {
+                        Authorization: `Bearer ${authToken}`,
+                        'Content-Type': 'application/json',
+                      },
+                    }
+                  );
+                  if (confirmResp.data?.success) {
+                    setShowPaymentModal(false);
+                    setShowSuccessModal(true);
+                    console.log('✅ Payment completed successfully on retry for order:', freshOrderNumber);
+                  } else {
+                    Alert.alert('Error', 'Payment confirmed but backend failed to record it. Please contact support.');
+                  }
+                } else {
+                  console.log('User cancelled again. Booking remains pending.');
+                }
+              } catch (retryErr) {
+                console.error('Retry payment failed:', retryErr);
+                Alert.alert('Retry Failed', 'Unable to complete payment retry. You can cancel the booking if you wish.');
+              }
+            }
+          },
+          {
+            text: 'Cancel Booking',
+            style: 'destructive',
+            onPress: async () => {
+              if (createdBookingId) {
+                await handleBookingCancellation(createdBookingId, freshOrderNumber, 'Cancelled by user after payment dismissal');
+                Alert.alert('Booking Cancelled', `Your booking ${freshOrderNumber} has been cancelled.`);
+              } else {
+                Alert.alert('Info', 'No booking to cancel');
+              }
+            }
+          },
+          { text: 'Close', style: 'cancel' }
+        ]
+      );
+    } else {
+      throw new Error('Payment result unclear');
     }
-  };
+  } catch (err: any) {
+    console.error('❌ Payment error at step:', currentStep, err);
+
+    if (createdBookingId) {
+      Alert.alert(
+        'Payment Error',
+        `There was an error during payment (${currentStep}). Would you like to retry payment or cancel the booking?\n\nError: ${err.message}`,
+        [
+          {
+            text: 'Retry Payment',
+            onPress: async () => {
+              try {
+                const retryResult = await openPayment();
+                if (retryResult === true) {
+                  await axiosInstance.post(
+                    '/users/confirm-payment',
+                    {
+                      bookingId: createdBookingId,
+                      orderNumber: freshOrderNumber,
+                      paymentIntentId: undefined,
+                    },
+                    {
+                      headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+                    }
+                  );
+                  setShowPaymentModal(false);
+                  setShowSuccessModal(true);
+                } else {
+                  console.log('Retry cancelled by user.');
+                }
+              } catch (retryErr) {
+                console.error('Retry after error failed:', retryErr);
+                Alert.alert('Retry Failed', 'Retry failed — please try again later or cancel the booking.');
+              }
+            }
+          },
+          {
+            text: 'Cancel Booking',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                await handleBookingCancellation(createdBookingId!, freshOrderNumber, `Payment failed at ${currentStep}: ${err.message}`);
+                Alert.alert('Booking Cancelled', `Booking ${freshOrderNumber} cancelled.`);
+              } catch (cancelErr) {
+                console.error('Cancellation after error failed:', cancelErr);
+                Alert.alert('Cancellation Failed', 'Could not cancel booking. Please contact support.');
+              }
+            }
+          },
+          { text: 'Close', style: 'cancel' }
+        ]
+      );
+    } else {
+      if (!err.message?.toLowerCase().includes('cancelled') && !err.message?.toLowerCase().includes('canceled')) {
+        Alert.alert('Payment Failed', 'Payment failed. Please try again.');
+      }
+    }
+  } finally {
+    setPaymentLoading(false);
+    setLocalPaymentReady(false);
+    paymentReadyRef.current = false;
+  }
+};
 
 const handleBookingCancellation = async (
   bookingId: string, 
@@ -582,11 +735,8 @@ const handleBookingCancellation = async (
   console.log('🔄 Attempting to cancel booking:', bookingId);
   
   try {
-    // CRITICAL FIX: Don't add extra slash, axiosInstance already has baseURL
-    // baseURL is: http://YOUR_IP:5000/api/users
-    // So just use the route pattern directly
     const response = await axiosInstance.post(
-      `/users/${bookingId}/cancel`,  // This becomes /api/users/{bookingId}/cancel
+      `/users/${bookingId}/cancel`,
       { 
         orderNumber, 
         reason 
@@ -617,10 +767,12 @@ const handleBookingCancellation = async (
       });
     }
     
-    // Don't block the flow - payment already failed
     return false;
   }
 };
+
+
+
 
 
 

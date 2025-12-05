@@ -43,6 +43,69 @@ interface OrderItem {
   };
 }
 
+const formatScheduledDateTime = (date: string, month: string, time: string): string => {
+  try {
+    const currentYear = new Date().getFullYear();
+    const currentDate = new Date(); // ← ADD THIS LINE
+    
+    const monthNumber = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ].indexOf(month) + 1;
+    
+    if (monthNumber === 0) {
+      console.error('Invalid month:', month);
+      return new Date().toISOString();
+    }
+    
+    const timeMatch = time.match(/(\d+):(\d+)(AM|PM)/);
+    if (!timeMatch) {
+      console.error('Invalid time format:', time);
+      return new Date().toISOString();
+    }
+    
+    let hours = parseInt(timeMatch[1]);
+    const minutes = parseInt(timeMatch[2]);
+    const period = timeMatch[3];
+    
+    if (period === 'PM' && hours !== 12) hours += 12;
+    if (period === 'AM' && hours === 12) hours = 0;
+    
+    // Create the date object with current year first
+    let scheduledDate = new Date(
+      currentYear,
+      monthNumber - 1,
+      parseInt(date),
+      hours,
+      minutes,
+      0,
+      0
+    );
+    
+    // ✅ ADD THIS: If the scheduled date is in the past, use next year
+    if (scheduledDate <= currentDate) {
+      console.log(`📅 Date ${date} ${month} is in the past, using next year`);
+      scheduledDate = new Date(
+        currentYear + 1,
+        monthNumber - 1,
+        parseInt(date),
+        hours,
+        minutes,
+        0,
+        0
+      );
+    }
+    
+    const isoString = scheduledDate.toISOString();
+    console.log(`📅 Formatted DateTime: ${date} ${month} ${time} → ${isoString}`);
+    
+    return isoString;
+  } catch (error) {
+    console.error('Error formatting date time:', error);
+    return new Date().toISOString();
+  }
+};
+
 const PickupDeliveryScreen = () => {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -136,22 +199,32 @@ const PickupDeliveryScreen = () => {
     { label: 'December', value: 'December' },
   ];
 
-  // Save scheduling data to Redux
+  // Save scheduling data to Redux with formatted DateTime
   const saveToRedux = () => {
-    const schedulingData: SchedulingData = {
-      pickupDate: selectedPickupDate,
-      pickupTime: selectedPickupTime,
-      pickupMonth: pickupMonth,
-      deliveryDate: selectedDeliveryDate,
-      deliveryTime: selectedDeliveryTime,
-      deliveryMonth: deliveryMonth,
-      lastUpdated: new Date().toISOString(),
-    };
-    
-    dispatch(saveSchedulingData(schedulingData));
-    console.log('📅 Scheduling data saved to Redux:', schedulingData);
+  const schedulingData: SchedulingData = {
+    pickupDate: selectedPickupDate,
+    pickupTime: selectedPickupTime,
+    pickupMonth: pickupMonth,
+    deliveryDate: selectedDeliveryDate,
+    deliveryTime: selectedDeliveryTime,
+    deliveryMonth: deliveryMonth,
+    lastUpdated: new Date().toISOString(),
+    // Add formatted ISO strings for the payment screen
+    scheduledPickupDateTime: formatScheduledDateTime(
+      selectedPickupDate, 
+      pickupMonth, 
+      selectedPickupTime
+    ),
+    scheduledDeliveryDateTime: formatScheduledDateTime(
+      selectedDeliveryDate, 
+      deliveryMonth, 
+      selectedDeliveryTime
+    ),
   };
-
+  
+  dispatch(saveSchedulingData(schedulingData));
+  console.log('📅 Scheduling data saved to Redux:', schedulingData);
+};
   // Save to Redux whenever state changes (debounced)
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -202,6 +275,9 @@ const PickupDeliveryScreen = () => {
   const handleContinue = () => {
     console.log('🔄 handleContinue called');
     
+    // Save scheduling data FIRST with formatted DateTime
+    saveToRedux();
+    
     // Use the ref to get the latest state
     const { 
       existingOrder: latestOrder, 
@@ -218,9 +294,6 @@ const PickupDeliveryScreen = () => {
       hasUserState: !!latestUserState,
       hasPickupAddress: !!pickupAddress
     });
-
-    // Save scheduling data first
-    saveToRedux();
 
     let orderDataToSave: OrderData | null = null;
 
@@ -380,9 +453,8 @@ const PickupDeliveryScreen = () => {
     
     // Save to Redux
     dispatch(saveOrderData(orderData));
-    router.push('/dryCleanerUser/payment'); 
     
-    console.log('✅ Order data saved, navigating to DryorderSummary');
+    console.log('✅ Order data saved, navigating to payment');
     
     // Navigate after a brief delay to ensure Redux update completes
     setTimeout(() => {

@@ -15,7 +15,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   const segments = useSegments();
   const router = useRouter();
   const dispatch = useAppDispatch();
-  const { isAuthenticated, loading } = useAppSelector((state) => state.auth);
+  const { isAuthenticated, loading, user } = useAppSelector((state) => state.auth);
   const [isRouterReady, setIsRouterReady] = useState(false);
 
   useEffect(() => {
@@ -41,9 +41,17 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     if (!isAuthenticated && inTabsGroup) {
       router.replace('/login');
     } else if (isAuthenticated && onAuthScreen) {
-      router.replace('/userHome');
+      // Redirect to appropriate home based on user type
+      if (user?.userType === 'merchant') {
+        router.replace('/merchantHome');
+      } else if (user?.userType === 'driver') {
+        router.replace('/driver');
+      } else {
+        // Default to user home
+        router.replace('/userHome');
+      }
     }
-  }, [isAuthenticated, segments, loading, isRouterReady]);
+  }, [isAuthenticated, segments, loading, isRouterReady, user]);
 
   return <>{children}</>;
 }
@@ -81,7 +89,7 @@ function RootLayoutNav() {
       {shouldShowHeader && <Header notificationCount={3} />}
       
       <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="index" />
+         <Stack.Screen name="index" />
         <Stack.Screen name="splash" />
         <Stack.Screen name="onboarding" />
         <Stack.Screen name="login" />
@@ -92,6 +100,16 @@ function RootLayoutNav() {
         <Stack.Screen name="email-otp" />
         <Stack.Screen name="EmailOTPSuccess" />
         <Stack.Screen name="userHome" />
+        <Stack.Screen name="merchantHome" /> 
+        <Stack.Screen name="driver" />
+        {/* <Stack.Screen name="dryCleanerMerchant/merchantAddDryCleaner" />
+        <Stack.Screen name="dryCleanerMerchant/myDryCleaners" /> */}
+        <Stack.Screen name="merchant/merchantParkinglotList" />
+        <Stack.Screen name="merchant/merchantGarageList" />
+        <Stack.Screen name="merchant/merchantResidenceList" />
+        <Stack.Screen name="merchant/dryClean" />
+        <Stack.Screen name="merchant/merchantGarageForm" />
+        <Stack.Screen name="merchant/merchantBookingHistoryScreen" />
         <Stack.Screen name="dryCleanerUser/myOrder" />
         <Stack.Screen name="dryCleanerUser/allDrycleanerLocation" />
         <Stack.Screen name="dryCleanerUser/dryCleanersList" />
@@ -104,6 +122,7 @@ function RootLayoutNav() {
         <Stack.Screen name="parkingUser/FindParking" />
         <Stack.Screen name="parkingUser/ParkingSlot" />
         <Stack.Screen name="parkingUser/payment" />
+        {/* Add other merchant screens here */}
       </Stack>
     </View>
   );

@@ -1,5 +1,3 @@
-// stripWrapper.tsx — ✅ EXPO SAFE VERSION (NO BACKEND REQUIRED)
-
 import React, { useState, useCallback, useRef } from 'react';
 import { StripeProvider, useStripe } from '@stripe/stripe-react-native';
 import { Alert } from 'react-native';

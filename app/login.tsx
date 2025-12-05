@@ -58,9 +58,26 @@ export default function Login() {
   const handleLogin = async (data: LoginFormData) => {
     setLoading(true);
     try {
-      await dispatch(loginWithEmailPassword(data.email, data.password, data.userType));
-      // Navigation is handled by AuthGuard in _layout.tsx
-      router.replace('/userHome');
+      // Dispatch login action
+      const resultAction = await dispatch(loginWithEmailPassword(data.email, data.password, data.userType));
+      
+      // Check if login was successful
+      if (loginWithEmailPassword.fulfilled.match(resultAction)) {
+        const user = resultAction.payload?.user || resultAction.payload;
+        
+        // Redirect based on user type
+        if (user?.userType === 'merchant') {
+          router.replace('/merchant');
+        } else if (user?.userType === 'driver') {
+          router.replace('/driver');
+        } else {
+          // Default to user home for 'user' type or if userType is undefined
+          router.replace('/userHome');
+        }
+      } else {
+        // Handle rejected action
+        throw new Error(resultAction.payload as string || 'Login failed');
+      }
     } catch (error: any) {
       let errorMessage = 'Login failed. Please try again.';
       
@@ -255,7 +272,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingBottom: 40, // Add padding at bottom
+    paddingBottom: 40,
   },
   backButton: {
     padding: 16,

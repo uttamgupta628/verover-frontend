@@ -18,6 +18,8 @@ export interface SchedulingData {
   deliveryTime: string;
   deliveryMonth: string;
   lastUpdated: string;
+  scheduledPickupDateTime?: string; 
+  scheduledDeliveryDateTime?: string
 }
 
 export interface ItemOptions {
