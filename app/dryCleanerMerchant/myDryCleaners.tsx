@@ -26,7 +26,7 @@ import { RootState } from '../../components/redux/store';
 import { Image } from 'expo-image';
 
 const { width: screenWidth } = Dimensions.get('window');
-
+const API_BASE_URL = 'http://192.168.29.162:5000/api/users';
 // Define the DryCleaner type based on your backend model
 interface DryCleaner {
   _id: string;
@@ -351,87 +351,158 @@ const ProfileEditModal = ({
 
   // Request permissions
   const requestPermissions = async () => {
-    const { status: cameraStatus } = await Camera.requestCameraPermissionsAsync();
-    const { status: mediaStatus } = await MediaLibrary.requestPermissionsAsync();
+  try {
+    // Request camera permissions
+    const cameraPermission = await Camera.requestCameraPermissionsAsync();
+    console.log('Camera permission status:', cameraPermission.status);
     
-    return cameraStatus === 'granted' && mediaStatus === 'granted';
-  };
+    // Request media library permissions
+    const mediaPermission = await MediaLibrary.requestPermissionsAsync();
+    console.log('Media library permission status:', mediaPermission.status);
+    
+    // Check if permissions are granted
+    if (cameraPermission.status !== 'granted') {
+      Alert.alert(
+        'Camera Permission Required',
+        'Please allow camera access in your device settings to take photos.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings() }
+        ]
+      );
+      return false;
+    }
+    
+    if (mediaPermission.status !== 'granted') {
+      Alert.alert(
+        'Gallery Permission Required',
+        'Please allow gallery access in your device settings to select photos.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Open Settings', onPress: () => Linking.openSettings() }
+        ]
+      );
+      return false;
+    }
+    
+    return true;
+  } catch (error) {
+    console.error('Permission request error:', error);
+    Alert.alert('Error', 'Failed to request permissions. Please try again.');
+    return false;
+  }
+};
 
   // Show image picker options
   const showImagePicker = async () => {
-    const hasPermission = await requestPermissions();
-    
-    if (!hasPermission) {
-      Alert.alert('Permission Required', 'Please allow access to camera and photo library.');
-      return;
-    }
-
-    Alert.alert(
-      'Select Image',
-      'Choose an option to select contact person image',
-      [
-        {
-          text: 'Camera',
-          onPress: () => openCamera(),
-        },
-        {
-          text: 'Gallery',
-          onPress: () => openGallery(),
-        },
-        {
-          text: 'Remove Image',
-          onPress: () => removeImage(),
-          style: 'destructive',
-        },
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-      ],
-    );
-  };
+  Alert.alert(
+    'Select Image',
+    'Choose an option to select contact person image',
+    [
+      {
+        text: 'Camera',
+        onPress: () => openCamera(),
+      },
+      {
+        text: 'Gallery',
+        onPress: () => openGallery(),
+      },
+      {
+        text: 'Remove Image',
+        onPress: () => removeImage(),
+        style: 'destructive',
+      },
+      {
+        text: 'Cancel',
+        style: 'cancel',
+      },
+    ],
+  );
+};
 
   // Open camera
-  const openCamera = async () => {
-    try {
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets && result.assets[0]) {
-        const asset = result.assets[0];
-        setSelectedImageUri(asset.uri);
-        setSelectedImageData(asset);
-      }
-    } catch (error) {
-      console.error('Camera error:', error);
-      Alert.alert('Error', 'Failed to take photo. Please try again.');
+ const openCamera = async () => {
+  try {
+    console.log('Opening camera...');
+    
+    // Request camera permission from ImagePicker
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    console.log('Camera permission status:', status);
+    
+    if (status !== 'granted') {
+      Alert.alert(
+        'Permission Denied', 
+        'Camera permission is required to take photos.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Try Again', onPress: () => openCamera() }
+        ]
+      );
+      return;
     }
-  };
+    
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
 
-  // Open gallery
-  const openGallery = async () => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
+    console.log('Camera result:', result);
 
-      if (!result.canceled && result.assets && result.assets[0]) {
-        const asset = result.assets[0];
-        setSelectedImageUri(asset.uri);
-        setSelectedImageData(asset);
-      }
-    } catch (error) {
-      console.error('Gallery error:', error);
-      Alert.alert('Error', 'Failed to select image. Please try again.');
+    if (!result.canceled && result.assets && result.assets[0]) {
+      const asset = result.assets[0];
+      console.log('Image selected:', asset.uri);
+      setSelectedImageUri(asset.uri);
+      setSelectedImageData(asset);
     }
-  };
+  } catch (error) {
+    console.error('Camera error:', error);
+    Alert.alert('Error', 'Failed to take photo. Please try again.');
+  }
+};
+
+// In ProfileEditModal - openGallery function
+const openGallery = async () => {
+  try {
+    console.log('Opening gallery...');
+    
+    // Request media library permission from ImagePicker
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    console.log('Gallery permission status:', status);
+    
+    if (status !== 'granted') {
+      Alert.alert(
+        'Permission Denied', 
+        'Gallery permission is required to select photos.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Try Again', onPress: () => openGallery() }
+        ]
+      );
+      return;
+    }
+    
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+
+    console.log('Gallery result:', result);
+
+    if (!result.canceled && result.assets && result.assets[0]) {
+      const asset = result.assets[0];
+      console.log('Image selected:', asset.uri);
+      setSelectedImageUri(asset.uri);
+      setSelectedImageData(asset);
+    }
+  } catch (error) {
+    console.error('Gallery error:', error);
+    Alert.alert('Error', 'Failed to select image. Please try again.');
+  }
+};
 
   // Remove image
   const removeImage = () => {
@@ -443,76 +514,88 @@ const ProfileEditModal = ({
     });
   };
 
-  const handleSave = async () => {
-    if (!formData.contactPerson.trim()) {
-      Alert.alert('Error', 'Contact person name is required');
-      return;
-    }
-    if (!formData.phoneNumber.trim()) {
-      Alert.alert('Error', 'Phone number is required');
-      return;
-    }
+ const handleSave = async () => {
+  if (!formData.contactPerson.trim()) {
+    Alert.alert('Error', 'Contact person name is required');
+    return;
+  }
+  if (!formData.phoneNumber.trim()) {
+    Alert.alert('Error', 'Phone number is required');
+    return;
+  }
 
-    if (!cleaner || !authToken) {
-      Alert.alert('Error', 'Authentication required');
-      return;
-    }
+  if (!cleaner || !authToken) {
+    Alert.alert('Error', 'Authentication required');
+    return;
+  }
 
-    try {
-      setImageUploading(true);
+  try {
+    setImageUploading(true);
 
-      // Create FormData for multipart upload
-      const formDataUpload = new FormData();
+    const formDataUpload = new FormData();
+    formDataUpload.append('contactPerson', formData.contactPerson);
+    formDataUpload.append('phoneNumber', formData.phoneNumber);
+
+    if (selectedImageData) {
+      // FIXED: Proper file object for React Native
+      const fileExtension = selectedImageData.uri.split('.').pop() || 'jpg';
+      const fileName = `contact-person-${Date.now()}.${fileExtension}`;
       
-      // Add text fields
-      formDataUpload.append('contactPerson', formData.contactPerson);
-      formDataUpload.append('phoneNumber', formData.phoneNumber);
-
-      // Add image if selected
-      if (selectedImageData) {
-        formDataUpload.append('contactPersonImg', {
-          uri: selectedImageData.uri,
-          type: selectedImageData.type || 'image/jpeg',
-          name: selectedImageData.fileName || 'contact-person-image.jpg',
-        } as any);
-      }
-
-      const response = await axios.put(
-        `http://localhost:5000/api/users/edit-profile-drycleaner/${cleaner._id}`,
-        formDataUpload,
-        {
-          headers: {
-            'Authorization': `Bearer ${authToken}`,
-            'Content-Type': 'multipart/form-data',
-          }
-        }
-      );
-
-      if (response.data.success) {
-        Alert.alert('Success', 'Contact information updated successfully');
-        
-        const updatedData = {
-          contactPerson: formData.contactPerson,
-          phoneNumber: formData.phoneNumber,
-          contactPersonImg: response.data.data?.dryCleaner?.contactPersonImg || formData.contactPersonImg,
-        };
-        
-        onSave(updatedData);
-        onClose();
-      }
-    } catch (error: any) {
-      console.error('Error updating profile:', error);
-      
-      if (error.response?.status === 403) {
-        Alert.alert('Access Denied', 'You can only edit dry cleaners that you own.');
-      } else {
-        const message = error.response?.data?.message || 'Failed to update contact information';
-        Alert.alert('Error', message);
-      }
-    } finally {
-      setImageUploading(false);
+      formDataUpload.append('contactPersonImg', {
+        uri: selectedImageData.uri,
+        type: `image/${fileExtension}`,
+        name: fileName,
+      } as any);
     }
-  };
+
+    console.log('Uploading to:', `${API_BASE_URL}/edit-profile-drycleaner/${cleaner._id}`);
+
+    const response = await axios.put(
+      `${API_BASE_URL}/edit-profile-drycleaner/${cleaner._id}`,
+      formDataUpload,
+      {
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'multipart/form-data',
+        },
+        timeout: 30000, // 30 second timeout
+      }
+    );
+
+    console.log('Upload response:', response.data);
+
+    if (response.data.success) {
+      Alert.alert('Success', 'Contact information updated successfully');
+      
+      const updatedData = {
+        contactPerson: formData.contactPerson,
+        phoneNumber: formData.phoneNumber,
+        contactPersonImg: response.data.data?.dryCleaner?.contactPersonImg || formData.contactPersonImg,
+      };
+      
+      onSave(updatedData);
+      onClose();
+    }
+  } catch (error: any) {
+    console.error('Error updating profile:', error);
+    console.error('Error response:', error.response?.data);
+    console.error('Error config:', error.config);
+    
+    if (error.code === 'ECONNABORTED') {
+      Alert.alert('Error', 'Request timed out. Please check your internet connection.');
+    } else if (error.response?.status === 403) {
+      Alert.alert('Access Denied', 'You can only edit dry cleaners that you own.');
+    } else if (error.message === 'Network Error') {
+      Alert.alert('Network Error', 'Cannot connect to server. Please check if the backend is running and the IP address is correct.');
+    } else {
+      const message = error.response?.data?.message || 'Failed to update contact information';
+      Alert.alert('Error', message);
+    }
+  } finally {
+    setImageUploading(false);
+  }
+};
+
 
   if (!cleaner) return null;
 
@@ -651,83 +734,75 @@ const ShopImageEditModal = ({
 
   // Show image picker options
   const showImagePicker = async () => {
-    const hasPermission = await requestPermissions();
-    
-    if (!hasPermission) {
-      Alert.alert('Permission Required', 'Please allow access to camera and photo library.');
-      return;
-    }
-
-    const remainingSlots = 5 - (shopImages.length - deletedImages.length);
-    if (newImages.length >= remainingSlots) {
-      Alert.alert('Limit Reached', 'You can only have up to 5 shop images total');
-      return;
-    }
-
-    Alert.alert(
-      'Add Shop Image',
-      'Choose an option to add shop image',
-      [
-        {
-          text: 'Camera',
-          onPress: () => openCamera(),
-        },
-        {
-          text: 'Gallery',
-          onPress: () => openGallery(),
-        },
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-      ],
-    );
-  };
+  Alert.alert(
+    'Select Image',
+    'Choose an option to select contact person image',
+    [
+      {
+        text: 'Camera',
+        onPress: () => openCamera(),
+      },
+      {
+        text: 'Gallery',
+        onPress: () => openGallery(),
+      },
+      {
+        text: 'Remove Image',
+        onPress: () => removeImage(),
+        style: 'destructive',
+      },
+      {
+        text: 'Cancel',
+        style: 'cancel',
+      },
+    ],
+  );
+};
 
   // Open camera
-  const openCamera = async () => {
-    try {
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.8,
-      });
+ const openCamera = async () => {
+  try {
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ['images'], // FIXED
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.8,
+    });
 
-      if (!result.canceled && result.assets && result.assets[0]) {
-        const remainingSlots = 5 - (shopImages.length - deletedImages.length) - newImages.length;
-        if (remainingSlots <= 0) return;
-        
-        const asset = result.assets[0];
-        setNewImages(prev => [...prev, asset]);
-      }
-    } catch (error) {
-      console.error('Camera error:', error);
-      Alert.alert('Error', 'Failed to take photo. Please try again.');
-    }
-  };
-
-  // Open gallery
-  const openGallery = async () => {
-    try {
+    if (!result.canceled && result.assets && result.assets[0]) {
       const remainingSlots = 5 - (shopImages.length - deletedImages.length) - newImages.length;
-      const availableSlots = remainingSlots > 0 ? remainingSlots : 1;
+      if (remainingSlots <= 0) return;
       
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsMultipleSelection: true,
-        selectionLimit: availableSlots,
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        setNewImages(prev => [...prev, ...result.assets]);
-      }
-    } catch (error) {
-      console.error('Gallery error:', error);
-      Alert.alert('Error', 'Failed to select images. Please try again.');
+      const asset = result.assets[0];
+      setNewImages(prev => [...prev, asset]);
     }
-  };
+  } catch (error) {
+    console.error('Camera error:', error);
+    Alert.alert('Error', 'Failed to take photo. Please try again.');
+  }
+};
+
+//  openGallery function
+const openGallery = async () => {
+  try {
+    const remainingSlots = 5 - (shopImages.length - deletedImages.length) - newImages.length;
+    const availableSlots = remainingSlots > 0 ? remainingSlots : 1;
+    
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'], // FIXED
+      allowsMultipleSelection: true,
+      selectionLimit: availableSlots,
+      quality: 0.8,
+    });
+
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      setNewImages(prev => [...prev, ...result.assets]);
+    }
+  } catch (error) {
+    console.error('Gallery error:', error);
+    Alert.alert('Error', 'Failed to select images. Please try again.');
+  }
+};
 
   // Remove existing image (mark for deletion)
   const removeExistingImage = (imageUrl: string) => {
@@ -758,96 +833,113 @@ const ShopImageEditModal = ({
   };
 
   const handleSave = async () => {
-    if (!cleaner || !authToken) {
-      Alert.alert('Error', 'Authentication required');
-      return;
-    }
+  if (!cleaner || !authToken) {
+    Alert.alert('Error', 'Authentication required');
+    return;
+  }
 
-    try {
-      setImageUploading(true);
+  try {
+    setImageUploading(true);
 
-      // Step 1: Delete images if any
-      if (deletedImages.length > 0) {
-        for (const imageUrl of deletedImages) {
-          try {
-            const deleteResponse = await axios.delete(
-              `http://localhost:5000/api/users/delete-drycleaner-shop-image/${cleaner._id}`,
-              {
-                headers: {
-                  'Authorization': `Bearer ${authToken}`,
-                  'Content-Type': 'application/json',
-                },
-                data: { imageUrl }
-              }
-            );
-          } catch (deleteError) {
-            console.error('Error deleting image:', deleteError);
-          }
+    // Step 1: Delete images if any
+    if (deletedImages.length > 0) {
+      for (const imageUrl of deletedImages) {
+        try {
+          await axios.delete(
+            `${API_BASE_URL}/delete-drycleaner-shop-image/${cleaner._id}`,
+            {
+              headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Content-Type': 'application/json',
+              },
+              data: { imageUrl },
+              timeout: 30000,
+            }
+          );
+        } catch (deleteError) {
+          console.error('Error deleting image:', deleteError);
         }
       }
+    }
 
-      // Step 2: Upload new images if any
-      if (newImages.length > 0) {
-        const formData = new FormData();
-        
-        newImages.forEach((image, index) => {
-          if (image.uri) {
-            formData.append('shopimage', {
-              uri: image.uri,
-              type: image.type || 'image/jpeg',
-              name: image.fileName || `shop-image-${index}.jpg`,
-            } as any);
-          }
-        });
-
-        const uploadResponse = await axios.put(
-          `http://localhost:5000/api/users/update-drycleaner-shop-images/${cleaner._id}`,
-          formData,
-          {
-            headers: {
-              'Authorization': `Bearer ${authToken}`,
-              'Content-Type': 'multipart/form-data',
-            }
-          }
-        );
-
-        if (uploadResponse.data.success) {
-          Alert.alert('Success', 'Shop images updated successfully');
+    // Step 2: Upload new images if any
+    if (newImages.length > 0) {
+      const formData = new FormData();
+      
+      newImages.forEach((image, index) => {
+        if (image.uri) {
+          // FIXED: Proper file object for React Native
+          const fileExtension = image.uri.split('.').pop() || 'jpg';
+          const fileName = `shop-image-${Date.now()}-${index}.${fileExtension}`;
           
-          const updatedData = {
-            shopimage: uploadResponse.data.data?.dryCleaner?.shopimage || [],
-          };
-          
-          onSave(updatedData);
+          formData.append('shopimage', {
+            uri: image.uri,
+            type: `image/${fileExtension}`,
+            name: fileName,
+          } as any);
         }
-      } else if (deletedImages.length > 0) {
+      });
+
+      console.log('Uploading to:', `${API_BASE_URL}/update-drycleaner-shop-images/${cleaner._id}`);
+      console.log('Number of images:', newImages.length);
+
+      const uploadResponse = await axios.put(
+        `${API_BASE_URL}/update-drycleaner-shop-images/${cleaner._id}`,
+        formData,
+        {
+          headers: {
+            'Authorization': `Bearer ${authToken}`,
+            'Content-Type': 'multipart/form-data',
+          },
+          timeout: 60000, // 60 second timeout for multiple images
+        }
+      );
+
+      console.log('Upload response:', uploadResponse.data);
+
+      if (uploadResponse.data.success) {
         Alert.alert('Success', 'Shop images updated successfully');
         
-        const remainingImages = shopImages.filter(img => !deletedImages.includes(img));
         const updatedData = {
-          shopimage: remainingImages,
+          shopimage: uploadResponse.data.data?.dryCleaner?.shopimage || [],
         };
         
         onSave(updatedData);
-      } else {
-        Alert.alert('Info', 'No changes made to shop images');
       }
+    } else if (deletedImages.length > 0) {
+      Alert.alert('Success', 'Shop images updated successfully');
       
-      onClose();
+      const remainingImages = shopImages.filter(img => !deletedImages.includes(img));
+      const updatedData = {
+        shopimage: remainingImages,
+      };
       
-    } catch (error: any) {
-      console.error('Error updating shop images:', error);
-      
-      if (error.response?.status === 403) {
-        Alert.alert('Access Denied', 'You can only edit dry cleaners that you own.');
-      } else {
-        const message = error.response?.data?.message || 'Failed to update shop images';
-        Alert.alert('Error', message);
-      }
-    } finally {
-      setImageUploading(false);
+      onSave(updatedData);
+    } else {
+      Alert.alert('Info', 'No changes made to shop images');
     }
-  };
+    
+    onClose();
+    
+  } catch (error: any) {
+    console.error('Error updating shop images:', error);
+    console.error('Error response:', error.response?.data);
+    console.error('Error config:', error.config);
+    
+    if (error.code === 'ECONNABORTED') {
+      Alert.alert('Error', 'Request timed out. Please check your internet connection.');
+    } else if (error.response?.status === 403) {
+      Alert.alert('Access Denied', 'You can only edit dry cleaners that you own.');
+    } else if (error.message === 'Network Error') {
+      Alert.alert('Network Error', 'Cannot connect to server. Please check:\n1. Backend is running\n2. IP address is correct\n3. Device is on same network');
+    } else {
+      const message = error.response?.data?.message || 'Failed to update shop images';
+      Alert.alert('Error', message);
+    }
+  } finally {
+    setImageUploading(false);
+  }
+};
 
   if (!cleaner) return null;
 
@@ -1355,212 +1447,222 @@ const CleanerDetailsModal = ({
   };
 
   const handleSaveService = async (serviceData: any) => {
-    if (!currentCleanerData || !authToken) {
-      Alert.alert('Error', 'Authentication required');
-      return;
-    }
+  if (!currentCleanerData || !authToken) {
+    Alert.alert('Error', 'Authentication required');
+    return;
+  }
 
-    if (!canEdit) {
-      showAccessDeniedAlert();
-      return;
-    }
+  if (!canEdit) {
+    showAccessDeniedAlert();
+    return;
+  }
 
-    try {
-      setLoading(true);
-      
-      const response = await axios.put(
-        `http://localhost:5000/api/users/edit-service-drycleaner/${currentCleanerData._id}`,
-        serviceData,
-        {
-          headers: {
-            'Authorization': `Bearer ${authToken}`,
-            'Content-Type': 'application/json',
-          }
+  try {
+    setLoading(true);
+    
+    // FIXED URL HERE
+    const response = await axios.put(
+      `${API_BASE_URL}/edit-service-drycleaner/${currentCleanerData._id}`,
+      serviceData,
+      {
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
         }
-      );
+      }
+    );
 
-      if (response.data.success) {
-        Alert.alert('Success', 'Service updated successfully');
-        setServiceEditModal(false);
-        
-        const updatedServices = currentCleanerData.services.map(service => 
-          service._id === serviceData.serviceId 
-            ? { ...service, ...serviceData }
-            : service
-        );
-        
-        setCurrentCleanerData({
-          ...currentCleanerData,
-          services: updatedServices
-        });
-        
-        onRefresh();
-      }
-    } catch (error: any) {
-      console.error('Error updating service:', error);
+    if (response.data.success) {
+      Alert.alert('Success', 'Service updated successfully');
+      setServiceEditModal(false);
       
-      if (error.response?.status === 403) {
-        showAccessDeniedAlert();
-      } else {
-        const message = error.response?.data?.message || 'Failed to update service';
-        Alert.alert('Error', message);
-      }
-    } finally {
-      setLoading(false);
+      const updatedServices = currentCleanerData.services.map(service => 
+        service._id === serviceData.serviceId 
+          ? { ...service, ...serviceData }
+          : service
+      );
+      
+      setCurrentCleanerData({
+        ...currentCleanerData,
+        services: updatedServices
+      });
+      
+      onRefresh();
     }
-  };
+  } catch (error: any) {
+    console.error('Error updating service:', error);
+    console.error('Error details:', error.response?.data);
+    
+    if (error.response?.status === 403) {
+      showAccessDeniedAlert();
+    } else {
+      const message = error.response?.data?.message || 'Failed to update service';
+      Alert.alert('Error', message);
+    }
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const handleSaveHours = async (hoursData: any[]) => {
-    if (!currentCleanerData || !authToken) {
-      Alert.alert('Error', 'Authentication required');
-      return;
-    }
+  if (!currentCleanerData || !authToken) {
+    Alert.alert('Error', 'Authentication required');
+    return;
+  }
 
-    if (!canEdit) {
-      showAccessDeniedAlert();
-      return;
-    }
+  if (!canEdit) {
+    showAccessDeniedAlert();
+    return;
+  }
 
-    try {
-      setLoading(true);
-      
-      const response = await axios.put(
-        `http://localhost:5000/api/users/edit-hours-drycleaner/${currentCleanerData._id}`,
-        hoursData,
-        {
-          headers: {
-            'Authorization': `Bearer ${authToken}`,
-            'Content-Type': 'application/json',
-          }
+  try {
+    setLoading(true);
+    
+    // FIXED URL HERE
+    const response = await axios.put(
+      `${API_BASE_URL}/edit-hours-drycleaner/${currentCleanerData._id}`,
+      hoursData,
+      {
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
         }
-      );
+      }
+    );
 
-      if (response.data.success) {
-        Alert.alert('Success', 'Operating hours updated successfully');
-        setHoursEditModal(false);
-        
-        setCurrentCleanerData({
-          ...currentCleanerData,
-          hoursOfOperation: hoursData
-        });
-        
-        onRefresh();
-      }
-    } catch (error: any) {
-      console.error('Error updating hours:', error);
+    if (response.data.success) {
+      Alert.alert('Success', 'Operating hours updated successfully');
+      setHoursEditModal(false);
       
-      if (error.response?.status === 403) {
-        showAccessDeniedAlert();
-      } else {
-        const message = error.response?.data?.message || 'Failed to update operating hours';
-        Alert.alert('Error', message);
-      }
-    } finally {
-      setLoading(false);
+      setCurrentCleanerData({
+        ...currentCleanerData,
+        hoursOfOperation: hoursData
+      });
+      
+      onRefresh();
     }
-  };
+  } catch (error: any) {
+    console.error('Error updating hours:', error);
+    console.error('Error details:', error.response?.data);
+    
+    if (error.response?.status === 403) {
+      showAccessDeniedAlert();
+    } else {
+      const message = error.response?.data?.message || 'Failed to update operating hours';
+      Alert.alert('Error', message);
+    }
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleSaveProfile = async (profileData: any) => {
-    if (!currentCleanerData || !authToken) {
-      Alert.alert('Error', 'Authentication required');
-      return;
-    }
+  if (!currentCleanerData || !authToken) {
+    Alert.alert('Error', 'Authentication required');
+    return;
+  }
 
-    if (!canEdit) {
-      showAccessDeniedAlert();
-      return;
-    }
+  if (!canEdit) {
+    showAccessDeniedAlert();
+    return;
+  }
 
-    try {
-      setLoading(true);
-      
-      const response = await axios.put(
-        `http://localhost:5000/api/users/edit-profile-drycleaner/${currentCleanerData._id}`,
-        profileData,
-        {
-          headers: {
-            'Authorization': `Bearer ${authToken}`,
-            'Content-Type': 'application/json',
-          }
+  try {
+    setLoading(true);
+    
+    // FIXED URL HERE
+    const response = await axios.put(
+      `${API_BASE_URL}/edit-profile-drycleaner/${currentCleanerData._id}`,
+      profileData,
+      {
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
         }
-      );
+      }
+    );
 
-      if (response.data.success) {
-        Alert.alert('Success', 'Contact information updated successfully');
-        setProfileEditModal(false);
-        
-        setCurrentCleanerData({
-          ...currentCleanerData,
-          contactPerson: profileData.contactPerson,
-          phoneNumber: profileData.phoneNumber,
-          contactPersonImg: profileData.contactPersonImg
-        });
-        
-        onRefresh();
-      }
-    } catch (error: any) {
-      console.error('Error updating profile:', error);
-      if (error.response?.status === 403) {
-        showAccessDeniedAlert();
-      } else {
-        Alert.alert('Error', 'Failed to update profile');
-      }
-    } finally {
-      setLoading(false);
+    if (response.data.success) {
+      Alert.alert('Success', 'Contact information updated successfully');
+      setProfileEditModal(false);
+      
+      setCurrentCleanerData({
+        ...currentCleanerData,
+        contactPerson: profileData.contactPerson,
+        phoneNumber: profileData.phoneNumber,
+        contactPersonImg: profileData.contactPersonImg
+      });
+      
+      onRefresh();
     }
-  };
+  } catch (error: any) {
+    console.error('Error updating profile:', error);
+    console.error('Error details:', error.response?.data);
+    
+    if (error.response?.status === 403) {
+      showAccessDeniedAlert();
+    } else {
+      Alert.alert('Error', 'Failed to update profile');
+    }
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleSaveAddress = async (addressData: any) => {
-    if (!currentCleanerData || !authToken) {
-      Alert.alert('Error', 'Authentication required');
-      return;
-    }
+  if (!currentCleanerData || !authToken) {
+    Alert.alert('Error', 'Authentication required');
+    return;
+  }
 
-    if (!canEdit) {
-      showAccessDeniedAlert();
-      return;
-    }
+  if (!canEdit) {
+    showAccessDeniedAlert();
+    return;
+  }
 
-    try {
-      setLoading(true);
-      
-      const response = await axios.put(
-        `http://localhost:5000/api/users/edit-address-drycleaner/${currentCleanerData._id}`,
-        addressData,
-        {
-          headers: {
-            'Authorization': `Bearer ${authToken}`,
-            'Content-Type': 'application/json',
-          }
+  try {
+    setLoading(true);
+    
+    // FIXED URL HERE
+    const response = await axios.put(
+      `${API_BASE_URL}/edit-address-drycleaner/${currentCleanerData._id}`,
+      addressData,
+      {
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+          'Content-Type': 'application/json',
         }
-      );
+      }
+    );
 
-      if (response.data.success) {
-        Alert.alert('Success', 'Shop details updated successfully');
-        setAddressEditModal(false);
-        
-        setCurrentCleanerData({
-          ...currentCleanerData,
-          shopname: addressData.shopname,
-          about: addressData.about,
-          address: addressData.address
-        });
-        
-        onRefresh();
-      }
-    } catch (error: any) {
-      console.error('Error updating address:', error);
+    if (response.data.success) {
+      Alert.alert('Success', 'Shop details updated successfully');
+      setAddressEditModal(false);
       
-      if (error.response?.status === 403) {
-        showAccessDeniedAlert();
-      } else {
-        const message = error.response?.data?.message || 'Failed to update shop details';
-        Alert.alert('Error', message);
-      }
-    } finally {
-      setLoading(false);
+      setCurrentCleanerData({
+        ...currentCleanerData,
+        shopname: addressData.shopname,
+        about: addressData.about,
+        address: addressData.address
+      });
+      
+      onRefresh();
     }
-  };
+  } catch (error: any) {
+    console.error('Error updating address:', error);
+    console.error('Error details:', error.response?.data);
+    
+    if (error.response?.status === 403) {
+      showAccessDeniedAlert();
+    } else {
+      const message = error.response?.data?.message || 'Failed to update shop details';
+      Alert.alert('Error', message);
+    }
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleSaveShopImages = async (imageData: any) => {
     if (!currentCleanerData || !authToken) {
@@ -1599,59 +1701,62 @@ const CleanerDetailsModal = ({
     }
   };
 
-  const handleDeleteShopImage = async (imageUrl: string) => {
-    if (!currentCleanerData || !authToken) return;
+ const handleDeleteShopImage = async (imageUrl: string) => {
+  if (!currentCleanerData || !authToken) return;
 
-    if (!canEdit) {
-      showAccessDeniedAlert();
-      return;
-    }
+  if (!canEdit) {
+    showAccessDeniedAlert();
+    return;
+  }
 
-    Alert.alert(
-      'Delete Image',
-      'Are you sure you want to delete this image?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const response = await axios.delete(
-                `http://localhost:5000/api/users/delete-drycleaner-shop-image/${currentCleanerData._id}`,
-                {
-                  headers: {
-                    'Authorization': `Bearer ${authToken}`,
-                    'Content-Type': 'application/json',
-                  },
-                  data: { imageUrl }
-                }
-              );
-
-              if (response.data.success) {
-                Alert.alert('Success', 'Image deleted successfully');
-                
-                const updatedImages = currentCleanerData.shopimage.filter(img => img !== imageUrl);
-                setCurrentCleanerData({
-                  ...currentCleanerData,
-                  shopimage: updatedImages
-                });
-                
-                onRefresh();
+  Alert.alert(
+    'Delete Image',
+    'Are you sure you want to delete this image?',
+    [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            // FIXED URL HERE
+            const response = await axios.delete(
+              `${API_BASE_URL}/delete-drycleaner-shop-image/${currentCleanerData._id}`,
+              {
+                headers: {
+                  'Authorization': `Bearer ${authToken}`,
+                  'Content-Type': 'application/json',
+                },
+                data: { imageUrl }
               }
-            } catch (error: any) {
-              console.error('Error deleting image:', error);
-              if (error.response?.status === 403) {
-                showAccessDeniedAlert();
-              } else {
-                Alert.alert('Error', 'Failed to delete image');
-              }
+            );
+
+            if (response.data.success) {
+              Alert.alert('Success', 'Image deleted successfully');
+              
+              const updatedImages = currentCleanerData.shopimage.filter(img => img !== imageUrl);
+              setCurrentCleanerData({
+                ...currentCleanerData,
+                shopimage: updatedImages
+              });
+              
+              onRefresh();
+            }
+          } catch (error: any) {
+            console.error('Error deleting image:', error);
+            console.error('Error details:', error.response?.data);
+            
+            if (error.response?.status === 403) {
+              showAccessDeniedAlert();
+            } else {
+              Alert.alert('Error', 'Failed to delete image');
             }
           }
         }
-      ]
-    );
-  };
+      }
+    ]
+  );
+};
 
   if (!currentCleanerData) return null;
 
@@ -1998,7 +2103,7 @@ const MyDryCleaners = () => {
       }
 
       const response = await axios.get(
-        'http://localhost:5000/api/users/get-own-drycleaner',
+        'http://192.168.29.162:5000/api/users/get-own-drycleaner',
         {
           headers: {
             'Content-Type': 'application/json',
@@ -2099,7 +2204,7 @@ const MyDryCleaners = () => {
       }
 
       const response = await axios.delete(
-        `http://localhost:5000/api/users/delete-own-drycleaner/${cleanerId}`,
+        `http://192.168.29.162:5000/api/users/delete-own-drycleaner/${cleanerId}`,
         {
           headers: {
             'Authorization': `Bearer ${authToken}`
@@ -2205,488 +2310,681 @@ const MyDryCleaners = () => {
 };
 
 const styles = StyleSheet.create({
+  // ============================================
+  // MAIN CONTAINER & LAYOUT
+  // ============================================
   container: {
     flex: 1,
-    backgroundColor: '#FAFAFA',
+    backgroundColor: '#F5F5F5',
   },
+  
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 60,
+    paddingHorizontal: 20,
+    paddingTop: 16,
     paddingBottom: 16,
     backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: colors.lightGray,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
   },
+  
   headerTitle: {
     fontSize: 20,
-    color: colors.black,
-    fontWeight: 'bold',
+    color: '#000000',
+    fontWeight: '700',
   },
+  
   scrollView: {
     flex: 1,
+    paddingTop: 16,
   },
+  
+  // ============================================
+  // SECTION HEADERS
+  // ============================================
   popularSection: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingHorizontal: 20,
+    paddingBottom: 16,
   },
+  
   popularTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.black,
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#000000',
   },
+  
   seeAll: {
     fontSize: 14,
     color: colors.brandColor,
-    fontWeight: '600',
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
+  
+  // ============================================
+  // LOADING STATE
+  // ============================================
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#F5F5F5',
   },
+  
   loadingText: {
     marginTop: 16,
     fontSize: 16,
     color: colors.brandColor,
+    fontWeight: '600',
   },
+  
+  // ============================================
+  // DRY CLEANER CARD (MATCHING YOUR DESIGN)
+  // ============================================
   cleanerCard: {
     backgroundColor: '#FFFFFF',
     marginHorizontal: 16,
-    marginBottom: 12,
-    borderRadius: 12,
-    padding: 12,
+    marginBottom: 16,
+    borderRadius: 20,
+    padding: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
     elevation: 3,
   },
+  
   cardContent: {
     flexDirection: 'row',
+    marginBottom: 16,
   },
+  
   iconContainer: {
-    width: 60,
-    height: 60,
-    borderRadius: 8,
-    backgroundColor: '#F5F5F5',
+    width: 100,
+    height: 100,
+    borderRadius: 16,
+    backgroundColor: '#E8F4FD',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 16,
   },
+  
   washingIcon: {
-    width: 40,
-    height: 40,
+    width: 60,
+    height: 60,
   },
+  
   cleanerInfo: {
     flex: 1,
+    justifyContent: 'center',
   },
+  
   nameRating: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
+    alignItems: 'flex-start',
+    marginBottom: 8,
   },
+  
   cleanerName: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: colors.black,
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#000000',
     flex: 1,
+    marginRight: 8,
   },
+  
   ratingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    backgroundColor: '#FFF9E6',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
   },
+  
   starIcon: {
-    color: '#FFD700',
-    fontSize: 14,
-    marginRight: 2,
+    color: '#FF9500',
+    fontSize: 16,
+    marginRight: 4,
   },
+  
   rating: {
-    fontSize: 14,
-    color: colors.black,
+    fontSize: 16,
+    color: '#000000',
+    fontWeight: '700',
   },
+  
   address: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 8,
+    fontSize: 15,
+    color: '#666666',
+    marginBottom: 12,
+    lineHeight: 20,
   },
+  
   detailsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
   },
+  
   distanceContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
   },
+  
   phoneIcon: {
-    fontSize: 14,
-    marginRight: 4,
+    fontSize: 16,
+    marginRight: 6,
   },
+  
   phoneText: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: 14,
+    color: '#666666',
+    fontWeight: '500',
   },
+  
   timeContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1,
   },
+  
   clockIcon: {
-    fontSize: 14,
-    marginRight: 4,
+    fontSize: 16,
+    marginRight: 6,
   },
+  
   time: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: 14,
+    color: '#666666',
+    fontWeight: '500',
   },
+  
+  // ============================================
+  // OWNERSHIP INDICATOR
+  // ============================================
   ownershipIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    backgroundColor: '#F5F5F5',
-    borderRadius: 4,
+    marginTop: 12,
+    marginBottom: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#FFF3E0',
+    borderRadius: 8,
     alignSelf: 'flex-start',
   },
+  
   ownershipText: {
     fontSize: 12,
-    color: '#666',
-    marginLeft: 4,
+    color: '#E65100',
+    marginLeft: 6,
+    fontWeight: '600',
   },
+  
+  // ============================================
+  // ACTION BUTTONS (MATCHING YOUR DESIGN)
+  // ============================================
   actionButtonsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
-    paddingTop: 12,
+    marginTop: 16,
+    gap: 10,
   },
+  
   editButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    justifyContent: 'center',
+    paddingVertical: 12,
     backgroundColor: '#E8F5E9',
-    borderRadius: 6,
+    borderRadius: 16,
+    flex: 1,
   },
+  
   editButtonText: {
-    fontSize: 12,
-    color: '#4CAF50',
-    fontWeight: '600',
-    marginLeft: 4,
+    fontSize: 15,
+    color: '#2E7D32',
+    fontWeight: '700',
+    marginLeft: 6,
   },
+  
   viewDetailsButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    justifyContent: 'center',
+    paddingVertical: 12,
+    backgroundColor: '#E3F2FD',
+    borderRadius: 16,
+    flex: 1,
   },
+  
   viewDetailsText: {
-    fontSize: 12,
-    color: colors.brandColor,
-    fontWeight: '600',
+    fontSize: 15,
+    color: '#1976D2',
+    fontWeight: '700',
     marginRight: 4,
   },
+  
   deleteButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    justifyContent: 'center',
+    paddingVertical: 12,
     backgroundColor: '#FFEBEE',
-    borderRadius: 6,
+    borderRadius: 16,
+    flex: 1,
   },
+  
   deleteButtonText: {
-    fontSize: 12,
-    color: '#f44336',
-    fontWeight: '600',
-    marginLeft: 4,
+    fontSize: 15,
+    color: '#D32F2F',
+    fontWeight: '700',
+    marginLeft: 6,
   },
+  
   disabledActionButton: {
     backgroundColor: '#F5F5F5',
+    opacity: 0.6,
   },
+  
   disabledActionText: {
-    color: '#999',
+    color: '#999999',
   },
+  
+  // ============================================
+  // EMPTY STATE
+  // ============================================
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 60,
+    paddingVertical: 80,
     paddingHorizontal: 32,
   },
+  
   emptyText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#666',
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#666666',
     marginTop: 16,
     marginBottom: 8,
   },
+  
   emptySubText: {
-    fontSize: 14,
-    color: '#999',
+    fontSize: 15,
+    color: '#999999',
     textAlign: 'center',
     marginBottom: 24,
+    lineHeight: 22,
   },
+  
   addButton: {
     backgroundColor: colors.brandColor,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    borderRadius: 16,
+    shadowColor: colors.brandColor,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
   },
+  
   addButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
+  
+  // ============================================
+  // MODAL STYLES (MATCHING DETAIL VIEW)
+  // ============================================
   modalContainer: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F5F5F5',
   },
+  
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 60,
+    paddingHorizontal: 20,
+    paddingTop: 16,
     paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 3,
   },
+  
   modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: colors.black,
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#000000',
   },
+  
   saveButton: {
     fontSize: 16,
     color: colors.brandColor,
-    fontWeight: '600',
+    fontWeight: '700',
   },
+  
   disabledButton: {
-    opacity: 0.5,
+    opacity: 0.4,
   },
+  
   modalContent: {
     flex: 1,
-    paddingHorizontal: 16,
+    paddingTop: 16,
   },
+  
+  // ============================================
+  // FORM INPUTS
+  // ============================================
   inputGroup: {
-    marginBottom: 16,
+    marginBottom: 20,
+    paddingHorizontal: 20,
   },
+  
   inputLabel: {
-    fontSize: 14,
-    color: colors.black,
-    marginBottom: 8,
-    fontWeight: '500',
+    fontSize: 15,
+    color: '#000000',
+    marginBottom: 10,
+    fontWeight: '600',
   },
+  
   textInput: {
     borderWidth: 1,
     borderColor: '#E0E0E0',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     fontSize: 16,
-    color: colors.black,
+    color: '#000000',
+    backgroundColor: '#FFFFFF',
   },
+  
   textArea: {
     height: 100,
     textAlignVertical: 'top',
+    paddingTop: 14,
   },
+  
   switchGroup: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    marginBottom: 20,
+    backgroundColor: '#FFFFFF',
+    padding: 16,
+    marginHorizontal: 20,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
   },
+  
+  // ============================================
+  // HOURS EDITING
+  // ============================================
   hourRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 12,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    marginHorizontal: 20,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
   },
+  
   dayLabel: {
-    fontSize: 14,
-    color: colors.black,
-    fontWeight: '500',
+    fontSize: 15,
+    color: '#000000',
+    fontWeight: '600',
     width: 100,
   },
+  
   timeInputs: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
   },
+  
   timeInput: {
     borderWidth: 1,
     borderColor: '#E0E0E0',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     fontSize: 14,
-    color: colors.black,
+    color: '#000000',
     textAlign: 'center',
     flex: 1,
     marginHorizontal: 4,
+    backgroundColor: '#F5F5F5',
+    fontWeight: '500',
   },
+  
   timeSeparator: {
     fontSize: 14,
-    color: '#999',
+    color: '#999999',
     marginHorizontal: 8,
+    fontWeight: '600',
   },
+  
   sectionHeader: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: colors.black,
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#000000',
+    marginTop: 12,
     marginBottom: 16,
+    paddingHorizontal: 20,
   },
+  
+  // ============================================
+  // IMAGE MANAGEMENT (MATCHING YOUR DESIGN)
+  // ============================================
   imageSection: {
     marginBottom: 20,
+    paddingHorizontal: 20,
   },
+  
   imageContainer: {
     alignItems: 'center',
   },
+  
   imagePickerButton: {
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: '#E8F4FD',
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
+    borderWidth: 2,
+    borderColor: '#BBDEFB',
   },
+  
   contactPersonImageLarge: {
     width: 120,
     height: 120,
     borderRadius: 60,
   },
+  
   placeholderImage: {
     alignItems: 'center',
   },
+  
   placeholderText: {
     fontSize: 12,
-    color: '#999',
+    color: '#999999',
     marginTop: 4,
+    fontWeight: '500',
   },
+  
   uploadingOverlay: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    backgroundColor: 'rgba(0,0,0,0.6)',
     borderRadius: 60,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  
   editImageIcon: {
     position: 'absolute',
     bottom: 0,
     right: 0,
     backgroundColor: colors.brandColor,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#FFFFFF',
+  },
+  
+  imageHint: {
+    fontSize: 13,
+    color: '#999999',
+    marginTop: 12,
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  
+  imageSelectedText: {
+    fontSize: 13,
+    color: '#2E7D32',
+    marginTop: 6,
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  
+  // ============================================
+  // SHOP IMAGES (MATCHING YOUR DESIGN)
+  // ============================================
+  imageCountSection: {
+    marginBottom: 20,
+    padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    marginHorizontal: 20,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  
+  imageCountText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  
+  imageCountSubText: {
+    fontSize: 14,
+    color: '#666666',
+    marginTop: 4,
+  },
+  
+  changesText: {
+    fontSize: 13,
+    color: colors.brandColor,
+    marginTop: 8,
+    fontWeight: '600',
+  },
+  
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#000000',
+    marginBottom: 12,
+  },
+  
+  imagesRow: {
+    flexDirection: 'row',
+    paddingVertical: 8,
+  },
+  
+  shopImageEdit: {
+    width: 180,
+    height: 120,
+    borderRadius: 16,
+    marginRight: 12,
+  },
+  
+  deletedImage: {
+    opacity: 0.4,
+  },
+  
+  restoreImageButton: {
+    position: 'absolute',
+    top: 8,
+    right: 20,
+    backgroundColor: '#2E7D32',
     width: 32,
     height: 32,
     borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
   },
-  imageHint: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 8,
-    textAlign: 'center',
-  },
-  imageSelectedText: {
-    fontSize: 12,
-    color: '#4CAF50',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  imageCountSection: {
-    marginBottom: 20,
-    padding: 16,
-    backgroundColor: '#F8F9FA',
-    borderRadius: 8,
-  },
-  imageCountText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: colors.black,
-  },
-  imageCountSubText: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 4,
-  },
-  changesText: {
-    fontSize: 12,
-    color: colors.brandColor,
-    marginTop: 4,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: colors.black,
-    marginBottom: 12,
-  },
-  imagesRow: {
-    flexDirection: 'row',
-  },
-  shopImageEdit: {
-    width: 80,
-    height: 80,
-    borderRadius: 8,
-    marginRight: 8,
-  },
-  deletedImage: {
-    opacity: 0.5,
-  },
-  restoreImageButton: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-    backgroundColor: '#4CAF50',
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
+  
   removeImageButton: {
     position: 'absolute',
-    top: 4,
-    right: 4,
-    backgroundColor: '#f44336',
-    width: 24,
-    height: 24,
-    borderRadius: 12,
+    top: 8,
+    right: 20,
+    backgroundColor: '#D32F2F',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
   },
+  
   imageLabel: {
     position: 'absolute',
-    bottom: 4,
-    left: 4,
+    bottom: 8,
+    left: 8,
     backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
+  
   deletedImageLabel: {
-    backgroundColor: 'rgba(244, 67, 54, 0.7)',
+    backgroundColor: 'rgba(211, 47, 47, 0.85)',
   },
+  
   newImageLabel: {
-    backgroundColor: 'rgba(76, 175, 80, 0.7)',
+    backgroundColor: 'rgba(46, 125, 50, 0.85)',
   },
+  
   imageLabelText: {
-    fontSize: 10,
+    fontSize: 11,
     color: '#FFFFFF',
+    fontWeight: '700',
   },
+  
   deletedOverlay: {
     position: 'absolute',
     top: 0,
@@ -2694,121 +2992,173 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.5)',
-    borderRadius: 8,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  
   addImageSection: {
     alignItems: 'center',
     marginVertical: 20,
+    paddingHorizontal: 20,
   },
+  
   addImageButton: {
     alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#F8F9FA',
-    borderRadius: 12,
+    padding: 24,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     width: '100%',
+    borderWidth: 2,
+    borderColor: colors.brandColor,
+    borderStyle: 'dashed',
   },
+  
   addImageText: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.brandColor,
     marginTop: 8,
   },
+  
   addImageSubText: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: 13,
+    color: '#666666',
     marginTop: 4,
     textAlign: 'center',
   },
+  
   slotText: {
-    fontSize: 12,
+    fontSize: 13,
     color: colors.brandColor,
-    marginTop: 4,
-    fontWeight: '600',
+    marginTop: 6,
+    fontWeight: '700',
   },
+  
   limitReachedContainer: {
     alignItems: 'center',
     padding: 20,
+    backgroundColor: '#E8F5E9',
+    borderRadius: 16,
+    marginHorizontal: 20,
   },
+  
   limitReachedText: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#4CAF50',
+    fontWeight: '700',
+    color: '#2E7D32',
     marginTop: 8,
   },
+  
   limitReachedSubText: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: 13,
+    color: '#666666',
     marginTop: 4,
     textAlign: 'center',
   },
+  
   tipsSection: {
     padding: 16,
-    backgroundColor: '#F8F9FA',
-    borderRadius: 8,
+    backgroundColor: '#FFFBF0',
+    borderRadius: 16,
     marginBottom: 20,
+    marginHorizontal: 20,
+    borderWidth: 1,
+    borderColor: '#FFE082',
   },
+  
   tipsTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: colors.black,
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#000000',
     marginBottom: 8,
   },
+  
   tipsText: {
-    fontSize: 12,
-    color: '#666',
-    lineHeight: 18,
+    fontSize: 13,
+    color: '#666666',
+    lineHeight: 20,
   },
+  
+  // ============================================
+  // DETAIL SECTIONS (MATCHING YOUR DESIGN)
+  // ============================================
   detailSection: {
-    marginBottom: 24,
+    marginBottom: 16,
+    padding: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    marginHorizontal: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
+  
   sectionTitleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
   },
+  
   sectionTitleWithImage: {
     flexDirection: 'row',
     alignItems: 'center',
   },
+  
   contactPersonImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     marginLeft: 12,
+    borderWidth: 2,
+    borderColor: '#E8F4FD',
   },
+  
   imageActionButtons: {
     alignItems: 'flex-end',
   },
+  
   editImagesButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: '#FFE8CC',
+    borderRadius: 16,
   },
+  
   editImagesButtonText: {
     fontSize: 14,
     color: colors.brandColor,
-    marginLeft: 4,
+    marginLeft: 6,
+    fontWeight: '700',
   },
+  
   subText: {
     fontSize: 12,
-    color: '#666',
+    color: '#999999',
     marginTop: 4,
   },
+  
   imageScrollView: {
-    marginHorizontal: -16,
-    paddingHorizontal: 16,
+    marginHorizontal: -20,
+    paddingHorizontal: 20,
   },
+  
   shopImageContainer: {
     position: 'relative',
     marginRight: 12,
   },
+  
   shopImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 8,
+    width: 180,
+    height: 120,
+    borderRadius: 16,
   },
+  
   deleteImageOverlay: {
     position: 'absolute',
     top: 0,
@@ -2816,129 +3166,173 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.5)',
-    borderRadius: 8,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
   },
+  
   addImageQuickButton: {
-    width: 100,
-    height: 100,
-    backgroundColor: '#F5F5F5',
-    borderRadius: 8,
+    width: 180,
+    height: 120,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2,
     borderColor: colors.brandColor,
     borderStyle: 'dashed',
   },
+  
   addImageQuickText: {
-    fontSize: 12,
+    fontSize: 13,
     color: colors.brandColor,
-    marginTop: 4,
+    marginTop: 6,
+    fontWeight: '700',
   },
+  
   noImagesContainer: {
     alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#F8F9FA',
-    borderRadius: 8,
+    padding: 24,
+    backgroundColor: '#F8F8F8',
+    borderRadius: 12,
   },
+  
   noImagesText: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 8,
+    fontSize: 15,
+    color: '#999999',
+    marginTop: 12,
     marginBottom: 16,
+    fontWeight: '500',
   },
+  
   addFirstImageButton: {
     alignItems: 'center',
+    padding: 16,
+    backgroundColor: '#FFE8CC',
+    borderRadius: 16,
   },
+  
   addFirstImageText: {
     fontSize: 16,
     color: colors.brandColor,
-    fontWeight: '600',
+    fontWeight: '700',
     marginTop: 8,
   },
+  
   addFirstImageSubText: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: 13,
+    color: '#666666',
+    marginTop: 4,
   },
+  
   contactItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 16,
   },
+  
   contactText: {
-    fontSize: 14,
-    color: '#666',
-    marginLeft: 8,
+    fontSize: 15,
+    color: '#666666',
+    marginLeft: 12,
     flex: 1,
   },
+  
+  // ============================================
+  // SERVICES
+  // ============================================
   servicesContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    gap: 8,
   },
+  
   serviceTag: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#F0F8FF',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     borderRadius: 20,
-    marginRight: 8,
-    marginBottom: 8,
     position: 'relative',
+    borderWidth: 1,
+    borderColor: '#BBDEFB',
   },
+  
   disabledServiceTag: {
     backgroundColor: '#F5F5F5',
+    borderColor: '#E0E0E0',
+    opacity: 0.7,
   },
+  
   serviceText: {
-    fontSize: 14,
-    color: colors.black,
-    fontWeight: '500',
+    fontSize: 15,
+    color: '#000000',
+    fontWeight: '600',
   },
+  
   servicePriceText: {
-    fontSize: 14,
+    fontSize: 15,
     color: colors.brandColor,
-    fontWeight: 'bold',
+    fontWeight: '700',
     marginLeft: 8,
   },
+  
   serviceCategoryText: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: 13,
+    color: '#666666',
     marginLeft: 8,
   },
+  
   serviceEditIcon: {
     position: 'absolute',
-    top: -4,
-    right: -4,
+    top: -6,
+    right: -6,
     backgroundColor: colors.brandColor,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
   },
+  
   descriptionText: {
-    fontSize: 14,
-    color: '#666',
-    lineHeight: 20,
+    fontSize: 15,
+    color: '#666666',
+    lineHeight: 22,
   },
+  
+  // ============================================
+  // METRICS
+  // ============================================
   metricsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
+    paddingVertical: 8,
   },
+  
   metricItem: {
     alignItems: 'center',
   },
+  
   metricValue: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: colors.black,
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#000000',
   },
+  
   metricLabel: {
-    fontSize: 12,
-    color: '#666',
+    fontSize: 13,
+    color: '#999999',
     marginTop: 4,
+    fontWeight: '500',
   },
+  
+  // ============================================
+  // OWNERSHIP & ACTIONS
+  // ============================================
   ownershipBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2947,29 +3341,42 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     marginHorizontal: 16,
     marginTop: 8,
-    borderRadius: 8,
+    marginBottom: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#FFE0B2',
   },
+  
   ownershipBannerText: {
     fontSize: 14,
-    color: colors.black,
-    marginLeft: 8,
+    color: '#E65100',
+    marginLeft: 12,
     flex: 1,
+    lineHeight: 20,
+    fontWeight: '500',
   },
+  
   modalActions: {
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
+    padding: 20,
+    backgroundColor: '#FFFFFF',
   },
+  
   editCleanerButton: {
     backgroundColor: colors.brandColor,
-    paddingVertical: 14,
-    borderRadius: 8,
+    paddingVertical: 16,
+    borderRadius: 16,
     alignItems: 'center',
+    shadowColor: colors.brandColor,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 5,
   },
+  
   editCleanerButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 17,
+    fontWeight: '700',
   },
 });
 
