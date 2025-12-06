@@ -45,7 +45,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
       if (user?.userType === 'merchant') {
         router.replace('/merchantHome');
       } else if (user?.userType === 'driver') {
-        router.replace('/driver');
+        router.replace('/driverHome');
       } else {
         // Default to user home
         router.replace('/userHome');
@@ -89,7 +89,7 @@ function RootLayoutNav() {
       {shouldShowHeader && <Header notificationCount={3} />}
       
       <Stack screenOptions={{ headerShown: false }}>
-         <Stack.Screen name="index" />
+        <Stack.Screen name="index" />
         <Stack.Screen name="splash" />
         <Stack.Screen name="onboarding" />
         <Stack.Screen name="login" />
@@ -101,28 +101,41 @@ function RootLayoutNav() {
         <Stack.Screen name="EmailOTPSuccess" />
         <Stack.Screen name="userHome" />
         <Stack.Screen name="merchantHome" /> 
-        <Stack.Screen name="driver" />
-        {/* <Stack.Screen name="dryCleanerMerchant/merchantAddDryCleaner" />
-        <Stack.Screen name="dryCleanerMerchant/myDryCleaners" /> */}
+        <Stack.Screen name="driverHome" />
+        
+        {/* Driver Screens */}
+        <Stack.Screen name="dryCleanerDriver/driverHistory" />
+        <Stack.Screen name="QRCode" />
+        <Stack.Screen name="RideTrackingLocate" />
+        <Stack.Screen name="LocateDryCleaning1" />
+        <Stack.Screen name="FoodDeliveryHome" />
+        <Stack.Screen name="Vehicleinfo" />
+        <Stack.Screen name="MicroMobility" />
+        
+        {/* Merchant Screens */}
         <Stack.Screen name="merchant/merchantParkinglotList" />
         <Stack.Screen name="merchant/merchantGarageList" />
         <Stack.Screen name="merchant/merchantResidenceList" />
         <Stack.Screen name="merchant/dryClean" />
         <Stack.Screen name="merchant/merchantGarageForm" />
         <Stack.Screen name="merchant/merchantBookingHistoryScreen" />
+        
+        {/* Dry Cleaner User Screens */}
         <Stack.Screen name="dryCleanerUser/myOrder" />
         <Stack.Screen name="dryCleanerUser/allDrycleanerLocation" />
         <Stack.Screen name="dryCleanerUser/dryCleanersList" />
         <Stack.Screen name="dryCleanerUser/noOfItem" />
         <Stack.Screen name="dryCleanerUser/pickUpLocation" />
         <Stack.Screen name="dryCleanerUser/pickUpTimeDate" />
+        <Stack.Screen name="dryCleanerUser/payment" />
+        
+        {/* Parking User Screens */}
         <Stack.Screen name="parkingUser/parking" />
         <Stack.Screen name="parkingUser/historyScreen" />
         <Stack.Screen name="parkingUser/LiveSessionScreen" />
         <Stack.Screen name="parkingUser/FindParking" />
         <Stack.Screen name="parkingUser/ParkingSlot" />
         <Stack.Screen name="parkingUser/payment" />
-        {/* Add other merchant screens here */}
       </Stack>
     </View>
   );
@@ -132,9 +145,9 @@ export default function RootLayout() {
   return (
     <Provider store={store}>
       <StripeWrapper>
-      <AuthGuard>
-        <RootLayoutNav />
-      </AuthGuard>
+        <AuthGuard>
+          <RootLayoutNav />
+        </AuthGuard>
       </StripeWrapper>
     </Provider>
   );

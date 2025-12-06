@@ -40,34 +40,57 @@ export default function OrderSummaryApp() {
   const route = useRoute();
   const dispatch = useDispatch();
 
+  // Redux selectors
   const authToken = useSelector((state) => state.auth?.token);
   const user = useSelector((state) => state.auth.user);
   const scheduling = useSelector((state) => state.user?.scheduling);
   const addresses = useSelector((state) => state.user?.addresses);
-  const orderData = useSelector((state) => state.user?.order); // ← KEEP THIS ONE
+  const orderData = useSelector((state) => state.user?.order);
 
-  // Get route params and determine selected address
+  // Get route params
   const routeParams = route.params || {};
   
+  // ✅ FIX: Add this useMemo for selectedAddress
   const selectedAddress = useMemo(() => {
+    // Priority 1: Route params pickup address
     if (routeParams.pickupAddress) {
+      console.log('📍 Using address from route params:', routeParams.pickupAddress);
       return routeParams.pickupAddress;
     }
+    
+    // Priority 2: Home address
     if (addresses?.home?.fullAddress) {
+      console.log('📍 Using home address:', addresses.home.fullAddress);
       return addresses.home.fullAddress;
     }
+    
+    // Priority 3: Office address
     if (addresses?.office?.fullAddress) {
+      console.log('📍 Using office address:', addresses.office.fullAddress);
       return addresses.office.fullAddress;
     }
+    
+    // Fallback: Default message
+    console.log('⚠️ No address found, using default');
     return 'Address not specified';
   }, [routeParams, addresses]);
 
+  // Log selected address for debugging
+  useEffect(() => {
+    console.log('📍 Selected address updated:', selectedAddress);
+  }, [selectedAddress]);
+
+  // Stripe hook
   const {
     initializedPaymentSheet,
     openPayment,
+    resetPaymentState,
+    debugPaymentState,
     loading: stripeLoading,
+    isReadyForPayment,
   } = useStripeWrapper();
 
+  // Keep track of payment ready state
   const paymentReadyRef = useRef(false);
   const [localPaymentReady, setLocalPaymentReady] = useState(false);
 
@@ -342,145 +365,204 @@ export default function OrderSummaryApp() {
     throw error;
   }
 };
+const formatAddress = (address) => {
+  if (!address) return 'Not specified';
+  
+  if (typeof address === 'string') {
+    return address.trim() || 'Not specified';
+  }
+  
+  if (typeof address === 'object' && address !== null) {
+    if (address.fullAddress) {
+      return address.fullAddress.trim() || 'Not specified';
+    }
+    
+    if (address.street || address.city) {
+      const parts = [];
+      if (address.street) parts.push(address.street);
+      if (address.city) parts.push(address.city);
+      if (address.state) parts.push(address.state);
+      if (address.country) parts.push(address.country);
+      return parts.join(', ') || 'Not specified';
+    }
+  }
+  
+  return 'Not specified';
+};
 
 // ============================================
 // UPDATED handlePayment function
 // ============================================
 
-const handlePayment = async () => {
-  if (!orderData || !orderData.selectedCleaner) {
-    Alert.alert(
-      'Error',
-      'Please select a dry cleaner and add items to your order'
-    );
-    return;
-  }
-
-  if (!scheduling) {
-    Alert.alert('Error', 'Please schedule your pickup and delivery times');
-    return;
-  }
-
-  const freshOrderNumber = generateFreshOrderNumber();
-  const freshTrackingId = generateTrackingId();
-  setOrderNumber(freshOrderNumber);
-  setTrackingId(freshTrackingId);
-
-  setPaymentLoading(true);
-  setLocalPaymentReady(false);
-  paymentReadyRef.current = false;
-
-  let createdBookingId: string | null = null;
-  let currentStep = '';
-
-  try {
-    currentStep = 'Building booking data';
+ const handlePayment = async () => {
+    console.log('🚀 Starting payment process...');
     
-    // ✅ BUILD THE ISO DATETIME STRINGS FROM REDUX SCHEDULING DATA
-    let scheduledPickupDateTime: string;
-    let scheduledDeliveryDateTime: string;
-    
-    try {
-      // Try to use pre-formatted ISO strings if they exist
-      if (scheduling.scheduledPickupDateTime && scheduling.scheduledDeliveryDateTime) {
-        scheduledPickupDateTime = scheduling.scheduledPickupDateTime;
-        scheduledDeliveryDateTime = scheduling.scheduledDeliveryDateTime;
-        console.log('✅ Using pre-formatted datetime strings from Redux');
-      } else {
-        // Build them from individual fields
-        console.log('🔨 Building datetime strings from scheduling data:', {
-          pickup: { date: scheduling.pickupDate, month: scheduling.pickupMonth, time: scheduling.pickupTime },
-          delivery: { date: scheduling.deliveryDate, month: scheduling.deliveryMonth, time: scheduling.deliveryTime }
-        });
-        
-        scheduledPickupDateTime = buildISODate(
-          scheduling.pickupDate,
-          scheduling.pickupMonth,
-          scheduling.pickupTime
-        );
-        
-        scheduledDeliveryDateTime = buildISODate(
-          scheduling.deliveryDate,
-          scheduling.deliveryMonth,
-          scheduling.deliveryTime
-        );
-      }
-    } catch (dateError: any) {
-      console.error('❌ Failed to build datetime strings:', dateError);
+    // Validation checks
+    if (!orderData || !orderData.selectedCleaner) {
+      Alert.alert('Error', 'Please select a dry cleaner and add items to your order');
+      return;
+    }
+
+    if (!scheduling) {
+      Alert.alert('Error', 'Please schedule your pickup and delivery times');
+      return;
+    }
+
+    // Check if address is available
+    if (!selectedAddress || selectedAddress === 'Address not specified') {
+      console.error('❌ No valid address found');
       Alert.alert(
-        'Invalid Schedule',
-        'There was an error with your pickup/delivery schedule. Please go back and select your times again.'
+        'Address Required',
+        'Please add a pickup/delivery address before proceeding with payment.'
       );
       return;
     }
 
-    // Build the booking data
-    const bookingData = {
-      userId: user?._id,
-      dryCleanerId: orderData.selectedCleaner._id,
-      items: orderData.items.map((item: any) => ({
-        itemId: item._id,
-        itemName: item.name,
-        quantity: item.quantity,
-        price: item.price,
-        starchLevel: item.starchLevel,
-        washOnly: item.washOnly,
-        additionalService: item.additionalservice || '',
-        options: item.options || {},
-      })),
-      scheduledPickupDateTime,
-      scheduledDeliveryDateTime,
-      pickupAddress: selectedAddress || 'Not specified',
-      deliveryAddress: selectedAddress || 'Not specified',
-      orderNumber: freshOrderNumber,
-      trackingId: freshTrackingId,
-      status: 'pending',
-      totalAmount: calculations.total,
-      subtotal: calculations.subtotal,
-      deliveryCharge: calculations.deliveryCharge,
-      discount: calculations.discount || 0,
-    };
+    console.log('✅ Using address:', selectedAddress);
 
-    // Validation
-    currentStep = 'Validating booking data';
-    const validationErrors: string[] = [];
-    if (!user?._id) validationErrors.push('User ID is missing');
-    if (!orderData.selectedCleaner?._id) validationErrors.push('Dry cleaner ID is missing');
-    if (!scheduledPickupDateTime) validationErrors.push('Scheduled pickup date/time is invalid');
-    if (!scheduledDeliveryDateTime) validationErrors.push('Scheduled delivery date/time is invalid');
+    const freshOrderNumber = generateFreshOrderNumber();
+    const freshTrackingId = generateTrackingId();
+    setOrderNumber(freshOrderNumber);
+    setTrackingId(freshTrackingId);
 
-    const now = new Date();
-    if (scheduledPickupDateTime && new Date(scheduledPickupDateTime) <= now) {
-      validationErrors.push('Scheduled pickup date must be in the future');
-    }
-    if (scheduledDeliveryDateTime && new Date(scheduledDeliveryDateTime) <= new Date(scheduledPickupDateTime)) {
-      validationErrors.push('Scheduled delivery date must be after pickup date');
-    }
-    if (!orderData.items || orderData.items.length === 0) {
-      validationErrors.push('No items in order');
-    }
-    if (calculations.deliveryCharge === undefined || calculations.deliveryCharge === null) {
-      validationErrors.push('Delivery charge is required');
-    }
+    setPaymentLoading(true);
+    setLocalPaymentReady(false);
+    paymentReadyRef.current = false;
 
-    if (validationErrors.length > 0) {
-      console.error('❌ Validation errors:', validationErrors);
-      throw new Error(`Validation failed: ${validationErrors.join(', ')}`);
-    }
+    let createdBookingId: string | null = null;
+    let currentStep = '';
 
-    console.log('✅ Validated booking data:', {
-      deliveryCharge: calculations.deliveryCharge,
-      scheduledPickupDateTime: new Date(scheduledPickupDateTime).toISOString(),
-      scheduledDeliveryDateTime: new Date(scheduledDeliveryDateTime).toISOString(),
-      isPickupInFuture: new Date(scheduledPickupDateTime) > now,
-      isDeliveryAfterPickup: new Date(scheduledDeliveryDateTime) > new Date(scheduledPickupDateTime),
-    });
-
-    currentStep = 'Creating booking';
-    let bookingResponse;
     try {
-      console.log("📦 Booking Payload Sent:", bookingData);
-      bookingResponse = await axiosInstance.post(
+      currentStep = 'Building booking data';
+      console.log(`📋 Step: ${currentStep}`);
+      
+      // Build datetime strings
+      let scheduledPickupDateTime: string;
+      let scheduledDeliveryDateTime: string;
+      
+      try {
+        if (scheduling.scheduledPickupDateTime && scheduling.scheduledDeliveryDateTime) {
+          scheduledPickupDateTime = scheduling.scheduledPickupDateTime;
+          scheduledDeliveryDateTime = scheduling.scheduledDeliveryDateTime;
+          console.log('✅ Using pre-formatted datetime strings from Redux');
+        } else {
+          console.log('🔨 Building datetime strings from scheduling data');
+          
+          scheduledPickupDateTime = buildISODate(
+            scheduling.pickupDate,
+            scheduling.pickupMonth,
+            scheduling.pickupTime
+          );
+          
+          scheduledDeliveryDateTime = buildISODate(
+            scheduling.deliveryDate,
+            scheduling.deliveryMonth,
+            scheduling.deliveryTime
+          );
+        }
+      } catch (dateError: any) {
+        console.error('❌ Failed to build datetime strings:', dateError);
+        Alert.alert(
+          'Invalid Schedule',
+          'There was an error with your pickup/delivery schedule. Please go back and select your times again.'
+        );
+        setPaymentLoading(false);
+        return;
+      }
+
+      // ✅ Build booking data with proper address handling
+      const bookingData = {
+        userId: user?._id,
+        dryCleaner: orderData.selectedCleaner._id,
+        
+        orderItems: orderData.items.map((item: any) => ({
+          itemId: item._id,
+          name: item.name,
+          category: item.category || 'Clothes',
+          quantity: item.quantity,
+          price: item.price,
+          starchLevel: item.starchLevel || 1,
+          washOnly: item.washOnly || false,
+          options: {
+            washAndFold: item.options?.washAndFold || false,
+            button: item.options?.button || false,
+            zipper: item.options?.zipper || false,
+          },
+        })),
+        
+        isScheduled: true,
+        scheduledPickupDateTime,
+        scheduledDeliveryDateTime,
+        
+        // ✅ Use selectedAddress variable
+        pickupAddress: selectedAddress,
+        dropoffAddress: selectedAddress,
+        
+        orderNumber: freshOrderNumber,
+        trackingId: freshTrackingId,
+        
+        pricing: {
+          subtotal: calculations.subtotal,
+          serviceFees: calculations.serviceFees,
+          deliveryCharge: calculations.deliveryCharge,
+          platformFee: calculations.platformFee,
+          totalAmount: calculations.total,
+        },
+        
+        distance: DELIVERY_DISTANCE_KM,
+        time: 30,
+        price: calculations.subtotal,
+        deliveryCharge: calculations.deliveryCharge,
+        bookingType: 'pickup',
+        paymentMethod: paymentMethod.toUpperCase(),
+        paymentStatus: 'pending',
+        status: 'pending',
+      };
+
+      // Validation
+      currentStep = 'Validating booking data';
+      console.log(`📋 Step: ${currentStep}`);
+      
+      const validationErrors: string[] = [];
+      
+      if (!user?._id) validationErrors.push('User ID is missing');
+      if (!orderData.selectedCleaner?._id) validationErrors.push('Dry cleaner ID is missing');
+      if (!scheduledPickupDateTime) validationErrors.push('Scheduled pickup date/time is invalid');
+      if (!scheduledDeliveryDateTime) validationErrors.push('Scheduled delivery date/time is invalid');
+      if (!selectedAddress || selectedAddress === 'Address not specified') {
+        validationErrors.push('Valid address is required');
+      }
+      
+      const now = new Date();
+      const pickupDate = new Date(scheduledPickupDateTime);
+      const deliveryDate = new Date(scheduledDeliveryDateTime);
+      
+      if (pickupDate <= now) {
+        validationErrors.push('Scheduled pickup date must be in the future');
+      }
+      if (deliveryDate <= pickupDate) {
+        validationErrors.push('Scheduled delivery date must be after pickup date');
+      }
+      if (!orderData.items || orderData.items.length === 0) {
+        validationErrors.push('No items in order');
+      }
+      if (calculations.deliveryCharge === undefined || calculations.deliveryCharge === null) {
+        validationErrors.push('Delivery charge is required');
+      }
+
+      if (validationErrors.length > 0) {
+        console.error('❌ Validation errors:', validationErrors);
+        throw new Error(`Validation failed: ${validationErrors.join(', ')}`);
+      }
+
+      console.log('✅ Booking data validated');
+
+      // Create booking
+      currentStep = 'Creating booking';
+      console.log(`📋 Step: ${currentStep}`);
+      console.log("📦 Booking Payload:", JSON.stringify(bookingData, null, 2));
+      
+      const bookingResponse = await axiosInstance.post(
         '/users/create',
         bookingData,
         {
@@ -491,23 +573,22 @@ const handlePayment = async () => {
           timeout: 15000,
         }
       );
-    } catch (bookingError: any) {
-      console.error('❌ Booking creation failed:', bookingError);
-      throw new Error(`Booking creation failed: ${bookingError.message}`);
-    }
 
-    if (!bookingResponse.data.success) {
-      throw new Error(bookingResponse.data.message || 'Failed to create booking');
-    }
+      if (!bookingResponse.data.success) {
+        throw new Error(bookingResponse.data.message || 'Failed to create booking');
+      }
 
-    const createdBooking = bookingResponse.data.data;
-    createdBookingId = createdBooking._id;
-    setCompletedBookingId(createdBooking._id);
+      const createdBooking = bookingResponse.data.data;
+      createdBookingId = createdBooking._id;
+      setCompletedBookingId(createdBooking._id);
 
-    currentStep = 'Creating payment intent';
-    let paymentIntentResponse;
-    try {
-      paymentIntentResponse = await axiosInstance.post(
+      console.log('✅ Booking created successfully:', createdBookingId);
+
+      // Create payment intent
+      currentStep = 'Creating payment intent';
+      console.log(`📋 Step: ${currentStep}`);
+      
+      const paymentIntentResponse = await axiosInstance.post(
         '/users/payment-intent',
         {
           bookingId: createdBooking._id,
@@ -522,62 +603,64 @@ const handlePayment = async () => {
           },
         }
       );
-    } catch (paymentError: any) {
-      console.error('❌ Payment intent creation failed:', paymentError);
-      throw new Error(`Payment initialization failed: ${paymentError.message}`);
-    }
 
-    if (!paymentIntentResponse.data.success) {
-      throw new Error('Failed to create payment intent');
-    }
-
-    const { paymentIntent, ephemeralKey, customerId, paymentIntentId } =
-      paymentIntentResponse.data.data;
-
-    currentStep = 'Initializing payment sheet';
-    if (!paymentIntent || !ephemeralKey || !customerId) {
-      throw new Error('Missing required payment data from server');
-    }
-
-    const initialized = await initializedPaymentSheet(
-      paymentIntent,
-      ephemeralKey,
-      customerId,
-      paymentIntentId
-    );
-
-    if (!initialized) {
-      throw new Error('Failed to initialize payment sheet');
-    }
-
-    setLocalPaymentReady(true);
-    paymentReadyRef.current = true;
-
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    if (!paymentReadyRef.current) {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      if (!paymentReadyRef.current) {
-        throw new Error('Payment sheet failed to become ready');
+      if (!paymentIntentResponse.data.success) {
+        throw new Error('Failed to create payment intent');
       }
-    }
 
-    currentStep = 'Opening payment sheet';
-    let paymentResult;
-    try {
-      paymentResult = await openPayment();
-    } catch (paymentOpenError: any) {
-      console.error('❌ Error opening payment sheet:', paymentOpenError);
-      throw new Error(`Failed to open payment sheet: ${paymentOpenError.message}`);
-    }
+      const { paymentIntent, ephemeralKey, customerId, paymentIntentId } =
+        paymentIntentResponse.data.data;
 
-    // Payment result handling
-    if (paymentResult === true) {
-      // Payment succeeded — confirm on backend
-      currentStep = 'Confirming payment';
-      let confirmResponse;
-      try {
-        confirmResponse = await axiosInstance.post(
+      console.log('✅ Payment intent created:', {
+        hasPaymentIntent: !!paymentIntent,
+        hasEphemeralKey: !!ephemeralKey,
+        hasCustomerId: !!customerId,
+        paymentIntentId,
+      });
+
+      // Initialize payment sheet
+      currentStep = 'Initializing payment sheet';
+      console.log(`📋 Step: ${currentStep}`);
+      
+      if (!paymentIntent || !ephemeralKey || !customerId) {
+        throw new Error('Missing required payment data from server');
+      }
+
+      const initialized = await initializedPaymentSheet(
+        paymentIntent,
+        ephemeralKey,
+        customerId,
+        paymentIntentId
+      );
+
+      if (!initialized) {
+        throw new Error('Failed to initialize payment sheet');
+      }
+
+      setLocalPaymentReady(true);
+      paymentReadyRef.current = true;
+
+      console.log('⏳ Waiting for payment sheet to be fully ready...');
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      // Open payment sheet
+      currentStep = 'Opening payment sheet';
+      console.log(`📋 Step: ${currentStep}`);
+      console.log('💳 About to open payment sheet...');
+      
+      // Debug payment state before opening
+      debugPaymentState();
+      
+      const paymentResult = await openPayment();
+      
+      console.log('💳 Payment result received:', paymentResult);
+
+      // Handle payment result
+      if (paymentResult === true) {
+        console.log('✅ Payment successful, confirming on backend...');
+        currentStep = 'Confirming payment';
+        
+        const confirmResponse = await axiosInstance.post(
           '/users/confirm-payment',
           {
             bookingId: createdBooking._id,
@@ -591,141 +674,80 @@ const handlePayment = async () => {
             },
           }
         );
-      } catch (confirmError: any) {
-        console.error('❌ Payment confirmation failed:', confirmError);
-        throw new Error(`Payment confirmation failed: ${confirmError.message}`);
-      }
 
-      if (confirmResponse.data.success) {
-        setShowPaymentModal(false);
-        setShowSuccessModal(true);
-        console.log('✅ Payment completed successfully for order:', freshOrderNumber);
-      } else {
-        throw new Error('Payment confirmation failed');
-      }
-    } else if (paymentResult === false) {
-      // User cancelled or dismissed the payment sheet
-      Alert.alert(
-        'Payment Cancelled',
-        'You have cancelled the payment. Would you like to try again or cancel the booking?',
-        [
-          {
-            text: 'Try Again',
-            onPress: async () => {
-              try {
-                const tryAgainResult = await openPayment();
-                if (tryAgainResult === true) {
-                  const confirmResp = await axiosInstance.post(
-                    '/users/confirm-payment',
-                    {
-                      bookingId: createdBookingId,
-                      orderNumber: freshOrderNumber,
-                      paymentIntentId: paymentIntentId || paymentIntent,
-                    },
-                    {
-                      headers: {
-                        Authorization: `Bearer ${authToken}`,
-                        'Content-Type': 'application/json',
-                      },
+        if (confirmResponse.data.success) {
+          console.log('✅ Payment confirmed on backend');
+          setShowPaymentModal(false);
+          setShowSuccessModal(true);
+          resetPaymentState();
+        } else {
+          throw new Error('Payment confirmation failed on backend');
+        }
+        
+      } else if (paymentResult === false) {
+        console.log('ℹ️ Payment cancelled by user');
+        
+        Alert.alert(
+          'Payment Cancelled',
+          'You cancelled the payment. Would you like to try again or cancel the booking?',
+          [
+            {
+              text: 'Try Again',
+              onPress: async () => {
+                console.log('🔄 User chose to retry payment...');
+                try {
+                  const retryResult = await openPayment();
+                  
+                  if (retryResult === true) {
+                    const confirmResp = await axiosInstance.post(
+                      '/users/confirm-payment',
+                      { bookingId: createdBookingId, orderNumber: freshOrderNumber, paymentIntentId },
+                      { headers: { Authorization: `Bearer ${authToken}` } }
+                    );
+                    
+                    if (confirmResp.data?.success) {
+                      setShowPaymentModal(false);
+                      setShowSuccessModal(true);
+                      resetPaymentState();
                     }
-                  );
-                  if (confirmResp.data?.success) {
-                    setShowPaymentModal(false);
-                    setShowSuccessModal(true);
-                    console.log('✅ Payment completed successfully on retry for order:', freshOrderNumber);
-                  } else {
-                    Alert.alert('Error', 'Payment confirmed but backend failed to record it. Please contact support.');
                   }
-                } else {
-                  console.log('User cancelled again. Booking remains pending.');
+                } catch (retryErr) {
+                  console.error('Retry failed:', retryErr);
                 }
-              } catch (retryErr) {
-                console.error('Retry payment failed:', retryErr);
-                Alert.alert('Retry Failed', 'Unable to complete payment retry. You can cancel the booking if you wish.');
               }
-            }
-          },
-          {
-            text: 'Cancel Booking',
-            style: 'destructive',
-            onPress: async () => {
-              if (createdBookingId) {
-                await handleBookingCancellation(createdBookingId, freshOrderNumber, 'Cancelled by user after payment dismissal');
-                Alert.alert('Booking Cancelled', `Your booking ${freshOrderNumber} has been cancelled.`);
-              } else {
-                Alert.alert('Info', 'No booking to cancel');
-              }
-            }
-          },
-          { text: 'Close', style: 'cancel' }
-        ]
-      );
-    } else {
-      throw new Error('Payment result unclear');
-    }
-  } catch (err: any) {
-    console.error('❌ Payment error at step:', currentStep, err);
-
-    if (createdBookingId) {
-      Alert.alert(
-        'Payment Error',
-        `There was an error during payment (${currentStep}). Would you like to retry payment or cancel the booking?\n\nError: ${err.message}`,
-        [
-          {
-            text: 'Retry Payment',
-            onPress: async () => {
-              try {
-                const retryResult = await openPayment();
-                if (retryResult === true) {
-                  await axiosInstance.post(
-                    '/users/confirm-payment',
-                    {
-                      bookingId: createdBookingId,
-                      orderNumber: freshOrderNumber,
-                      paymentIntentId: undefined,
-                    },
-                    {
-                      headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
-                    }
-                  );
-                  setShowPaymentModal(false);
-                  setShowSuccessModal(true);
-                } else {
-                  console.log('Retry cancelled by user.');
+            },
+            {
+              text: 'Cancel Booking',
+              style: 'destructive',
+              onPress: async () => {
+                if (createdBookingId) {
+                  await handleBookingCancellation(createdBookingId, freshOrderNumber, 'Cancelled by user');
+                  resetPaymentState();
                 }
-              } catch (retryErr) {
-                console.error('Retry after error failed:', retryErr);
-                Alert.alert('Retry Failed', 'Retry failed — please try again later or cancel the booking.');
               }
-            }
-          },
-          {
-            text: 'Cancel Booking',
-            style: 'destructive',
-            onPress: async () => {
-              try {
-                await handleBookingCancellation(createdBookingId!, freshOrderNumber, `Payment failed at ${currentStep}: ${err.message}`);
-                Alert.alert('Booking Cancelled', `Booking ${freshOrderNumber} cancelled.`);
-              } catch (cancelErr) {
-                console.error('Cancellation after error failed:', cancelErr);
-                Alert.alert('Cancellation Failed', 'Could not cancel booking. Please contact support.');
-              }
-            }
-          },
-          { text: 'Close', style: 'cancel' }
-        ]
-      );
-    } else {
-      if (!err.message?.toLowerCase().includes('cancelled') && !err.message?.toLowerCase().includes('canceled')) {
-        Alert.alert('Payment Failed', 'Payment failed. Please try again.');
+            },
+            { text: 'Keep Pending', style: 'cancel' }
+          ]
+        );
       }
+      
+    } catch (err: any) {
+      console.error('❌ Payment error at step:', currentStep);
+      console.error('❌ Error details:', err);
+
+      const errorMessage = err.message || 'An unknown error occurred';
+      
+      if (!errorMessage.toLowerCase().includes('cancel')) {
+        Alert.alert('Payment Failed', errorMessage);
+      }
+      
+    } finally {
+      console.log('🏁 Payment process completed, cleaning up...');
+      setPaymentLoading(false);
+      setLocalPaymentReady(false);
+      paymentReadyRef.current = false;
     }
-  } finally {
-    setPaymentLoading(false);
-    setLocalPaymentReady(false);
-    paymentReadyRef.current = false;
-  }
-};
+  };
 
 const handleBookingCancellation = async (
   bookingId: string, 

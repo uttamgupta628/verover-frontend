@@ -32,10 +32,10 @@ const Header: React.FC<HeaderProps> = ({
   const dispatch = useDispatch();
   const insets = useSafeAreaInsets();
   
-  const baseUrl = 'https://vervoer-backend2.onrender.com';
+  const baseUrl = 'http://192.168.29.162:5000/api';
 
-  // Get auth token and profile image from Redux state
-  const { token } = useSelector((state: RootState) => state.auth);
+  // Get auth data from Redux state
+  const { token, user } = useSelector((state: RootState) => state.auth);
   const { profileImage } = useSelector((state: RootState) => state.profile);
 
   const [isProfileDrawerVisible, setIsProfileDrawerVisible] = useState(false);
@@ -43,7 +43,7 @@ const Header: React.FC<HeaderProps> = ({
     'none' | 'search' | 'wallet' | 'notifications'
   >('none');
 
-  // Don't render if we're on an auth screen - CHECK THIS FIRST BEFORE HOOKS
+  // Don't render if we're on an auth screen
   const hideHeaderOnScreens = [
     'index', 'splash', 'onboarding', 'login', 'signup', 
     'forgot-password', 'forgot-success', 'forgot-reset-password', 
@@ -58,24 +58,74 @@ const Header: React.FC<HeaderProps> = ({
       if (shouldHideHeader) return; // Don't fetch if header is hidden
 
       const fetchProfile = async () => {
-        if (!token) return;
+        if (!token) {
+          console.log('No token available, skipping profile fetch');
+          return;
+        }
 
         try {
-          const response = await fetch(`${baseUrl}/api/users/get-profile`, {
-            headers: { Authorization: `Bearer ${token}` },
+          console.log('Fetching profile from:', `${baseUrl}/users/get-profile`);
+          
+          const response = await fetch(`${baseUrl}/users/get-profile`, {
+            method: 'GET',
+            headers: { 
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
           });
 
-          const data = await response.json();
-          if (response.ok && data?.data?.profileImage) {
-            dispatch(setProfileImage(data.data.profileImage));
+          // Check content type before parsing
+          const contentType = response.headers.get('content-type');
+          
+          if (!contentType || !contentType.includes('application/json')) {
+            console.error('Server returned non-JSON response. Content-Type:', contentType);
+            
+            // If we have user data in Redux, use that profile image instead
+            if (user) {
+              const userProfileImage = user.profileImage || user.driveProfileImage;
+              if (userProfileImage && userProfileImage !== profileImage) {
+                console.log('Using profile image from Redux user data');
+                dispatch(setProfileImage(userProfileImage));
+              }
+            }
+            return;
           }
-        } catch (error) {
-          console.error('Header fetch profile error:', error);
+
+          const data = await response.json();
+          
+          if (response.ok && data?.data?.profileImage) {
+            console.log('Profile image fetched successfully');
+            dispatch(setProfileImage(data.data.profileImage));
+          } else if (response.ok && data?.profileImage) {
+            console.log('Profile image found in alternate location');
+            dispatch(setProfileImage(data.profileImage));
+          } else {
+            console.log('No profile image in response, using user data from Redux');
+            
+            // Fallback to user data from Redux
+            if (user) {
+              const userProfileImage = user.profileImage || user.driveProfileImage;
+              if (userProfileImage && userProfileImage !== profileImage) {
+                dispatch(setProfileImage(userProfileImage));
+              }
+            }
+          }
+        } catch (error: any) {
+          console.error('Header fetch profile error:', error.message);
+          
+          // Fallback: Use profile image from Redux user data
+          if (user) {
+            const userProfileImage = user.profileImage || user.driveProfileImage;
+            if (userProfileImage && userProfileImage !== profileImage) {
+              console.log('Using profile image from Redux user data (fallback)');
+              dispatch(setProfileImage(userProfileImage));
+            }
+          }
         }
       };
 
       fetchProfile();
-    }, [token, dispatch, shouldHideHeader]),
+    }, [token, user, profileImage, dispatch, shouldHideHeader, baseUrl]),
   );
 
   if (shouldHideHeader) {
@@ -126,6 +176,15 @@ const Header: React.FC<HeaderProps> = ({
     }
   };
 
+  // Determine which profile image to use
+  const getDisplayProfileImage = () => {
+    // Priority: profileImage from Redux > user.driveProfileImage > user.profileImage > default
+    if (profileImage) return { uri: profileImage };
+    if (user?.driveProfileImage) return { uri: user.driveProfileImage };
+    if (user?.profileImage) return { uri: user.profileImage };
+    return images.profileImage;
+  };
+
   return (
     <View style={[
       styles.container, 
@@ -139,7 +198,7 @@ const Header: React.FC<HeaderProps> = ({
             onPress={() => setIsProfileDrawerVisible(true)}
             style={styles.profileContainer}>
             <Image
-              source={profileImage ? { uri: profileImage } : images.profileImage}
+              source={getDisplayProfileImage()}
               style={styles.profileImage}
               contentFit="cover"
               transition={300}

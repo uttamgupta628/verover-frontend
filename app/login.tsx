@@ -58,29 +58,35 @@ export default function Login() {
   const handleLogin = async (data: LoginFormData) => {
     setLoading(true);
     try {
-      // Dispatch login action
-      const resultAction = await dispatch(loginWithEmailPassword(data.email, data.password, data.userType));
+      // Call the login thunk - it returns the axios response
+      const response = await dispatch(loginWithEmailPassword(data.email, data.password, data.userType) as any);
       
-      // Check if login was successful
-      if (loginWithEmailPassword.fulfilled.match(resultAction)) {
-        const user = resultAction.payload?.user || resultAction.payload;
+      console.log('Login response:', response);
+      
+      // Check if the response indicates success
+      if (response && response.data) {
+        // Login was successful - the Redux state is already updated by loginSuccess
+        console.log('Login successful, redirecting...');
         
         // Redirect based on user type
-        if (user?.userType === 'merchant') {
-          router.replace('/merchant');
-        } else if (user?.userType === 'driver') {
-          router.replace('/driver');
+        if (data.userType === 'merchant') {
+          router.replace('/merchantHome');
+        } else if (data.userType === 'driver') {
+          router.replace('/driverHome');
         } else {
-          // Default to user home for 'user' type or if userType is undefined
           router.replace('/userHome');
         }
       } else {
-        // Handle rejected action
-        throw new Error(resultAction.payload as string || 'Login failed');
+        // If response doesn't have data, something went wrong
+        throw new Error('Invalid response from server');
       }
+      
     } catch (error: any) {
+      console.error('Login error caught:', error);
+      
       let errorMessage = 'Login failed. Please try again.';
       
+      // Handle Axios errors
       if (error.response?.data) {
         const errorData = error.response.data;
         
@@ -92,8 +98,10 @@ export default function Login() {
             errorMessage = errorCode.replace(/_/g, ' ').toLowerCase();
             errorMessage = errorMessage.charAt(0).toUpperCase() + errorMessage.slice(1);
           }
-        } else {
-          errorMessage = errorData.message || errorData.error || errorData;
+        } else if (errorData.message) {
+          errorMessage = errorData.message;
+        } else if (typeof errorData === 'string') {
+          errorMessage = errorData;
         }
       } else if (error.message) {
         errorMessage = error.message;
