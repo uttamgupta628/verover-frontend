@@ -113,9 +113,10 @@ function RootLayoutNav() {
         <Stack.Screen name="MicroMobility" />
         
         {/* Merchant Screens */}
-        <Stack.Screen name="merchant/merchantParkinglotList" />
-        <Stack.Screen name="merchant/merchantGarageList" />
-        <Stack.Screen name="merchant/merchantResidenceList" />
+        <Stack.Screen name="parkingMerchent/merchantParkinglotList" />
+        <Stack.Screen name="parkingMerchent/registerParkingLot" />
+        <Stack.Screen name="parkingMerchant/merchantGarageList" />
+        <Stack.Screen name="parkingMerchant/merchantResidenceList" />
         <Stack.Screen name="merchant/dryClean" />
         <Stack.Screen name="merchant/merchantGarageForm" />
         <Stack.Screen name="merchant/merchantBookingHistoryScreen" />

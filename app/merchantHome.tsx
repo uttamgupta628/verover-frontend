@@ -77,7 +77,7 @@ export default function MerchantHome() {
         <TouchableOpacity
           style={styles.button}
           onPress={() => {
-            router.push("/merchant/merchantParkinglotList");
+            router.push("/parkingMerchent/merchantParkinglotList");
           }}
         >
           <Image source={images.MerchantParkLot} style={styles.parkLotImage} />
@@ -86,7 +86,7 @@ export default function MerchantHome() {
         <TouchableOpacity
           style={styles.button}
           onPress={() => {
-            router.push("/merchant/merchantGarageList");
+            router.push("/parkingMerchant/merchantGarageList");
           }}
         >
           <Image source={images.Parking} style={styles.parkingImage} />
@@ -95,7 +95,7 @@ export default function MerchantHome() {
         <TouchableOpacity
           style={styles.button}
           onPress={() => {
-            router.push("/merchant/merchantResidenceList");
+            router.push("/parkingMerchant/merchantResidenceList");
           }}
         >
           <Image source={images.Parking} style={styles.parkingImage} />
