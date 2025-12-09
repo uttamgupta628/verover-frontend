@@ -39,7 +39,7 @@ export default function UserHome() {
           alignItems: 'center',
           width: responsiveWidth(90),
           justifyContent: 'space-between',
-          marginTop: '25%',
+          marginTop: '0%',
         }}>
         <View style={{ width: responsiveWidth(60) }}>
           <Text

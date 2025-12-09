@@ -189,7 +189,7 @@ const Header: React.FC<HeaderProps> = ({
     <View style={[
       styles.container, 
       isOverlayActive && styles.overlayContainer,
-      { top: insets.top }
+      { paddingTop: insets.top }
     ]}>
       {/* Header Bar - Only show when not in overlay mode */}
       {!isOverlayActive && (
@@ -250,7 +250,7 @@ const Header: React.FC<HeaderProps> = ({
 
       {/* Active Content View */}
       {isOverlayActive && (
-        <View style={[styles.content, { marginTop: insets.top }]}>
+        <View style={styles.content}>
           {renderActiveContent()}
         </View>
       )}
@@ -267,13 +267,17 @@ const Header: React.FC<HeaderProps> = ({
 const styles = StyleSheet.create({
   container: {
     zIndex: 100,
-    position: 'absolute',
-    width: responsiveWidth(100),
+    width: '100%',
+    backgroundColor: 'transparent',
   },
   overlayContainer: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: '#FFFFFF',
-    height: responsiveHeight(100),
+    zIndex: 1000,
   },
   header: {
     flexDirection: 'row',
@@ -282,7 +286,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: '#FFFFFF',
-    height: 80,
+    height: 70,
     borderBottomLeftRadius: 30,
     borderBottomRightRadius: 30,
     shadowColor: '#000',
@@ -290,7 +294,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
-    marginTop:-30,
     marginBottom: 10,
   },
   content: {

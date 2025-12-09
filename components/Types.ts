@@ -8,7 +8,6 @@ export type ParkingViewType =
   | 'liveSession'
   | 'history';
 
-// types.ts
 export interface SessionDetails {
   parkingNumber: string;
   zone: string;

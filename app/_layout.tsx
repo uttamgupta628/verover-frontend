@@ -24,7 +24,7 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!loading) {
-      setIsRouterReady(true);
+      // setIsRouterReady(true);
     }
   }, [loading]);
 

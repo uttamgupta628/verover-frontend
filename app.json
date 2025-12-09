@@ -6,7 +6,7 @@
     "version": "1.0.0",
     "extra": {
       "GOOGLE_MAPS_API_KEY": "AIzaSyBn5c5hk6ko6gEwZ3IyWK6AkU4_U_tp_4g",
-      "STRIPE_PUBLISHABLE_KEY": "pk_test_51RiYPuCA2ouXM3st2wpVMuiFIjrFfVs6O4YPd1VvkzBEyd41nKc6zlbIPe44m68xNCbolpAWABDkmrfiWk3vVeuQ00s6SBpuok"
+     "STRIPE_PUBLISHABLE_KEY": "pk_test_51SaGUy38jla8PJ9QpsvULyDCxRRuSkIbalrFm3WkcAgwxWUcfAaFz1pVZszxvIY51FDYhqBY1ipQHExEs947J3I100qQLaneAM"
     },
     "ios": {
       "supportsTablet": true,

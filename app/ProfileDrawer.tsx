@@ -62,7 +62,7 @@ const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
   };
 
   const menuItems = [
-    { icon: 'home', label: 'Home', route: '/userHome' }, // Use path strings
+    { icon: 'home', label: 'Home', route: '/userHome' },
     { icon: 'user', label: 'My Profile', route: '/profile' },
     { icon: 'credit-card', label: 'Payment Methods', route: '/fareCard' },
     { icon: 'help-circle', label: 'Tips and Info', route: '/faq' },
@@ -72,7 +72,7 @@ const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
 
   const handleNavigation = async (route: string) => {
     await Haptics.selectionAsync();
-    router.push(route); // Use router.push instead of navigation.navigate
+    router.push(route); 
     onClose();
   };
 
@@ -94,7 +94,7 @@ const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
             console.log('Logging out...');
             dispatch(logout());
             dispatch(clearProfile()); 
-            router.replace('/login'); // Navigate to login after logout
+            router.replace('/login'); 
           },
         },
       ],

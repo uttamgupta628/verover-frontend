@@ -73,7 +73,7 @@ export default function DriverMainHome() {
                 </TouchableOpacity>
                 <TouchableOpacity
                     style={styles.button}
-                    onPress={() => router.push('/LocateDryCleaning1')}
+                    onPress={() => router.push('/dryCleanerDriver/orderRequest')}
                 >
                     <Image source={images.Cleaning} style={styles.cleaningImage} />
                     <Text style={styles.buttonText}>Dry Cleaning</Text>
@@ -140,7 +140,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         width: responsiveWidth(90),
         justifyContent: 'space-between',
-        marginTop: responsiveHeight(10),
+        marginTop: responsiveHeight(0),
     },
     titleContainer: {
         width: responsiveWidth(60),
