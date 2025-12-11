@@ -1,12 +1,12 @@
 import { Stack, useRouter, useSegments } from 'expo-router';
-import { useEffect, useState } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
-import { Provider } from 'react-redux';
-import { store } from '../components/store';
-import { useAppSelector, useAppDispatch } from '../components/redux/hooks';
-import { initAuthFromStorage } from '../components/redux/authSlice';
-import Header from './Header';
+import { useEffect, useState } from 'react';
 import { View } from 'react-native';
+import { Provider } from 'react-redux';
+import { initAuthFromStorage } from '../components/redux/authSlice';
+import { useAppDispatch, useAppSelector } from '../components/redux/hooks';
+import { store } from '../components/store';
+import Header from './Header';
 import StripeWrapper from './stripWrapper';
 
 SplashScreen.preventAutoHideAsync();
@@ -114,6 +114,8 @@ function RootLayoutNav() {
         
         {/* Merchant Screens */}
         <Stack.Screen name="parkingMerchent/merchantParkinglotList" />
+        <Stack.Screen name="parkingMerchent/merchantGarageList" />
+        <Stack.Screen name="parkingMerchent/merchantParkingDetails" />
         <Stack.Screen name="parkingMerchent/registerParkingLot" />
         <Stack.Screen name="parkingMerchant/merchantGarageList" />
         <Stack.Screen name="parkingMerchant/merchantResidenceList" />
