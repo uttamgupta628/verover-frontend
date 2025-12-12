@@ -130,7 +130,7 @@ export default function MerchantHome() {
         <TouchableOpacity
           style={styles.buttonMargin}
           onPress={() => {
-            router.push("/merchant/merchantBookingHistoryScreen");
+            router.push("/dryCleanerMerchant/orderHistory");
           }}
         >
           <MaterialCommunityIcons
@@ -172,13 +172,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     width: responsiveWidth(90),
     justifyContent: "space-between",
-    marginTop: "25%",
+    marginTop: "0%",
   },
   titleWrapper: {
     width: responsiveWidth(60),
   },
   titleText: {
-    fontSize: responsiveFontSize(2.5),
+    fontSize: responsiveFontSize(20),
     color: colors.black,
     textAlign: "center",
   },

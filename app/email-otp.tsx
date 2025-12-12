@@ -142,7 +142,7 @@ export default function EmailOTP() {
             text: 'OK',
             onPress: () => {
               // Navigate to tabs (home) after successful verification
-              router.replace('/email-otp-success');
+              router.replace('/EmailOTPSuccess');
             }
           }
         ]

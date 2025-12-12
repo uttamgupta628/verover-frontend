@@ -22,7 +22,7 @@ import colors from "../../assets/color";
 import { images } from "../../assets/images/images";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
-const HEADER_MARGIN_TOP = Platform.OS === "ios" ? 50 : 70;
+const HEADER_MARGIN_TOP = Platform.OS === "ios" ? 50 : 0;
 const GOOGLE_MAPS_API_KEY = Constants.expoConfig?.extra?.GOOGLE_MAPS_API_KEY;
 console.log("API Key loaded:", GOOGLE_MAPS_API_KEY ? "Yes" : "No");
 

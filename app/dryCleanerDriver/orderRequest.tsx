@@ -24,7 +24,7 @@ import { images } from '../../assets/images/images';
 import colors from '../../assets/color';
 
 const { width, height } = Dimensions.get('window');
-const GOOGLE_MAPS_API_KEY = "AIzaSyBn5c5hk6ko6gEwZ3IyWK6AkU4_U_tp_4g";
+
 interface ServiceProvider {
   id: string;
   name: string;
@@ -37,8 +37,6 @@ interface ServiceProvider {
   status: string;
   orderNumber: string;
   trackingId?: string;
-  pickupCoords?: { latitude: number; longitude: number } | null;
-  dropoffCoords?: { latitude: number; longitude: number } | null;
   user?: {
     id: string;
     name: string;
@@ -58,14 +56,11 @@ interface ServiceProvider {
   priority?: string;
 }
 
-// const GOOGLE_MAPS_API_KEY = "AIzaSyBn5c5hk6ko6gEwZ3IyWK6AkU4_U_tp_4g";
 const DryCleaningLocator = () => {
   const router = useRouter();
   const mapRef = useRef<MapView>(null);
   
-  // Get auth token from Redux
   const authToken = useSelector((state: any) => state.auth?.token);
-  const user = useSelector((state: any) => state.auth?.user);
   
   const [isExpanded, setIsExpanded] = useState(false);
   const [serviceProviders, setServiceProviders] = useState<ServiceProvider[]>([]);
@@ -74,91 +69,12 @@ const DryCleaningLocator = () => {
   const [error, setError] = useState<string | null>(null);
   const [driverStatus, setDriverStatus] = useState<any>(null);
   
-  // Location states
   const [currLoc, setCurrLoc] = useState<{ latitude: number; longitude: number } | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
+  const [initialRegion, setInitialRegion] = useState<Region | null>(null);
 
-  const geocodeAddress = async (address: string): Promise<{ latitude: number; longitude: number } | null> => {
-  if (!address || address.trim() === '') {
-    console.warn('⚠️ Empty address provided for geocoding');
-    return null;
-  }
-
-  try {
-    console.log('🌍 Geocoding address:', address);
-    
-    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
-      address
-    )}&key=${GOOGLE_MAPS_API_KEY}`;
-
-    const response = await fetch(url);
-    const data = await response.json();
-
-    if (data.status === "OK" && data.results?.[0]) {
-      const location = data.results[0].geometry.location;
-      const coords = {
-        latitude: location.lat,
-        longitude: location.lng,
-      };
-      console.log('✅ Geocoded successfully:', address, '→', coords);
-      return coords;
-    } else {
-      console.error('❌ Geocoding failed for:', address, 'Status:', data.status);
-      return null;
-    }
-  } catch (error) {
-    console.error('❌ Geocoding error for:', address, error);
-    return null;
-  }
-};
-
-// Geocode multiple addresses in batch with rate limiting
-const geocodeMultipleAddresses = async (
-  providers: ServiceProvider[]
-): Promise<ServiceProvider[]> => {
-  console.log('🌍 Starting batch geocoding for', providers.length, 'providers...');
-  
-  const updatedProviders = [...providers];
-  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-  for (let i = 0; i < updatedProviders.length; i++) {
-    const provider = updatedProviders[i];
-
-    // Geocode pickup if needed
-    if (!provider.pickupCoords || provider.pickupCoords.needsGeocoding) {
-      const address = provider.pickupCoords?.address || provider.pickup;
-      const coords = await geocodeAddress(address);
-      if (coords) {
-        updatedProviders[i].pickupCoords = coords;
-      } else {
-        console.warn('⚠️ Failed to geocode pickup:', address);
-        updatedProviders[i].pickupCoords = null;
-      }
-      // INCREASED DELAY: 300ms instead of 100ms
-      await delay(300);
-    }
-
-    // Geocode dropoff if needed
-    if (!provider.dropoffCoords || provider.dropoffCoords.needsGeocoding) {
-      const address = provider.dropoffCoords?.address || provider.dropOff;
-      const coords = await geocodeAddress(address);
-      if (coords) {
-        updatedProviders[i].dropoffCoords = coords;
-      } else {
-        console.warn('⚠️ Failed to geocode dropoff:', address);
-        updatedProviders[i].dropoffCoords = null;
-      }
-      // INCREASED DELAY
-      await delay(300);
-    }
-  }
-
-  console.log('✅ Batch geocoding completed');
-  return updatedProviders;
-};
-
-  // Get current location
+  // Get driver's current location
   const getCurrentLocation = useCallback(async () => {
     setLocationLoading(true);
 
@@ -178,8 +94,10 @@ const geocodeMultipleAddresses = async (
         return;
       }
 
+      // Get location with Balanced accuracy (faster than Highest)
       const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
+        timeout: 5000, 
       });
 
       const newLocation = {
@@ -187,22 +105,39 @@ const geocodeMultipleAddresses = async (
         longitude: location.coords.longitude,
       };
 
+      console.log('📍 Driver location found:', newLocation);
       setCurrLoc(newLocation);
 
+      // Set initial region for map
+      const region: Region = {
+        ...newLocation,
+        latitudeDelta: 0.05,
+        longitudeDelta: 0.05,
+      };
+      setInitialRegion(region);
+
+      // Center map on driver's location
       if (mapRef.current && mapReady) {
-        const region: Region = {
-          ...newLocation,
-          latitudeDelta: 0.05,
-          longitudeDelta: 0.05,
-        };
-        mapRef.current.animateToRegion(region, 1000);
+        setTimeout(() => {
+          mapRef.current?.animateToRegion(region, 1000);
+        }, 500);
       }
+
     } catch (err: any) {
       console.error("Location error:", err);
-      Alert.alert(
-        "Location Error",
-        "Unable to get your current location. Please try again."
-      );
+      // Set default location to India
+      const defaultLocation = {
+        latitude: 20.5937,
+        longitude: 78.9629,
+      };
+      setCurrLoc(defaultLocation);
+      
+      const region: Region = {
+        ...defaultLocation,
+        latitudeDelta: 5,
+        longitudeDelta: 5,
+      };
+      setInitialRegion(region);
     } finally {
       setLocationLoading(false);
     }
@@ -210,80 +145,50 @@ const geocodeMultipleAddresses = async (
 
   // Initialize location on mount
   useEffect(() => {
-    const initLocation = async () => {
-      try {
-        let { status } = await Location.getForegroundPermissionsAsync();
+    getCurrentLocation();
+  }, []);
 
-        if (status === "granted") {
-          getCurrentLocation();
-        } else {
-          // Set default location to India
-          const defaultLocation = {
-            latitude: 20.5937,
-            longitude: 78.9629,
-          };
-          setCurrLoc(defaultLocation);
-        }
-      } catch (err) {
-        console.error("Permission check error:", err);
-      }
-    };
-
-    initLocation();
-  }, [getCurrentLocation]);
-
-  // Fetch ALL pending driver requests from API
+  // Fast fetch - no geocoding
   const fetchDriverRequests = async (isRefresh = false) => {
-  try {
-    if (isRefresh) {
-      setRefreshing(true);
-    } else {
-      setLoading(true);
-    }
-    setError(null);
-    
-    if (!authToken) {
-      throw new Error('Authentication token not found. Please login again.');
-    }
-    
-    const response = await axiosInstance.get('/users/driver/requests', {
-      headers: {
-        'Authorization': `Bearer ${authToken}`,
-      },
-      params: {
-        status: 'pending',
-        includeAll: true,  
-      },
-      timeout: 10000,
-    });
-
-    const data = response.data;
-    
-    if (data.success && data.data) {
-      if (data.data.driverStatus) {
-        setDriverStatus(data.data.driverStatus);
+    try {
+      if (isRefresh) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
       }
+      setError(null);
+      
+      if (!authToken) {
+        throw new Error('Authentication token not found. Please login again.');
+      }
+      
+      // Fast API call with timeout
+      const response = await axiosInstance.get('/users/driver/requests', {
+        headers: {
+          'Authorization': `Bearer ${authToken}`,
+        },
+        params: {
+          status: 'pending',
+          limit: 20, // Limit results for speed
+        },
+        timeout: 5000, // 5 second timeout
+      });
 
-      if (data.data.bookings && Array.isArray(data.data.bookings)) {
-        const pendingBookings = data.data.bookings.filter((booking: any) => 
-          booking.status === 'pending' || booking.status === 'requested'
-        );
+      const data = response.data;
+      
+      if (data.success && data.data) {
+        if (data.data.driverStatus) {
+          setDriverStatus(data.data.driverStatus);
+        }
 
-        let transformedProviders: ServiceProvider[] = pendingBookings.map((booking: any, index: number) => {
-          console.log('🔍 Processing booking:', booking._id);
+        if (data.data.bookings && Array.isArray(data.data.bookings)) {
+          // FILTER: Only show pending or requested bookings
+          const pendingBookings = data.data.bookings.filter((booking: any) => 
+            booking.status === 'pending' || booking.status === 'requested'
+          );
 
-          // Since backend doesn't provide coordinates, mark for geocoding
-          const pickupCoords = { 
-            needsGeocoding: true, 
-            address: booking.pickupAddress 
-          };
-          
-          const dropoffCoords = { 
-            needsGeocoding: true, 
-            address: booking.dropoffAddress 
-          };
-
-          return {
+          // SIMPLE TRANSFORMATION - No geocoding
+          const transformedProviders: ServiceProvider[] = pendingBookings.map((booking: any, index: number) => ({
             id: booking._id,
             name: booking.dryCleaner?.shopname || booking.dryCleaner?.name || `Provider ${index + 1}`,
             icon: 'laundry',
@@ -295,10 +200,6 @@ const geocodeMultipleAddresses = async (
             status: booking.status,
             orderNumber: booking.orderNumber || `ORD-${booking._id.slice(-6)}`,
             trackingId: booking.Tracking_ID || booking.trackingId,
-            pickupCoords: pickupCoords as any,
-            dropoffCoords: dropoffCoords as any,
-            pickupAddress: booking.pickupAddress,
-            dropoffAddress: booking.dropoffAddress,
             user: {
               id: booking.user?._id || booking.user?.id || '',
               name: `${booking.user?.firstName || ''} ${booking.user?.lastName || ''}`.trim() || 
@@ -317,68 +218,44 @@ const geocodeMultipleAddresses = async (
             createdAt: booking.createdAt,
             isScheduled: booking.isScheduled,
             priority: booking.priority || 'normal'
-          };
-        });
+          }));
 
-        // GEOCODE ALL ADDRESSES
-        console.log('🌍 Geocoding addresses for all providers...');
-        transformedProviders = await geocodeMultipleAddresses(transformedProviders);
-        
-        setServiceProviders(transformedProviders);
-
-        // Fit map to show all markers
-        if (transformedProviders.length > 0 && mapRef.current && mapReady) {
-          const coords = transformedProviders
-            .map(p => p.pickupCoords)
-            .filter(c => c && c.latitude && c.longitude) as { latitude: number; longitude: number }[];
+          setServiceProviders(transformedProviders);
+          console.log(`✅ Loaded ${transformedProviders.length} pending orders`);
           
-          if (coords.length > 0) {
-            if (currLoc) {
-              coords.push(currLoc);
-            }
-            
-            setTimeout(() => {
-              mapRef.current?.fitToCoordinates(coords, {
-                edgePadding: { top: 100, right: 100, bottom: 100, left: 100 },
-                animated: true,
-              });
-            }, 1000);
-          }
+        } else {
+          setServiceProviders([]);
         }
       } else {
-        setServiceProviders([]);
+        throw new Error(data.message || 'Invalid response format');
       }
-    } else {
-      throw new Error(data.message || 'Invalid response format');
+    } catch (err: any) {
+      console.error('❌ Error fetching driver requests:', err);
+      
+      let errorMessage = 'Failed to load pending orders';
+      
+      if (err.code === 'ECONNABORTED') {
+        errorMessage = 'Request timeout. Please check your internet connection.';
+      } else if (err.message?.includes('Network request failed') || err.message?.includes('Network Error')) {
+        errorMessage = 'Network error. Please check your internet connection.';
+      } else if (err.response?.status === 401) {
+        errorMessage = 'Session expired. Please login again.';
+      } else if (err.response?.status === 404) {
+        errorMessage = 'No pending orders available.';
+      } else {
+        errorMessage = err.message || 'Unknown error occurred';
+      }
+      
+      setError(errorMessage);
+      
+      if (!isRefresh && errorMessage !== 'No pending orders available.') {
+        Alert.alert('Error', errorMessage);
+      }
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
-  } catch (err: any) {
-    console.error('❌ Error fetching driver requests:', err);
-    
-    let errorMessage = 'Failed to load service providers';
-    
-    if (err.code === 'ECONNABORTED') {
-      errorMessage = 'Request timeout. Please check your internet connection.';
-    } else if (err.message?.includes('Network request failed') || err.message?.includes('Network Error')) {
-      errorMessage = 'Network error. Please check your internet connection and try again.';
-    } else if (err.response) {
-      errorMessage = err.response.data?.message || `Server error: ${err.response.status}`;
-    } else if (err.request) {
-      errorMessage = 'No response from server. Please check if the server is running.';
-    } else {
-      errorMessage = err.message || 'Unknown error occurred';
-    }
-    
-    setError(errorMessage);
-    
-    if (!isRefresh) {
-      Alert.alert('Error', errorMessage);
-    }
-  } finally {
-    setLoading(false);
-    setRefreshing(false);
-  }
-};
-
+  };
 
   const onRefresh = useCallback(() => {
     fetchDriverRequests(true);
@@ -393,20 +270,6 @@ const geocodeMultipleAddresses = async (
     }
   }, [authToken]);
 
-  // Auto-refresh every 30 seconds when app is active
-  useEffect(() => {
-    if (!authToken) return;
-
-    const interval = setInterval(() => {
-      if (!loading && !refreshing) {
-        console.log('🔄 Auto-refreshing pending orders...');
-        fetchDriverRequests(true);
-      }
-    }, 30000); // 30 seconds
-
-    return () => clearInterval(interval);
-  }, [loading, refreshing, authToken]);
-
   const handleRetry = () => {
     fetchDriverRequests();
   };
@@ -416,135 +279,59 @@ const geocodeMultipleAddresses = async (
   };
 
   const handleProviderPress = (provider: ServiceProvider) => {
-  if (!provider || !provider.id) {
-    Alert.alert('Error', 'Invalid booking data. Please try again.');
-    return;
-  }
-
-  if (provider.status !== 'pending' && provider.status !== 'requested') {
-    Alert.alert(
-      'Booking Unavailable', 
-      `This booking is ${provider.status}. Only pending bookings can be accepted.`
-    );
-    return;
-  }
-
-  console.log('📱 Navigating to pickup screen with provider:', {
-    id: provider.id,
-    name: provider.name,
-    status: provider.status,
-    orderNumber: provider.orderNumber,
-    hasPickupCoords: !!provider.pickupCoords,
-    hasDropoffCoords: !!provider.dropoffCoords
-  });
-  
-  // Create complete booking data with all necessary fields
-  const bookingData = {
-    // IDs and basic info
-    id: provider.id,
-    _id: provider.id,
-    orderNumber: provider.orderNumber,
-    trackingId: provider.trackingId,
-    status: provider.status,
-    
-    // Provider/Dry Cleaner info
-    name: provider.name,
-    dryCleaner: provider.dryCleaner,
-    
-    // Addresses
-    pickupAddress: provider.pickup,
-    dropoffAddress: provider.dropOff,
-    
-    // CRITICAL: Include the geocoded coordinates
-    pickupCoords: provider.pickupCoords && 
-                  typeof provider.pickupCoords.latitude === 'number' &&
-                  typeof provider.pickupCoords.longitude === 'number'
-                    ? {
-                        latitude: provider.pickupCoords.latitude,
-                        longitude: provider.pickupCoords.longitude
-                      }
-                    : null,
-    
-    dropoffCoords: provider.dropoffCoords && 
-                   typeof provider.dropoffCoords.latitude === 'number' &&
-                   typeof provider.dropoffCoords.longitude === 'number'
-                     ? {
-                         latitude: provider.dropoffCoords.latitude,
-                         longitude: provider.dropoffCoords.longitude
-                       }
-                     : null,
-    
-    // Pricing info
-    deliveryCharge: provider.deliveryCharge,
-    price: provider.deliveryCharge,
-    pricing: {
-      deliveryCharge: provider.deliveryCharge,
-      estimatedTip: '5.00',
-      totalAmount: (parseFloat(provider.deliveryCharge) + 5).toFixed(2)
-    },
-    
-    // Trip details
-    distance: provider.miles,
-    time: provider.time,
-    calculatedDistance: provider.miles,
-    calculatedDuration: provider.time,
-    
-    // User info
-    user: provider.user,
-    
-    // Scheduling
-    scheduledPickup: provider.scheduledPickup,
-    scheduledDelivery: provider.scheduledDelivery,
-    isScheduled: provider.isScheduled,
-    
-    // Other fields
-    createdAt: provider.createdAt,
-    priority: provider.priority,
-    
-    // Navigation metadata
-    navigationTimestamp: new Date().toISOString(),
-    sourceScreen: 'DryCleaningLocator'
-  };
-
-  console.log('📦 Navigation data prepared:', {
-    hasPickupCoords: !!bookingData.pickupCoords,
-    hasDropoffCoords: !!bookingData.dropoffCoords,
-    pickupCoords: bookingData.pickupCoords,
-    dropoffCoords: bookingData.dropoffCoords
-  });
-  
-  router.push({
-    pathname: '/dryCleanerDriver/dryCleaningPickup',
-    params: {
-      providerData: JSON.stringify(bookingData)
+    if (!provider || !provider.id) {
+      Alert.alert('Error', 'Invalid booking data. Please try again.');
+      return;
     }
-  });
-};
+
+    if (provider.status !== 'pending' && provider.status !== 'requested') {
+      Alert.alert(
+        'Booking Unavailable', 
+        `This booking is ${provider.status}. Only pending bookings can be accepted.`
+      );
+      return;
+    }
+
+    const bookingData = {
+      id: provider.id,
+      _id: provider.id,
+      orderNumber: provider.orderNumber,
+      trackingId: provider.trackingId,
+      status: provider.status,
+      name: provider.name,
+      dryCleaner: provider.dryCleaner,
+      pickupAddress: provider.pickup,
+      dropoffAddress: provider.dropOff,
+      deliveryCharge: provider.deliveryCharge,
+      price: provider.deliveryCharge,
+      pricing: {
+        deliveryCharge: provider.deliveryCharge,
+        estimatedTip: '5.00',
+        totalAmount: (parseFloat(provider.deliveryCharge) + 5).toFixed(2)
+      },
+      distance: provider.miles,
+      time: provider.time,
+      user: provider.user,
+      scheduledPickup: provider.scheduledPickup,
+      scheduledDelivery: provider.scheduledDelivery,
+      isScheduled: provider.isScheduled,
+      createdAt: provider.createdAt,
+      priority: provider.priority,
+    };
+    
+    router.push({
+      pathname: '/dryCleanerDriver/dryCleaningPickup',
+      params: {
+        providerData: JSON.stringify(bookingData)
+      }
+    });
+  };
 
   const handleMapReady = useCallback(() => {
     setMapReady(true);
-    console.log("Map is ready");
+    console.log('✅ Map ready');
   }, []);
 
-  const getStatusColor = (status: string) => {
-    switch (status?.toLowerCase()) {
-      case 'accepted':
-        return '#4CAF50';
-      case 'pending':
-      case 'requested':
-        return '#FF8C00';
-      case 'rejected':
-        return '#FF0000';
-      case 'completed':
-        return '#2196F3';
-      case 'in_progress':
-        return '#9C27B0';
-      default:
-        return '#666666';
-    }
-  };
-
-  // Render map with live location
   const renderMap = () => {
     if (Platform.OS === "web") {
       return (
@@ -556,16 +343,17 @@ const geocodeMultipleAddresses = async (
       );
     }
 
-    const initialCoords = currLoc || {
+    // Default to India if no location yet
+    const defaultCoords = {
       latitude: 20.5937,
       longitude: 78.9629,
     };
 
-    const initialRegion: Region = {
-      latitude: initialCoords.latitude,
-      longitude: initialCoords.longitude,
-      latitudeDelta: 0.1,
-      longitudeDelta: 0.1,
+    const mapRegion: Region = initialRegion || {
+      latitude: defaultCoords.latitude,
+      longitude: defaultCoords.longitude,
+      latitudeDelta: 5,
+      longitudeDelta: 5,
     };
 
     return (
@@ -573,39 +361,22 @@ const geocodeMultipleAddresses = async (
         ref={mapRef}
         style={styles.mapImage}
         provider={PROVIDER_GOOGLE}
-        initialRegion={initialRegion}
+        initialRegion={mapRegion}
         onMapReady={handleMapReady}
-        showsUserLocation={!!currLoc}
-        showsMyLocationButton={false}
+        showsUserLocation={true}  // This shows the blue dot for current location
+        showsMyLocationButton={true}
         showsCompass={true}
         showsScale={true}
         zoomControlEnabled={true}
         zoomEnabled={true}
         scrollEnabled={true}
+        rotateEnabled={true}
+        loadingEnabled={true}
+        loadingIndicatorColor={colors.brandColor}
+        loadingBackgroundColor="#FFFFFF"
       >
-        {/* Markers for service providers with location data */}
-        {serviceProviders.map((provider) => {
-          if (provider.pickupCoords) {
-            return (
-              <Marker
-                key={`pickup-${provider.id}`}
-                coordinate={provider.pickupCoords}
-                title={provider.name}
-                description={`Pickup: ${provider.pickup}`}
-                onPress={() => handleProviderPress(provider)}
-              >
-                <View style={styles.markerCircle}>
-                  <Image 
-                    source={provider.icon === 'person' ? images.man1 : images.washing2} 
-                    style={styles.markerIcon}
-                    contentFit="cover"
-                  />
-                </View>
-              </Marker>
-            );
-          }
-          return null;
-        })}
+        {/* No markers for orders - only showing driver location */}
+        {/* MapView automatically shows user location when showsUserLocation={true} */}
       </MapView>
     );
   };
@@ -625,7 +396,7 @@ const geocodeMultipleAddresses = async (
       <View style={styles.providerHeader}>
         <View style={styles.providerIconContainer}>
           <Image
-            source={provider.icon === 'person' ? images.man2 : images.washing}
+            source={images.washing}
             style={styles.providerIcon}
             contentFit="cover"
           />
@@ -710,6 +481,24 @@ const geocodeMultipleAddresses = async (
     </TouchableOpacity>
   );
 
+  const getStatusColor = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case 'accepted':
+        return '#4CAF50';
+      case 'pending':
+      case 'requested':
+        return '#FF8C00';
+      case 'rejected':
+        return '#FF0000';
+      case 'completed':
+        return '#2196F3';
+      case 'in_progress':
+        return '#9C27B0';
+      default:
+        return '#666666';
+    }
+  };
+
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -717,33 +506,12 @@ const geocodeMultipleAddresses = async (
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
             <MaterialIcons name="arrow-back" size={35} color={colors.brandColor} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Locate Dry Cleaning</Text>
+          <Text style={styles.headerTitle}>Pending Orders</Text>
         </View>
         
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.brandColor} />
           <Text style={styles.loadingText}>Loading pending orders...</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  if (error && serviceProviders.length === 0) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.headerContainer}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <MaterialIcons name="arrow-back" size={35} color={colors.brandColor} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Locate Dry Cleaning</Text>
-        </View>
-        
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>Failed to load pending orders</Text>
-          <Text style={styles.errorSubText}>{error}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={handleRetry}>
-            <Text style={styles.retryButtonText}>Retry</Text>
-          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
@@ -791,13 +559,14 @@ const geocodeMultipleAddresses = async (
           </View>
         )}
 
-        {/* Live Google Map */}
-        <View style={[styles.mapContainer, { height: isExpanded ? height : 400 }]}>
+        {/* Live Google Map - Shows driver's current location */}
+        <View style={[styles.mapContainer, { height: isExpanded ? height : 300 }]}>
           {renderMap()}
 
           {locationLoading && (
             <View style={styles.locationLoadingOverlay}>
               <ActivityIndicator size="small" color={colors.brandColor} />
+              <Text style={styles.locationLoadingText}>Finding your location...</Text>
             </View>
           )}
 
@@ -806,18 +575,28 @@ const geocodeMultipleAddresses = async (
             <TouchableOpacity onPress={getCurrentLocation} disabled={locationLoading}>
               <Image 
                 source={images.currentlocation1} 
-                style={[styles.controlIcon1, locationLoading && { opacity: 0.5 }]}
+                style={[styles.controlIcon, locationLoading && { opacity: 0.5 }]}
                 contentFit="contain"
               />
             </TouchableOpacity>
             <TouchableOpacity onPress={toggleExpand}>
               <Image 
                 source={images.expand} 
-                style={styles.controlIcon}
+                style={styles.controlIcon1}
                 contentFit="contain"
               />
             </TouchableOpacity>
           </View>
+
+          {/* Location info */}
+          {currLoc && (
+            <View style={styles.locationInfoCard}>
+              <MaterialIcons name="my-location" size={16} color={colors.brandColor} />
+              <Text style={styles.locationInfoText}>
+                Your location: {currLoc.latitude.toFixed(4)}, {currLoc.longitude.toFixed(4)}
+              </Text>
+            </View>
+          )}
         </View>
 
         {!isExpanded && (
@@ -853,7 +632,6 @@ const geocodeMultipleAddresses = async (
   );
 };
 
-// Styles (keeping your existing styles)
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -868,20 +646,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
-    marginTop: -20,
     backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F0F0F0',
   },
   backButton: {
     padding: 8,
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: '400',
-    marginLeft: 3,
+    fontWeight: '600',
     color: '#000000',
     flex: 1,
+    marginLeft: 10,
   },
   refreshButton: {
     padding: 8,
@@ -917,7 +694,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 100,
+    paddingTop: 100,
   },
   loadingText: {
     marginTop: 16,
@@ -928,7 +705,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 100,
+    paddingTop: 100,
     paddingHorizontal: 20,
   },
   errorText: {
@@ -937,12 +714,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 8,
     fontWeight: '500',
-  },
-  errorSubText: {
-    fontSize: 14,
-    color: '#666666',
-    textAlign: 'center',
-    marginBottom: 20,
   },
   retryButton: {
     backgroundColor: colors.brandColor,
@@ -958,10 +729,7 @@ const styles = StyleSheet.create({
   mapContainer: {
     width: '100%',
     position: 'relative',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
     overflow: 'hidden',
-
   },
   mapImage: {
     width: '100%',
@@ -981,21 +749,38 @@ const styles = StyleSheet.create({
   locationLoadingOverlay: {
     position: 'absolute',
     top: 10,
-    right: 10,
+    left: 10,
     backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    padding: 8,
+    padding: 10,
     borderRadius: 20,
-  },
-  marker: {
-    position: 'absolute',
+    flexDirection: 'row',
     alignItems: 'center',
   },
-  markerCircle: {
+  locationLoadingText: {
+    marginLeft: 8,
+    fontSize: 12,
+    color: '#666666',
   },
-  markerIcon: {
-    width: 35,
-    height: 40,
-    borderRadius: 3,
+  locationInfoCard: {
+    position: 'absolute',
+    bottom: 70,
+    left: 10,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  locationInfoText: {
+    marginLeft: 6,
+    fontSize: 12,
+    color: '#666666',
   },
   mapControls: {
     position: 'absolute',
@@ -1004,46 +789,41 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   controlIcon: {
-    width: 110,
-    height: 110,
-    top: 30,
-    left: 20,
+    width: 50,
+    height: 50,
   },
   controlIcon1: {
-    width: 110,
-    height: 110,
-    top: 60,
-    left: 20,
+    width: 50,
+    height: 50,
+    marginTop: 10,
   },
   providersContainer: {
     flex: 1,
-    paddingHorizontal: 19,
+    paddingHorizontal: 16,
     marginTop: 5,
   },
   whitesection: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 20,
     paddingVertical: 16,
-    marginTop: -10,
   },
   bar: {
-    borderRadius: 20,
     height: 5,
     width: 60,
     alignSelf: 'center',
+    marginBottom: 10,
   },
   countContainer: {
-    paddingHorizontal: 19,
-    marginTop: 10,
+    paddingHorizontal: 16,
     marginBottom: 5,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
   },
   countText: {
-    fontSize: 14,
+    fontSize: 16,
     color: '#666666',
     textAlign: 'center',
+    fontWeight: '500',
   },
   refreshIndicator: {
     marginLeft: 8,
@@ -1081,7 +861,7 @@ const styles = StyleSheet.create({
   providerHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 22,
+    marginBottom: 12,
   },
   providerIconContainer: {
     width: 40,
@@ -1093,17 +873,16 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   providerIcon: {
-    width: 20,
-    height: 23,
+    width: 24,
+    height: 24,
     tintColor: '#FFFFFF',
-    borderRadius: 4,
   },
   providerNameContainer: {
     flex: 1,
   },
   providerName: {
     fontSize: 16,
-    fontWeight: '400',
+    fontWeight: '600',
     color: '#000000',
   },
   orderNumber: {
@@ -1115,7 +894,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginTop: 1,
+    marginTop: 2,
   },
   status: {
     fontSize: 12,
@@ -1145,7 +924,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 8,
-    paddingLeft: 4,
   },
   customerName: {
     fontSize: 12,
@@ -1166,18 +944,14 @@ const styles = StyleSheet.create({
     height: 24,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#58B466',
+    marginTop: 2,
   },
   locationDot1: {
     width: 24,
     height: 24,
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#F99026',
+    marginTop: 2,
   },
   greenDot: {
     width: 12,
@@ -1193,10 +967,11 @@ const styles = StyleSheet.create({
   },
   locationLine: {
     width: 2,
-    height: 35,
+    height: 30,
     backgroundColor: '#CCCCCC',
     marginLeft: 11,
-    top: -10,
+    marginTop: -10,
+    marginBottom: -10,
   },
   locationInfo: {
     marginLeft: 8,
@@ -1216,7 +991,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 8,
-    paddingLeft: 4,
   },
   scheduledText: {
     fontSize: 12,
@@ -1234,21 +1008,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   tripIcon: {
-    width: 12,
-    height: 18,
-    tintColor: '#666666',
-    left:15,
+    width: 16,
+    height: 16,
+    marginRight: 6,
   },
   tripIcon1: {
-    width: 18,
-    height: 18,
-    tintColor: '#666666',
-    left:20,
+    width: 16,
+    height: 16,
+    marginRight: 6,
   },
   tripText: {
     fontSize: 12,
     color: '#666666',
-    left:30,
   },
   priceText: {
     fontSize: 16,

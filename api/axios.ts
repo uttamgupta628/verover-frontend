@@ -1,19 +1,18 @@
-import axios from 'axios';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-// 'https://vervoer-backend2.onrender.com/api' 
+import axios from "axios";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+// 'https://vervoer-backend2.onrender.com/api'
 const axiosInstance = axios.create({
-  baseURL:  'https://vervoer-backend2.onrender.com/api', 
+  baseURL: "https://vervoer-backend2.onrender.com/api",
   timeout: 10000,
   headers: {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   },
 });
 
-// Request interceptor to add token
 axiosInstance.interceptors.request.use(
   async (config) => {
     try {
-      const authState = await AsyncStorage.getItem('loginKey');
+      const authState = await AsyncStorage.getItem("loginKey");
       if (authState) {
         const { token } = JSON.parse(authState);
         if (token) {
@@ -21,7 +20,7 @@ axiosInstance.interceptors.request.use(
         }
       }
     } catch (error) {
-      console.error('Error reading token:', error);
+      console.error("Error reading token:", error);
     }
     return config;
   },
@@ -34,7 +33,7 @@ axiosInstance.interceptors.response.use(
   async (error) => {
     if (error.response?.status === 401) {
       // Token expired, logout user
-      await AsyncStorage.removeItem('loginKey');
+      await AsyncStorage.removeItem("loginKey");
     }
     return Promise.reject(error);
   }

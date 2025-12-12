@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { useForm, Controller } from 'react-hook-form';
-import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
+import React, { useState } from "react";
+import { useForm, Controller } from "react-hook-form";
+import { MaterialCommunityIcons as Icon } from "@expo/vector-icons";
 import {
   StatusBar,
   StyleSheet,
@@ -13,34 +13,36 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-} from 'react-native';
+} from "react-native";
 
-import { useRouter } from 'expo-router';
+import { useRouter } from "expo-router";
 import {
   responsiveFontSize,
   responsiveHeight,
   responsiveWidth,
-} from 'react-native-responsive-dimensions';
-import axios from 'axios';
+} from "react-native-responsive-dimensions";
+import axios from "axios";
 
 const colors = {
-  primary: '#FF8C00',
-  white: '#FFFFFF',
-  gray: '#888888',
-  black: '#000000',
-  error: '#FF0000',
-  border: '#E0E0E0',
+  primary: "#FF8C00",
+  white: "#FFFFFF",
+  gray: "#888888",
+  black: "#000000",
+  error: "#FF0000",
+  border: "#E0E0E0",
 };
 
 type FormData = {
   email: string;
-  userType: 'user' | 'merchant' | 'driver';
+  userType: "user" | "merchant" | "driver";
 };
 
 export default function ForgotPassword() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [selectedUserType, setSelectedUserType] = useState<'user' | 'merchant' | 'driver'>('user');
+  const [selectedUserType, setSelectedUserType] = useState<
+    "user" | "merchant" | "driver"
+  >("user");
 
   const {
     control,
@@ -49,22 +51,22 @@ export default function ForgotPassword() {
     formState: { errors },
   } = useForm<FormData>({
     defaultValues: {
-      email: '',
-      userType: 'user',
+      email: "",
+      userType: "user",
     },
   });
 
-  const handleUserTypeSelect = (type: 'user' | 'merchant' | 'driver') => {
+  const handleUserTypeSelect = (type: "user" | "merchant" | "driver") => {
     setSelectedUserType(type);
-    setValue('userType', type);
+    setValue("userType", type);
   };
 
   const onSubmit = async (data: FormData) => {
     setLoading(true);
-    
+
     try {
       const response = await axios.post(
-        'https://vervoer-backend2.onrender.com/api/users/forgot-password',
+        "https://vervoer-backend2.onrender.com/api/users/forgot-password",
         {
           email: data.email,
           userType: selectedUserType,
@@ -72,39 +74,40 @@ export default function ForgotPassword() {
       );
 
       if (response.data.success) {
-        Alert.alert('Success', 'OTP has been sent to your email.', [
+        Alert.alert("Success", "OTP has been sent to your email.", [
           {
-            text: 'OK',
+            text: "OK",
             onPress: () =>
               router.push({
-                pathname: '/forgot-reset-password',
+                pathname: "/forgot-reset-password",
                 params: { email: data.email, userType: selectedUserType },
               }),
           },
         ]);
       } else {
-        Alert.alert('Failed', response.data.message || 'Something went wrong.');
+        Alert.alert("Failed", response.data.message || "Something went wrong.");
       }
     } catch (error: any) {
       console.log(error);
-      
-      let errorMessage = 'Failed to send OTP.';
-      
+
+      let errorMessage = "Failed to send OTP.";
+
       if (error.response?.data) {
         const errorData = error.response.data;
-        if (typeof errorData === 'string' && errorData.includes('Error:')) {
+        if (typeof errorData === "string" && errorData.includes("Error:")) {
           const match = errorData.match(/Error:\s*([A-Z_]+)/);
           if (match) {
             const errorCode = match[1];
-            errorMessage = errorCode.replace(/_/g, ' ').toLowerCase();
-            errorMessage = errorMessage.charAt(0).toUpperCase() + errorMessage.slice(1);
+            errorMessage = errorCode.replace(/_/g, " ").toLowerCase();
+            errorMessage =
+              errorMessage.charAt(0).toUpperCase() + errorMessage.slice(1);
           }
         } else {
           errorMessage = errorData.message || errorData.error || errorMessage;
         }
       }
-      
-      Alert.alert('Error', errorMessage);
+
+      Alert.alert("Error", errorMessage);
     } finally {
       setLoading(false);
     }
@@ -113,7 +116,7 @@ export default function ForgotPassword() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView
         contentContainerStyle={styles.scrollContainer}
@@ -143,7 +146,8 @@ export default function ForgotPassword() {
 
         <View style={styles.subtitleContainer}>
           <Text style={styles.subtitle}>
-            Enter your email address and we'll send you an OTP to reset your password.
+            Enter your email address and we'll send you an OTP to reset your
+            password.
           </Text>
         </View>
 
@@ -151,7 +155,7 @@ export default function ForgotPassword() {
         <View style={styles.inputWrapper}>
           <Text style={styles.label}>User Type</Text>
           <View style={styles.userTypeContainer}>
-            {['user', 'merchant', 'driver'].map((type) => (
+            {["user", "merchant", "driver"].map((type) => (
               <TouchableOpacity
                 key={type}
                 style={[
@@ -163,7 +167,8 @@ export default function ForgotPassword() {
                 <Text
                   style={[
                     styles.userTypeButtonText,
-                    selectedUserType === type && styles.selectedUserTypeButtonText,
+                    selectedUserType === type &&
+                      styles.selectedUserTypeButtonText,
                   ]}
                 >
                   {type.charAt(0).toUpperCase() + type.slice(1)}
@@ -180,10 +185,10 @@ export default function ForgotPassword() {
           <Controller
             control={control}
             rules={{
-              required: 'Email is required',
+              required: "Email is required",
               pattern: {
                 value: /\S+@\S+\.\S+/,
-                message: 'Enter a valid email',
+                message: "Enter a valid email",
               },
             }}
             name="email"
@@ -222,7 +227,7 @@ export default function ForgotPassword() {
         {/* Back to Login */}
         <View style={styles.loginContainer}>
           <Text style={styles.loginPrompt}>Remember your password? </Text>
-          <TouchableOpacity onPress={() => router.push('/login')}>
+          <TouchableOpacity onPress={() => router.push("/login")}>
             <Text style={styles.loginLink}>Login</Text>
           </TouchableOpacity>
         </View>
@@ -238,22 +243,23 @@ const styles = StyleSheet.create({
   },
   scrollContainer: {
     flexGrow: 1,
-    alignItems: 'center',
+    alignItems: "center",
     paddingHorizontal: responsiveWidth(5),
     paddingBottom: responsiveHeight(5),
   },
   headerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%',
-    marginTop: Platform.OS === 'ios' ? responsiveHeight(6) : responsiveHeight(4),
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    width: "100%",
+    marginTop:
+      Platform.OS === "ios" ? responsiveHeight(6) : responsiveHeight(4),
     marginBottom: responsiveHeight(2),
   },
   headerTitle: {
     fontSize: responsiveFontSize(2.5),
     color: colors.primary,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   iconContainer: {
     marginTop: responsiveHeight(3),
@@ -262,22 +268,22 @@ const styles = StyleSheet.create({
   title: {
     color: colors.black,
     fontSize: responsiveFontSize(2.8),
-    fontWeight: 'bold',
+    fontWeight: "bold",
     marginBottom: responsiveHeight(1),
-    textAlign: 'center',
+    textAlign: "center",
   },
   subtitleContainer: {
     width: responsiveWidth(80),
     marginBottom: responsiveHeight(3),
   },
   subtitle: {
-    textAlign: 'center',
+    textAlign: "center",
     fontSize: responsiveFontSize(1.8),
     color: colors.gray,
     lineHeight: responsiveFontSize(2.5),
   },
   inputWrapper: {
-    width: '100%',
+    width: "100%",
     marginBottom: responsiveHeight(2),
   },
   label: {
@@ -286,8 +292,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   userTypeContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
   userTypeButton: {
     flex: 1,
@@ -296,7 +302,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: colors.primary,
-    alignItems: 'center',
+    alignItems: "center",
   },
   selectedUserTypeButton: {
     backgroundColor: colors.primary,
@@ -304,18 +310,18 @@ const styles = StyleSheet.create({
   userTypeButtonText: {
     fontSize: responsiveFontSize(1.8),
     color: colors.primary,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   selectedUserTypeButtonText: {
     color: colors.white,
   },
   formContainer: {
-    width: '100%',
+    width: "100%",
     marginBottom: responsiveHeight(1),
   },
   input: {
     height: responsiveHeight(6),
-    width: '100%',
+    width: "100%",
     borderColor: colors.border,
     borderWidth: 1,
     borderRadius: 10,
@@ -325,13 +331,13 @@ const styles = StyleSheet.create({
   },
   button: {
     height: responsiveHeight(6),
-    width: '100%',
+    width: "100%",
     marginTop: responsiveHeight(3),
     backgroundColor: colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     borderRadius: 25,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
@@ -343,18 +349,18 @@ const styles = StyleSheet.create({
   buttonText: {
     fontSize: responsiveFontSize(2),
     color: colors.white,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   errorText: {
     color: colors.error,
     fontSize: responsiveFontSize(1.6),
     marginTop: 4,
-    alignSelf: 'flex-start',
+    alignSelf: "flex-start",
   },
   loginContainer: {
-    flexDirection: 'row',
+    flexDirection: "row",
     marginTop: responsiveHeight(3),
-    alignItems: 'center',
+    alignItems: "center",
   },
   loginPrompt: {
     fontSize: responsiveFontSize(1.7),
@@ -363,6 +369,6 @@ const styles = StyleSheet.create({
   loginLink: {
     fontSize: responsiveFontSize(1.7),
     color: colors.primary,
-    fontWeight: '600',
+    fontWeight: "600",
   },
 });

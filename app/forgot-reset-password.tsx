@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import {
   StatusBar,
   StyleSheet,
@@ -11,25 +11,29 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   ScrollView,
-} from 'react-native';
-import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { responsiveFontSize, responsiveHeight, responsiveWidth } from 'react-native-responsive-dimensions';
-import axios from 'axios';
+} from "react-native";
+import { MaterialCommunityIcons as Icon } from "@expo/vector-icons";
+import { useRouter, useLocalSearchParams } from "expo-router";
+import {
+  responsiveFontSize,
+  responsiveHeight,
+  responsiveWidth,
+} from "react-native-responsive-dimensions";
+import axios from "axios";
 
 const colors = {
-  primary: '#FF8C00',
-  white: '#FFFFFF',
-  gray: '#888888',
-  black: '#000000',
-  error: '#FF0000',
-  border: '#E0E0E0',
+  primary: "#FF8C00",
+  white: "#FFFFFF",
+  gray: "#888888",
+  black: "#000000",
+  error: "#FF0000",
+  border: "#E0E0E0",
 };
 
 export default function ForgetResetPasswordScreen() {
-  const [otp, setOtp] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [otp, setOtp] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -41,22 +45,22 @@ export default function ForgetResetPasswordScreen() {
 
   const handleResetPassword = async () => {
     if (!otp) {
-      Alert.alert('Error', 'Please enter OTP.');
+      Alert.alert("Error", "Please enter OTP.");
       return;
     }
 
     if (!password || !confirmPassword) {
-      Alert.alert('Error', 'Please enter both password fields.');
+      Alert.alert("Error", "Please enter both password fields.");
       return;
     }
 
     if (password !== confirmPassword) {
-      Alert.alert('Error', 'Passwords do not match.');
+      Alert.alert("Error", "Passwords do not match.");
       return;
     }
 
     if (password.length < 6) {
-      Alert.alert('Error', 'Password must be at least 6 characters.');
+      Alert.alert("Error", "Password must be at least 6 characters.");
       return;
     }
 
@@ -64,7 +68,7 @@ export default function ForgetResetPasswordScreen() {
 
     try {
       const response = await axios.post(
-        'https://vervoer-backend2.onrender.com/api/users/reset-password',
+        "https://vervoer-backend2.onrender.com/api/users/reset-password",
         {
           email,
           userType,
@@ -75,35 +79,36 @@ export default function ForgetResetPasswordScreen() {
       );
 
       if (response.data.success) {
-        Alert.alert('Success', 'Password reset successfully', [
+        Alert.alert("Success", "Password reset successfully", [
           {
-            text: 'OK',
-            onPress: () => router.replace('/forgot-success'),
+            text: "OK",
+            onPress: () => router.replace("/forgot-success"),
           },
         ]);
       } else {
-        Alert.alert('Failed', response.data.message || 'Something went wrong.');
+        Alert.alert("Failed", response.data.message || "Something went wrong.");
       }
     } catch (error: any) {
-      console.error('Error:', error);
-      
-      let errorMessage = 'Password reset failed.';
-      
+      console.error("Error:", error);
+
+      let errorMessage = "Password reset failed.";
+
       if (error.response?.data) {
         const errorData = error.response.data;
-        if (typeof errorData === 'string' && errorData.includes('Error:')) {
+        if (typeof errorData === "string" && errorData.includes("Error:")) {
           const match = errorData.match(/Error:\s*([A-Z_]+)/);
           if (match) {
             const errorCode = match[1];
-            errorMessage = errorCode.replace(/_/g, ' ').toLowerCase();
-            errorMessage = errorMessage.charAt(0).toUpperCase() + errorMessage.slice(1);
+            errorMessage = errorCode.replace(/_/g, " ").toLowerCase();
+            errorMessage =
+              errorMessage.charAt(0).toUpperCase() + errorMessage.slice(1);
           }
         } else {
           errorMessage = errorData.message || errorData.error || errorMessage;
         }
       }
-      
-      Alert.alert('Error', errorMessage);
+
+      Alert.alert("Error", errorMessage);
     } finally {
       setLoading(false);
     }
@@ -112,13 +117,17 @@ export default function ForgetResetPasswordScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView
         contentContainerStyle={styles.scrollContainer}
         keyboardShouldPersistTaps="handled"
       >
-        <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+        <StatusBar
+          barStyle="dark-content"
+          backgroundColor="transparent"
+          translucent
+        />
 
         {/* Header */}
         <View style={styles.headerContainer}>
@@ -130,9 +139,7 @@ export default function ForgetResetPasswordScreen() {
         </View>
 
         <Text style={styles.title}>Enter OTP & New Password</Text>
-        <Text style={styles.subtitle}>
-          OTP sent to: {email}
-        </Text>
+        <Text style={styles.subtitle}>OTP sent to: {email}</Text>
 
         {/* OTP Input */}
         <View style={styles.inputContainer}>
@@ -165,7 +172,7 @@ export default function ForgetResetPasswordScreen() {
               onPress={() => setShowPassword(!showPassword)}
             >
               <Icon
-                name={showPassword ? 'eye-off' : 'eye'}
+                name={showPassword ? "eye-off" : "eye"}
                 size={24}
                 color={colors.gray}
               />
@@ -190,7 +197,7 @@ export default function ForgetResetPasswordScreen() {
               onPress={() => setShowConfirmPassword(!showConfirmPassword)}
             >
               <Icon
-                name={showConfirmPassword ? 'eye-off' : 'eye'}
+                name={showConfirmPassword ? "eye-off" : "eye"}
                 size={24}
                 color={colors.gray}
               />
@@ -221,39 +228,40 @@ const styles = StyleSheet.create({
   },
   scrollContainer: {
     flexGrow: 1,
-    alignItems: 'center',
+    alignItems: "center",
     paddingHorizontal: responsiveWidth(5),
     paddingBottom: responsiveHeight(5),
   },
   headerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%',
-    marginTop: Platform.OS === 'ios' ? responsiveHeight(6) : responsiveHeight(4),
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    width: "100%",
+    marginTop:
+      Platform.OS === "ios" ? responsiveHeight(6) : responsiveHeight(4),
     marginBottom: responsiveHeight(3),
   },
   headerTitle: {
     fontSize: responsiveFontSize(2.5),
     color: colors.primary,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   title: {
     color: colors.black,
     fontSize: responsiveFontSize(2.8),
-    fontWeight: 'bold',
+    fontWeight: "bold",
     marginTop: responsiveHeight(3),
     marginBottom: responsiveHeight(1),
-    textAlign: 'center',
+    textAlign: "center",
   },
   subtitle: {
     fontSize: responsiveFontSize(1.7),
     color: colors.gray,
-    textAlign: 'center',
+    textAlign: "center",
     marginBottom: responsiveHeight(4),
   },
   inputContainer: {
-    width: '100%',
+    width: "100%",
     marginBottom: responsiveHeight(2),
   },
   label: {
@@ -263,7 +271,7 @@ const styles = StyleSheet.create({
   },
   input: {
     height: responsiveHeight(6),
-    width: '100%',
+    width: "100%",
     borderColor: colors.border,
     borderWidth: 1,
     borderRadius: 10,
@@ -272,8 +280,8 @@ const styles = StyleSheet.create({
     color: colors.black,
   },
   passwordWrapper: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     borderColor: colors.border,
     borderWidth: 1,
     borderRadius: 10,
@@ -290,13 +298,13 @@ const styles = StyleSheet.create({
   },
   button: {
     height: responsiveHeight(6),
-    width: '100%',
+    width: "100%",
     marginTop: responsiveHeight(3),
     backgroundColor: colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     borderRadius: 50,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
@@ -304,7 +312,7 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     fontSize: responsiveFontSize(2),
-    color: '#FFFFFF',
-    fontWeight: '600',
+    color: "#FFFFFF",
+    fontWeight: "600",
   },
 });

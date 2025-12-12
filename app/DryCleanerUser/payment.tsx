@@ -11,19 +11,17 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Platform,
   Modal,
   Alert,
-  TextInput,
   ActivityIndicator,
   StatusBar,
+  TextInput
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useSelector, useDispatch } from "react-redux";
 import { useStripeWrapper } from "../stripWrapper";
 import axiosInstance from "../../api/axios";
 import { useRouter } from "expo-router";
-import Constants from 'expo-constants';
 import {
   removeOrderItem,
   updateItemOptions,
@@ -42,8 +40,23 @@ const generateTrackingId = () => {
   return randomNum.toString();
 };
 
-// Get Google Maps API key from expo config
-const GOOGLE_MAPS_API_KEY = Constants.expoConfig?.extra?.GOOGLE_MAPS_API_KEY || "AIzaSyBn5c5hk6ko6gEwZ3IyWK6AkU4_U_tp_4g";
+// Haversine formula to calculate distance between two coordinates
+const calculateDistanceFromCoords = (lat1, lon1, lat2, lon2) => {
+  const R = 6371; // Earth's radius in kilometers
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  
+  const a = 
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * 
+    Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  const distance = R * c;
+  
+  return distance;
+};
 
 export default function OrderSummaryApp() {
   const router = useRouter();
@@ -59,32 +72,21 @@ export default function OrderSummaryApp() {
   // User's pickup address
   const userAddress = useMemo(() => {
     if (addresses?.home?.fullAddress) {
-      console.log("📍 Using home address as pickup:", addresses.home.fullAddress);
       return addresses.home.fullAddress;
     }
-
     if (addresses?.office?.fullAddress) {
-      console.log("📍 Using office address as pickup:", addresses.office.fullAddress);
       return addresses.office.fullAddress;
     }
-
-    console.log("⚠️ No user address found");
     return null;
   }, [addresses]);
 
   // Dry cleaner's delivery address
   const cleanerAddress = useMemo(() => {
     const cleaner = orderData?.selectedCleaner;
-    if (!cleaner?.address) {
-      console.log("⚠️ No cleaner address found");
-      return null;
-    }
+    if (!cleaner?.address) return null;
 
     const addr = cleaner.address;
-    if (typeof addr === "string") {
-      console.log("🏪 Cleaner address (string):", addr);
-      return addr;
-    }
+    if (typeof addr === "string") return addr;
 
     const parts = [];
     if (addr.street) parts.push(addr.street);
@@ -92,9 +94,7 @@ export default function OrderSummaryApp() {
     if (addr.state) parts.push(addr.state);
     if (addr.country) parts.push(addr.country);
     
-    const fullAddress = parts.join(", ") || null;
-    console.log("🏪 Cleaner address (constructed):", fullAddress);
-    return fullAddress;
+    return parts.join(", ") || null;
   }, [orderData?.selectedCleaner]);
 
   // Stripe hook
@@ -102,9 +102,6 @@ export default function OrderSummaryApp() {
     initializedPaymentSheet,
     openPayment,
     resetPaymentState,
-    debugPaymentState,
-    loading: stripeLoading,
-    isReadyForPayment,
   } = useStripeWrapper();
 
   const paymentReadyRef = useRef(false);
@@ -124,21 +121,20 @@ export default function OrderSummaryApp() {
 
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState("debit");
-  const [cardDetails, setCardDetails] = useState({
-    holderName: "",
-    cardNumber: "",
-    expiry: "",
-    cvv: "",
-  });
   const [paymentLoading, setPaymentLoading] = useState(false);
 
   const [orderNumber, setOrderNumber] = useState("");
   const [trackingId, setTrackingId] = useState("");
+  const [isCalculating, setIsCalculating] = useState(false);
 
-  // New state for distance
-  const [deliveryDistance, setDeliveryDistance] = useState(0);
+  // Distance state
+  const [deliveryDistance, setDeliveryDistance] = useState(null);
   const [distanceLoading, setDistanceLoading] = useState(false);
-  const [distanceError, setDistanceError] = useState(null);
+  const [cardDetails, setCardDetails] = useState({
+  cardNumber: "",
+  expiry: "",
+  cvv: "",
+});
 
   useEffect(() => {
     if (!orderNumber) {
@@ -147,7 +143,7 @@ export default function OrderSummaryApp() {
       setOrderNumber(newOrderNumber);
       setTrackingId(newTrackingId);
     }
-  }, []);
+  }, [orderNumber]);
 
   const washOnlyOptions = useMemo(
     () => [
@@ -167,88 +163,178 @@ export default function OrderSummaryApp() {
     []
   );
 
-  // Function to geocode address to coordinates
-  const geocodeAddress = async (address) => {
-    try {
-      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
-        address
-      )}&key=${GOOGLE_MAPS_API_KEY}`;
-
-      const response = await fetch(url);
-      const data = await response.json();
-
-      if (data.status === "OK" && data.results?.[0]) {
-        const location = data.results[0].geometry.location;
-        return { lat: location.lat, lng: location.lng };
+  // Geocode address using Nominatim (free, no API key required)
+  // Improved geocoding function with better error handling and address formatting
+const geocodeAddress = async (address) => {
+  try {
+    // Clean and format the address for better geocoding
+    const cleanAddress = address
+      .replace(/\s+/g, ' ')  // Remove extra spaces
+      .trim();
+    
+    console.log("🔍 Attempting to geocode:", cleanAddress);
+    
+    // Use Nominatim with better parameters
+    const url = `https://nominatim.openstreetmap.org/search?` + 
+      `format=json` +
+      `&q=${encodeURIComponent(cleanAddress)}` +
+      `&limit=1` +
+      `&countrycodes=in` +  // Limit to India for better results
+      `&addressdetails=1`;
+    
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'DryCleanerApp/1.0 (contact@example.com)',
+        'Accept': 'application/json',
       }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
 
-      console.error("❌ Geocoding failed:", data.status);
-      return null;
-    } catch (error) {
-      console.error("❌ Geocoding error:", error.message);
-      return null;
+    if (data && data.length > 0) {
+      const result = {
+        lat: parseFloat(data[0].lat),
+        lng: parseFloat(data[0].lon)
+      };
+      console.log("✅ Geocoding successful:", result);
+      return result;
+    }
+
+    // Try alternative geocoding with just city and state if full address fails
+    const fallbackParts = cleanAddress.split(',').slice(-3); // Get last 3 parts (usually city, state, country)
+    if (fallbackParts.length > 0) {
+      console.log("🔄 Trying fallback geocoding with:", fallbackParts.join(','));
+      
+      await new Promise(resolve => setTimeout(resolve, 1500)); // Wait longer between requests
+      
+      const fallbackUrl = `https://nominatim.openstreetmap.org/search?` + 
+        `format=json` +
+        `&q=${encodeURIComponent(fallbackParts.join(',').trim())}` +
+        `&limit=1` +
+        `&countrycodes=in`;
+      
+      const fallbackResponse = await fetch(fallbackUrl, {
+        headers: {
+          'User-Agent': 'DryCleanerApp/1.0 (contact@example.com)',
+          'Accept': 'application/json',
+        }
+      });
+      
+      const fallbackData = await fallbackResponse.json();
+      
+      if (fallbackData && fallbackData.length > 0) {
+        const result = {
+          lat: parseFloat(fallbackData[0].lat),
+          lng: parseFloat(fallbackData[0].lon)
+        };
+        console.log("✅ Fallback geocoding successful:", result);
+        return result;
+      }
+    }
+
+    console.warn("⚠️ Geocoding failed: No results found for:", cleanAddress);
+    return null;
+  } catch (error) {
+    console.error("❌ Geocoding error:", error.message);
+    return null;
+  }
+};
+
+// Improved distance calculation with caching
+const calculateDistance = useCallback(async (pickupAddr, dropoffAddr) => {
+  if (!pickupAddr || !dropoffAddr) {
+    console.log("⚠️ Missing addresses");
+    setDeliveryDistance(10);
+    setDistanceLoading(false);
+    return 10;
+  }
+  
+  // Prevent concurrent calls
+  if (isCalculating) {
+    console.log("⚠️ Distance calculation already in progress");
+    return;
+  }
+  
+  console.log("🗺️ Calculating distance via backend...");
+  setDistanceLoading(true);
+  setIsCalculating(true);
+  
+  try {
+    const response = await axiosInstance.post(
+      "/users/calculate-distance",
+      {
+        pickupAddress: pickupAddr,
+        dropoffAddress: dropoffAddr
+      },
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+        timeout: 15000,
+      }
+    );
+    
+    if (response.data?.success && response.data?.data?.distance) {
+      const distance = parseFloat(response.data.data.distance);
+      console.log("✅ Distance from backend:", distance, "km");
+      
+      setDeliveryDistance(distance);
+      return distance;
+    }
+    
+    console.log("⚠️ Using default 10km");
+    setDeliveryDistance(10);
+    return 10;
+  } catch (error) {
+    console.error("❌ Distance calculation error:", error.message);
+    setDeliveryDistance(10);
+    return 10;
+  } finally {
+    setDistanceLoading(false);
+    setIsCalculating(false);
+  }
+}, []); 
+
+// Remove the duplicate useEffect blocks and replace with this one
+useEffect(() => {
+  let isSubscribed = true;
+  let timeoutId;
+  
+  const fetchDistance = async () => {
+    // Only calculate if we have all required data and haven't calculated yet
+    if (
+      userAddress && 
+      cleanerAddress && 
+      globalPricing && 
+      deliveryDistance === null && 
+      !distanceLoading
+    ) {
+      console.log("🔄 Starting distance calculation...");
+      
+      // Debounce to prevent multiple rapid calls
+      timeoutId = setTimeout(async () => {
+        if (isSubscribed) {
+          await calculateDistance(userAddress, cleanerAddress);
+        }
+      }, 500); // Wait 500ms before making the call
     }
   };
 
-  // Function to calculate distance using Geocoding + Direct calculation
-  const calculateDistance = useCallback(async (origin, destination) => {
-    if (!origin || !destination) {
-      console.log("⚠️ Missing origin or destination for distance calculation");
-      return 0;
+  fetchDistance();
+  
+  return () => {
+    isSubscribed = false;
+    if (timeoutId) {
+      clearTimeout(timeoutId);
     }
+  };
+}, [userAddress, cleanerAddress, globalPricing]); // Remove calculateDistance, deliveryDistance, and distanceLoading from dependencies
 
-    console.log("🗺️ Calculating distance:");
-    console.log("  Origin (User):", origin);
-    console.log("  Destination (Cleaner):", destination);
-
-    setDistanceLoading(true);
-    setDistanceError(null);
-
-    try {
-      // Geocode both addresses
-      console.log("📡 Geocoding addresses...");
-      
-      const originCoords = await geocodeAddress(origin);
-      const destCoords = await geocodeAddress(destination);
-
-      if (!originCoords || !destCoords) {
-        console.error("❌ Failed to geocode addresses");
-        setDistanceError("Unable to calculate distance. Using default.");
-        setDistanceLoading(false);
-        return 10;
-      }
-
-      console.log("✅ Origin coordinates:", originCoords);
-      console.log("✅ Destination coordinates:", destCoords);
-
-      // Calculate distance using Haversine formula
-      const R = 6371; // Earth's radius in kilometers
-      const dLat = (destCoords.lat - originCoords.lat) * Math.PI / 180;
-      const dLon = (destCoords.lng - originCoords.lng) * Math.PI / 180;
-      
-      const a = 
-        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-        Math.cos(originCoords.lat * Math.PI / 180) * 
-        Math.cos(destCoords.lat * Math.PI / 180) *
-        Math.sin(dLon / 2) * Math.sin(dLon / 2);
-      
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      const distanceInKm = (R * c).toFixed(2);
-
-      console.log("✅ Distance calculated:", distanceInKm, "km");
-      
-      setDeliveryDistance(parseFloat(distanceInKm));
-      setDistanceLoading(false);
-      return parseFloat(distanceInKm);
-    } catch (error) {
-      console.error("❌ Error calculating distance:", error.message);
-      setDistanceError("Error calculating distance. Using default.");
-      setDistanceLoading(false);
-      return 10; // Default fallback distance
-    }
-  }, []);
-
-  // Fetch global pricing from API
+  // Fetch global pricing from backend
   const fetchGlobalPricing = useCallback(async () => {
     const defaultPricing = {
       deliveryChargePerKm: 25,
@@ -256,49 +342,39 @@ export default function OrderSummaryApp() {
       platformFee: 2,
     };
 
+    setGlobalPricing(defaultPricing);
+
     if (!authToken) {
       console.log("⚠️ No auth token, using default pricing");
-      setGlobalPricing(defaultPricing);
       setLoading(false);
       return;
     }
 
     try {
-      console.log("📡 Fetching global pricing...");
-      const response = await fetch(
-        "http://localhost:5000/api/users/admin/get-global-pricing",
+      console.log("📡 Fetching global pricing from backend...");
+      const response = await axiosInstance.get(
+        "/users/admin/get-global-pricing",
         {
-          method: "GET",
           headers: {
             Authorization: `Bearer ${authToken}`,
-            "Content-Type": "application/json",
           },
+          timeout: 10000,
         }
       );
 
-      if (response.ok) {
-        const apiResponse = await response.json();
-        console.log("✅ Global pricing response:", apiResponse);
-        
-        if (apiResponse.success && apiResponse.data) {
-          const pricing = {
-            deliveryChargePerKm: apiResponse.data.pricePerKm || 25,
-            serviceCharge: 0.15,
-            platformFee: 2,
-          };
-          console.log("✅ Using pricing:", pricing);
-          setGlobalPricing(pricing);
-        } else {
-          console.log("⚠️ Invalid pricing response, using default");
-          setGlobalPricing(defaultPricing);
-        }
+      if (response.data?.success && response.data?.data) {
+        const pricing = {
+          deliveryChargePerKm: parseFloat(response.data.data.pricePerKm) || 25,
+          serviceCharge: 0.15,
+          platformFee: 2,
+        };
+        console.log("✅ Pricing from backend:", pricing);
+        setGlobalPricing(pricing);
       } else {
-        console.log("⚠️ Pricing API failed, using default");
-        setGlobalPricing(defaultPricing);
+        console.log("⚠️ Using default pricing");
       }
     } catch (error) {
-      console.error("❌ Error fetching pricing:", error.message);
-      setGlobalPricing(defaultPricing);
+      console.log("⚠️ Error fetching pricing, using default:", error.message);
     } finally {
       setLoading(false);
     }
@@ -309,24 +385,19 @@ export default function OrderSummaryApp() {
     fetchGlobalPricing();
   }, [fetchGlobalPricing]);
 
-  // Calculate distance when addresses are available
+  // Calculate distance when addresses and pricing are available
   useEffect(() => {
     const fetchDistance = async () => {
-      if (userAddress && cleanerAddress && globalPricing) {
-        console.log("🔄 Addresses available, calculating distance...");
+      if (userAddress && cleanerAddress && globalPricing && deliveryDistance === null) {
+        console.log("🔄 Addresses ready, calculating distance...");
         await calculateDistance(userAddress, cleanerAddress);
-      } else {
-        console.log("⏳ Waiting for addresses and pricing...");
-        console.log("  User address:", !!userAddress);
-        console.log("  Cleaner address:", !!cleanerAddress);
-        console.log("  Global pricing:", !!globalPricing);
       }
     };
 
     fetchDistance();
-  }, [userAddress, cleanerAddress, globalPricing, calculateDistance]);
+  }, [userAddress, cleanerAddress, globalPricing, deliveryDistance, calculateDistance]);
 
-  // Calculate order totals with dynamic delivery charge
+  // Calculate order totals
   const calculations = useMemo(() => {
     if (!orderData?.items || !globalPricing) {
       return {
@@ -344,24 +415,12 @@ export default function OrderSummaryApp() {
       return sum + price * quantity;
     }, 0);
 
-    const serviceFees = subtotal * globalPricing.serviceCharge;
-    
-    // Use calculated distance or fallback to 10km
-    const distanceToUse = deliveryDistance > 0 ? deliveryDistance : 10;
-    const deliveryCharge = globalPricing.deliveryChargePerKm * distanceToUse;
-    
-    const platformFee = globalPricing.platformFee;
+    const serviceFees = subtotal * (globalPricing.serviceCharge || 0.15);
+    const distanceToUse = deliveryDistance || 10;
+    const deliveryChargePerKm = globalPricing.deliveryChargePerKm || 25;
+    const deliveryCharge = deliveryChargePerKm * distanceToUse;
+    const platformFee = globalPricing.platformFee || 2;
     const total = subtotal + serviceFees + deliveryCharge + platformFee;
-
-    console.log("💰 Calculations:", {
-      subtotal: subtotal.toFixed(2),
-      serviceFees: serviceFees.toFixed(2),
-      deliveryDistance: distanceToUse.toFixed(2),
-      deliveryChargePerKm: globalPricing.deliveryChargePerKm,
-      deliveryCharge: deliveryCharge.toFixed(2),
-      platformFee: platformFee.toFixed(2),
-      total: total.toFixed(2),
-    });
 
     return {
       subtotal,
@@ -372,84 +431,6 @@ export default function OrderSummaryApp() {
     };
   }, [orderData?.items, globalPricing, deliveryDistance]);
 
-  useEffect(() => {
-    if (__DEV__) {
-      console.log("=== DEBUG ===");
-      console.log("Redux order exists:", !!orderData);
-      console.log("Items count:", orderData?.items?.length || 0);
-      console.log("Order Number:", orderNumber);
-      console.log("User Address:", userAddress);
-      console.log("Cleaner Address:", cleanerAddress);
-      console.log("Delivery Distance (km):", deliveryDistance);
-      console.log("Delivery Charge:", calculations.deliveryCharge);
-      console.log("Total Amount:", calculations.total);
-      console.log("=== END DEBUG ===");
-    }
-  }, [orderData, orderNumber, userAddress, cleanerAddress, deliveryDistance, calculations]);
-
-  const getScheduledDateTime = (scheduling, type) => {
-    const isPickup = type === "pickup";
-
-    const isoDateTime = isPickup
-      ? scheduling?.scheduledPickupDateTime
-      : scheduling?.scheduledDeliveryDateTime;
-
-    if (isoDateTime) {
-      return isoDateTime;
-    }
-
-    const date = isPickup ? scheduling?.pickupDate : scheduling?.deliveryDate;
-    const month = isPickup
-      ? scheduling?.pickupMonth
-      : scheduling?.deliveryMonth;
-    const time = isPickup ? scheduling?.pickupTime : scheduling?.deliveryTime;
-
-    if (!date || !month || !time) {
-      console.error(`Missing ${type} scheduling data:`, { date, month, time });
-      return new Date().toISOString();
-    }
-
-    try {
-      const currentYear = new Date().getFullYear();
-      const monthNumber =
-        [
-          "January",
-          "February",
-          "March",
-          "April",
-          "May",
-          "June",
-          "July",
-          "August",
-          "September",
-          "October",
-          "November",
-          "December",
-        ].indexOf(month) + 1;
-
-      const timeMatch = time.match(/(\d+):(\d+)(AM|PM)/);
-      if (!timeMatch) return new Date().toISOString();
-
-      let hours = parseInt(timeMatch[1]);
-      const minutes = parseInt(timeMatch[2]);
-      const period = timeMatch[3];
-
-      if (period === "PM" && hours !== 12) hours += 12;
-      if (period === "AM" && hours === 12) hours = 0;
-
-      return new Date(
-        currentYear,
-        monthNumber - 1,
-        parseInt(date),
-        hours,
-        minutes
-      ).toISOString();
-    } catch (error) {
-      console.error(`Error formatting ${type} date:`, error);
-      return new Date().toISOString();
-    }
-  };
-
   const buildISODate = (date, month, time) => {
     try {
       const currentYear = new Date().getFullYear();
@@ -457,28 +438,16 @@ export default function OrderSummaryApp() {
 
       const monthNumber =
         [
-          "January",
-          "February",
-          "March",
-          "April",
-          "May",
-          "June",
-          "July",
-          "August",
-          "September",
-          "October",
-          "November",
-          "December",
+          "January", "February", "March", "April", "May", "June",
+          "July", "August", "September", "October", "November", "December",
         ].indexOf(month) + 1;
 
       if (monthNumber === 0) {
-        console.error("❌ Invalid month:", month);
         throw new Error(`Invalid month: ${month}`);
       }
 
       const timeMatch = time.match(/(\d+):(\d+)(AM|PM)/i);
       if (!timeMatch) {
-        console.error("❌ Invalid time format:", time);
         throw new Error(`Invalid time format: ${time}`);
       }
 
@@ -492,22 +461,7 @@ export default function OrderSummaryApp() {
         hours = 0;
       }
 
-      if (
-        isNaN(hours) ||
-        isNaN(minutes) ||
-        hours < 0 ||
-        hours > 23 ||
-        minutes < 0 ||
-        minutes > 59
-      ) {
-        throw new Error(`Invalid time values: ${hours}:${minutes}`);
-      }
-
       const dateNum = parseInt(date, 10);
-      if (isNaN(dateNum) || dateNum < 1 || dateNum > 31) {
-        throw new Error(`Invalid date: ${date}`);
-      }
-
       let scheduledDate = new Date(
         currentYear,
         monthNumber - 1,
@@ -519,7 +473,6 @@ export default function OrderSummaryApp() {
       );
 
       if (scheduledDate <= currentDate) {
-        console.log(`📅 Date ${date} ${month} is in the past, using next year`);
         scheduledDate = new Date(
           currentYear + 1,
           monthNumber - 1,
@@ -531,14 +484,7 @@ export default function OrderSummaryApp() {
         );
       }
 
-      if (isNaN(scheduledDate.getTime())) {
-        throw new Error("Invalid date created");
-      }
-
-      const isoString = scheduledDate.toISOString();
-      console.log(`📅 Built ISO date: ${date} ${month} ${time} → ${isoString}`);
-
-      return isoString;
+      return scheduledDate.toISOString();
     } catch (error) {
       console.error("❌ Error building ISO date:", error.message);
       throw error;
@@ -547,16 +493,13 @@ export default function OrderSummaryApp() {
 
   const formatAddress = (address) => {
     if (!address) return "Not specified";
-
     if (typeof address === "string") {
       return address.trim() || "Not specified";
     }
-
     if (typeof address === "object" && address !== null) {
       if (address.fullAddress) {
         return address.fullAddress.trim() || "Not specified";
       }
-
       if (address.street || address.city) {
         const parts = [];
         if (address.street) parts.push(address.street);
@@ -566,19 +509,11 @@ export default function OrderSummaryApp() {
         return parts.join(", ") || "Not specified";
       }
     }
-
     return "Not specified";
   };
 
   const handlePayment = async () => {
     console.log("🚀 Starting payment process...");
-    console.log("🔍 Initial checks:", {
-      hasOrderData: !!orderData,
-      hasCleaner: !!orderData?.selectedCleaner,
-      hasScheduling: !!scheduling,
-      hasUserAddress: !!userAddress,
-      deliveryDistance: deliveryDistance,
-    });
 
     if (!orderData || !orderData.selectedCleaner) {
       Alert.alert(
@@ -593,8 +528,7 @@ export default function OrderSummaryApp() {
       return;
     }
 
-    if (!userAddress || userAddress === "Address not specified") {
-      console.error("❌ No valid user address found");
+    if (!userAddress) {
       Alert.alert(
         "Address Required",
         "Please add a pickup address before proceeding with payment."
@@ -603,7 +537,6 @@ export default function OrderSummaryApp() {
     }
 
     if (!cleanerAddress) {
-      console.error("❌ No valid cleaner address found");
       Alert.alert(
         "Error",
         "Cleaner address is not available. Please select a different cleaner."
@@ -611,8 +544,7 @@ export default function OrderSummaryApp() {
       return;
     }
 
-    if (deliveryDistance === 0 || distanceLoading) {
-      console.log("⏳ Distance still calculating...");
+    if (distanceLoading) {
       Alert.alert(
         "Please Wait",
         "Calculating delivery distance. Please try again in a moment."
@@ -620,19 +552,12 @@ export default function OrderSummaryApp() {
       return;
     }
 
-    console.log("✅ All validations passed");
-    console.log("✅ Using user address:", userAddress);
-    console.log("✅ Using cleaner address:", cleanerAddress);
-    console.log("✅ Delivery distance:", deliveryDistance, "km");
-
     const freshOrderNumber = generateFreshOrderNumber();
     const freshTrackingId = generateTrackingId();
     setOrderNumber(freshOrderNumber);
     setTrackingId(freshTrackingId);
 
-    console.log("🧹 Clearing any previous payment data...");
     resetPaymentState();
-
     setPaymentLoading(true);
     setLocalPaymentReady(false);
     paymentReadyRef.current = false;
@@ -640,12 +565,8 @@ export default function OrderSummaryApp() {
     await new Promise((resolve) => setTimeout(resolve, 300));
 
     let createdBookingId = null;
-    let currentStep = "";
 
     try {
-      currentStep = "Building booking data";
-      console.log(`📋 Step: ${currentStep}`);
-
       let scheduledPickupDateTime;
       let scheduledDeliveryDateTime;
 
@@ -656,10 +577,7 @@ export default function OrderSummaryApp() {
         ) {
           scheduledPickupDateTime = scheduling.scheduledPickupDateTime;
           scheduledDeliveryDateTime = scheduling.scheduledDeliveryDateTime;
-          console.log("✅ Using pre-formatted datetime strings from Redux");
         } else {
-          console.log("🔨 Building datetime strings from scheduling data");
-
           scheduledPickupDateTime = buildISODate(
             scheduling.pickupDate,
             scheduling.pickupMonth,
@@ -673,7 +591,6 @@ export default function OrderSummaryApp() {
           );
         }
       } catch (dateError) {
-        console.error("❌ Failed to build datetime strings:", dateError);
         Alert.alert(
           "Invalid Schedule",
           "There was an error with your pickup/delivery schedule. Please go back and select your times again."
@@ -682,10 +599,11 @@ export default function OrderSummaryApp() {
         return;
       }
 
+      const finalDistance = deliveryDistance || 10;
+
       const bookingData = {
         userId: user?._id,
         dryCleaner: orderData.selectedCleaner._id,
-
         orderItems: orderData.items.map((item) => ({
           itemId: item._id,
           name: item.name,
@@ -700,17 +618,13 @@ export default function OrderSummaryApp() {
             zipper: item.options?.zipper || false,
           },
         })),
-
         isScheduled: true,
         scheduledPickupDateTime,
         scheduledDeliveryDateTime,
-
         pickupAddress: userAddress,
         dropoffAddress: cleanerAddress,
-
         orderNumber: freshOrderNumber,
         trackingId: freshTrackingId,
-
         pricing: {
           subtotal: calculations.subtotal,
           serviceFees: calculations.serviceFees,
@@ -718,8 +632,7 @@ export default function OrderSummaryApp() {
           platformFee: calculations.platformFee,
           totalAmount: calculations.total,
         },
-
-        distance: deliveryDistance,
+        distance: finalDistance,
         time: 30,
         price: calculations.subtotal,
         deliveryCharge: calculations.deliveryCharge,
@@ -729,61 +642,7 @@ export default function OrderSummaryApp() {
         status: "pending",
       };
 
-      currentStep = "Validating booking data";
-      console.log(`📋 Step: ${currentStep}`);
-
-      const validationErrors = [];
-
-      if (!user?._id) validationErrors.push("User ID is missing");
-      if (!orderData.selectedCleaner?._id)
-        validationErrors.push("Dry cleaner ID is missing");
-      if (!scheduledPickupDateTime)
-        validationErrors.push("Scheduled pickup date/time is invalid");
-      if (!scheduledDeliveryDateTime)
-        validationErrors.push("Scheduled delivery date/time is invalid");
-      if (!userAddress || userAddress === "Address not specified") {
-        validationErrors.push("Valid user address is required");
-      }
-      if (!cleanerAddress) {
-        validationErrors.push("Valid cleaner address is required");
-      }
-
-      const now = new Date();
-      const pickupDate = new Date(scheduledPickupDateTime);
-      const deliveryDate = new Date(scheduledDeliveryDateTime);
-
-      if (pickupDate <= now) {
-        validationErrors.push("Scheduled pickup date must be in the future");
-      }
-      if (deliveryDate <= pickupDate) {
-        validationErrors.push(
-          "Scheduled delivery date must be after pickup date"
-        );
-      }
-      if (!orderData.items || orderData.items.length === 0) {
-        validationErrors.push("No items in order");
-      }
-      if (
-        calculations.deliveryCharge === undefined ||
-        calculations.deliveryCharge === null
-      ) {
-        validationErrors.push("Delivery charge is required");
-      }
-      if (deliveryDistance === 0) {
-        validationErrors.push("Delivery distance is required");
-      }
-
-      if (validationErrors.length > 0) {
-        console.error("❌ Validation errors:", validationErrors);
-        throw new Error(`Validation failed: ${validationErrors.join(", ")}`);
-      }
-
-      console.log("✅ Booking data validated");
-      console.log("📦 Booking data:", JSON.stringify(bookingData, null, 2));
-
-      currentStep = "Creating booking";
-      console.log(`📋 Step: ${currentStep}`);
-
+      console.log("📦 Creating booking...");
       const bookingResponse = await axiosInstance.post(
         "/users/create",
         bookingData,
@@ -806,11 +665,9 @@ export default function OrderSummaryApp() {
       createdBookingId = createdBooking._id;
       setCompletedBookingId(createdBooking._id);
 
-      console.log("✅ Booking created successfully:", createdBookingId);
+      console.log("✅ Booking created:", createdBookingId);
 
-      currentStep = "Creating payment intent";
-      console.log(`📋 Step: ${currentStep}`);
-
+      console.log("💳 Creating payment intent...");
       const paymentIntentResponse = await axiosInstance.post(
         "/users/payment-intent",
         {
@@ -835,28 +692,7 @@ export default function OrderSummaryApp() {
       const { paymentIntent, ephemeralKey, customerId, paymentIntentId } =
         paymentIntentResponse.data.data;
 
-      console.log("✅ NEW Payment intent received:", {
-        paymentIntentId,
-        clientSecretPrefix: paymentIntent?.substring(0, 30),
-        clientSecretLength: paymentIntent?.length,
-      });
-
-      if (!paymentIntent || !paymentIntent.includes("_secret_")) {
-        console.error("❌ Invalid payment intent format!");
-        throw new Error("Invalid payment intent format received from server");
-      }
-
-      if (paymentIntentId && !paymentIntent.includes(paymentIntentId)) {
-        console.error("❌ Payment intent ID mismatch!");
-        console.error("Expected ID:", paymentIntentId);
-        console.error("Client secret:", paymentIntent.substring(0, 50));
-        throw new Error("Payment intent data mismatch - please try again");
-      }
-
-      currentStep = "Initializing payment sheet";
-      console.log(`📋 Step: ${currentStep}`);
-      console.log("💳 Initializing payment sheet with FRESH data...");
-      console.log("   Payment Intent ID:", paymentIntentId);
+      console.log("✅ Payment intent received");
 
       const initialized = await initializedPaymentSheet(
         paymentIntent,
@@ -869,37 +705,17 @@ export default function OrderSummaryApp() {
         throw new Error("Failed to initialize payment sheet");
       }
 
-      const stateAfterInit = debugPaymentState();
-      console.log("✅ Payment sheet initialized");
-      console.log(
-        "🔍 Stored payment intent ID:",
-        stateAfterInit.ref.paymentIntentId
-      );
-      console.log("🔍 Should match:", paymentIntentId);
-
-      if (stateAfterInit.ref.paymentIntentId !== paymentIntentId) {
-        console.error("❌ WARNING: Stored payment intent ID does not match!");
-        console.error("Expected:", paymentIntentId);
-        console.error("Got:", stateAfterInit.ref.paymentIntentId);
-      }
-
       setLocalPaymentReady(true);
       paymentReadyRef.current = true;
 
-      console.log("⏳ Waiting 2 seconds for payment sheet...");
       await new Promise((resolve) => setTimeout(resolve, 2000));
 
-      console.log("💳 Opening payment sheet NOW...");
-      console.log("💳 Using payment intent:", paymentIntentId);
-
+      console.log("💳 Opening payment sheet...");
       const paymentResult = await openPayment();
-
-      console.log("💳 Payment result:", paymentResult);
 
       if (paymentResult === true) {
         console.log("✅ Payment successful!");
-        currentStep = "Confirming payment";
-
+        
         const confirmResponse = await axiosInstance.post(
           "/users/confirm-payment",
           {
@@ -917,7 +733,6 @@ export default function OrderSummaryApp() {
         );
 
         if (confirmResponse.data.success) {
-          console.log("✅ Payment confirmed");
           setShowPaymentModal(false);
           setShowSuccessModal(true);
           resetPaymentState();
@@ -925,8 +740,6 @@ export default function OrderSummaryApp() {
           throw new Error("Payment confirmation failed");
         }
       } else if (paymentResult === false) {
-        console.log("ℹ️ Payment cancelled");
-
         Alert.alert(
           "Payment Incomplete",
           "The payment was not completed. What would you like to do?",
@@ -963,20 +776,13 @@ export default function OrderSummaryApp() {
             {
               text: "Cancel Booking",
               style: "destructive",
-              onPress: async () => {
-                if (createdBookingId) {
-                  await handleBookingCancellation(
-                    createdBookingId,
-                    freshOrderNumber,
-                    "User cancelled"
-                  );
-                  resetPaymentState();
-                  Alert.alert(
-                    "Booking Cancelled",
-                    "Your booking has been cancelled."
-                  );
-                  router.back();
-                }
+              onPress: () => {
+                resetPaymentState();
+                Alert.alert(
+                  "Booking Cancelled",
+                  "Your booking has been cancelled."
+                );
+                router.back();
               },
             },
             {
@@ -995,59 +801,13 @@ export default function OrderSummaryApp() {
       }
     } catch (err) {
       console.error("❌ Payment error:", err.message);
-
       if (!err.message?.toLowerCase().includes("cancel")) {
         Alert.alert("Payment Failed", err.message);
       }
     } finally {
-      console.log("🏁 Cleaning up...");
       setPaymentLoading(false);
       setLocalPaymentReady(false);
       paymentReadyRef.current = false;
-    }
-  };
-
-  const handleBookingCancellation = async (
-    bookingId,
-    orderNumber,
-    reason = "Payment cancelled by user"
-  ) => {
-    console.log("🔄 Attempting to cancel booking:", bookingId);
-
-    try {
-      const response = await axiosInstance.post(
-        `/users/${bookingId}/cancel`,
-        {
-          orderNumber,
-          reason,
-        },
-        {
-          timeout: 10000,
-        }
-      );
-
-      console.log("✅ Cancellation response:", response.data);
-
-      if (response.data?.success) {
-        console.log("✅ Booking cancelled successfully");
-        return true;
-      } else {
-        console.log("⚠️ Cancellation failed but got response");
-        return false;
-      }
-    } catch (error) {
-      console.error("❌ Booking cancellation failed:", error.message);
-
-      if (error.response) {
-        console.error("Error details:", {
-          status: error.response.status,
-          data: error.response.data,
-          url: error.config?.url,
-          fullUrl: error.config?.baseURL + error.config?.url,
-        });
-      }
-
-      return false;
     }
   };
 
@@ -1080,10 +840,7 @@ export default function OrderSummaryApp() {
           item?.name || "this item"
         }" from your order?`,
         [
-          {
-            text: "Cancel",
-            style: "cancel",
-          },
+          { text: "Cancel", style: "cancel" },
           {
             text: "Remove",
             style: "destructive",
@@ -1091,13 +848,11 @@ export default function OrderSummaryApp() {
               dispatch(removeOrderItem(id));
               Alert.alert(
                 "Item Removed",
-                `${item?.name || "Item"} has been removed from your order.`,
-                [{ text: "OK" }]
+                `${item?.name || "Item"} has been removed from your order.`
               );
             },
           },
-        ],
-        { cancelable: true }
+        ]
       );
     },
     [dispatch, orderData?.items]
@@ -1124,8 +879,7 @@ export default function OrderSummaryApp() {
   const updateStarchLevel = useCallback(
     (value) => {
       if (!selectedItemId) return;
-      const itemList = orderData?.items ?? [];
-      const item = itemList.find((i) => i._id === selectedItemId);
+      const item = orderData?.items.find((i) => i._id === selectedItemId);
       if (item) {
         dispatch(
           updateItemOptions({
@@ -1141,53 +895,15 @@ export default function OrderSummaryApp() {
     [selectedItemId, dispatch, orderData]
   );
 
-  const updateQuantity = useCallback(
-    (itemId, newQuantity) => {
-      const item = orderData?.items.find((i) => i._id === itemId);
-      if (!item) return;
-      const validQuantity = Math.max(0, Math.floor(newQuantity));
-      if (validQuantity === 0) {
-        Alert.alert(
-          "Remove Item?",
-          `Setting quantity to 0 will remove "${item.name}" from your order. Continue?`,
-          [
-            {
-              text: "Cancel",
-              style: "cancel",
-            },
-            {
-              text: "Remove Item",
-              style: "destructive",
-              onPress: () => {
-                dispatch(removeOrderItem(itemId));
-              },
-            },
-          ],
-          { cancelable: true }
-        );
-      } else {
-        dispatch(
-          updateItemQuantity({
-            itemId,
-            quantity: validQuantity,
-            itemName: item.name,
-          })
-        );
-      }
-    },
-    [dispatch, orderData?.items]
-  );
-
   const incrementQuantity = useCallback(
     (itemId) => {
       const item = orderData?.items.find((i) => i._id === itemId);
       if (!item) return;
       const currentQuantity = parseInt(String(item.quantity || 0), 10);
-      const newQuantity = currentQuantity + 1;
       dispatch(
         updateItemQuantity({
           itemId,
-          quantity: newQuantity,
+          quantity: currentQuantity + 1,
           itemName: item.name,
         })
       );
@@ -1205,26 +921,19 @@ export default function OrderSummaryApp() {
           "Remove Item?",
           `This will remove "${item.name}" from your order. Continue?`,
           [
-            {
-              text: "Cancel",
-              style: "cancel",
-            },
+            { text: "Cancel", style: "cancel" },
             {
               text: "Remove",
               style: "destructive",
-              onPress: () => {
-                dispatch(removeOrderItem(itemId));
-              },
+              onPress: () => dispatch(removeOrderItem(itemId)),
             },
-          ],
-          { cancelable: true }
+          ]
         );
       } else {
-        const newQuantity = currentQuantity - 1;
         dispatch(
           updateItemQuantity({
             itemId,
-            quantity: newQuantity,
+            quantity: currentQuantity - 1,
             itemName: item.name,
           })
         );
@@ -1236,72 +945,32 @@ export default function OrderSummaryApp() {
   const getItemTotal = useCallback((item) => {
     const price = parseFloat(String(item.price || 0));
     const quantity = parseInt(String(item.quantity || 0), 10);
-    if (isNaN(price) || isNaN(quantity)) return 0;
     return price * quantity;
   }, []);
 
   const getStarchLevelText = useCallback((level) => {
     switch (level) {
-      case 1:
-        return "None";
-      case 2:
-        return "Light";
-      case 3:
-        return "Medium";
-      case 4:
-        return "Heavy";
-      default:
-        return "Medium";
+      case 1: return "None";
+      case 2: return "Light";
+      case 3: return "Medium";
+      case 4: return "Heavy";
+      default: return "Medium";
     }
   }, []);
 
-  const renderAddressText = useCallback((address) => {
-    if (!address) return "No address provided";
-
-    if (typeof address === "string") {
-      return address.trim() || "No address provided";
-    }
-
-    if (typeof address === "object" && address !== null) {
-      if (address.street || address.city) {
-        const street = address.street || "";
-        const city = address.city || "";
-        const state = address.state || "";
-        const country = address.country || "";
-
-        const parts = [];
-        if (street) parts.push(street);
-        if (city) parts.push(city);
-        if (state) parts.push(state);
-        if (country) parts.push(country);
-
-        return parts.join(", ") || "No address provided";
-      }
-
-      if (address.fullAddress) {
-        return address.fullAddress.trim() || "No address provided";
-      }
-    }
-
-    return "No address provided";
-  }, []);
-
-  const RadioButton = ({ selected, onPress, label }) => {
-    if (!label) return null;
-
-    return (
-      <TouchableOpacity style={styles.radioContainer} onPress={onPress}>
-        <View style={[styles.radioButton, selected && styles.radioSelected]}>
-          {selected && <View style={styles.radioInner} />}
-        </View>
-        {label && <Text style={styles.radioLabel}>{label}</Text>}
-      </TouchableOpacity>
-    );
-  };
+  const RadioButton = ({ selected, onPress, label }) => (
+    <TouchableOpacity style={styles.radioContainer} onPress={onPress}>
+      <View style={[styles.radioButton, selected && styles.radioSelected]}>
+        {selected && <View style={styles.radioInner} />}
+      </View>
+      <Text style={styles.radioLabel}>{label}</Text>
+    </TouchableOpacity>
+  );
 
   if (loading) {
     return (
       <View style={[styles.container, styles.loadingContainer]}>
+        <ActivityIndicator size="large" color="#FF8C00" />
         <Text style={styles.loadingText}>Loading order summary...</Text>
       </View>
     );
@@ -1337,7 +1006,7 @@ export default function OrderSummaryApp() {
             {orderData.selectedCleaner.shopname || "Unknown Cleaner"}
           </Text>
           <Text style={styles.cleanerAddress}>
-            {renderAddressText(orderData.selectedCleaner.address)}
+            {formatAddress(orderData.selectedCleaner.address)}
           </Text>
           {orderData.selectedCleaner.rating ? (
             <Text style={styles.cleanerRating}>
@@ -1349,15 +1018,15 @@ export default function OrderSummaryApp() {
               <ActivityIndicator size="small" color="#FF8C00" />
               <Text style={styles.distanceText}>Calculating distance...</Text>
             </View>
-          ) : deliveryDistance > 0 ? (
+          ) : deliveryDistance ? (
             <Text style={styles.distanceText}>
               📍 Distance: {deliveryDistance.toFixed(2)} km
             </Text>
-          ) : distanceError ? (
-            <Text style={styles.distanceErrorText}>
-              ⚠️ {distanceError}
+          ) : (
+            <Text style={styles.distanceText}>
+              📍 Distance: ~10 km (estimated)
             </Text>
-          ) : null}
+          )}
         </View>
       ) : null}
 
@@ -1394,24 +1063,10 @@ export default function OrderSummaryApp() {
                     </Text>
                     <View style={styles.quantityControls}>
                       <TouchableOpacity
-                        style={[
-                          styles.quantityButton,
-                          parseInt(String(item.quantity || 0)) <= 1 &&
-                            styles.quantityButtonDisabled,
-                        ]}
+                        style={styles.quantityButton}
                         onPress={() => decrementQuantity(item._id)}
-                        activeOpacity={0.7}
-                        disabled={parseInt(String(item.quantity || 0)) <= 0}
                       >
-                        <Text
-                          style={[
-                            styles.quantityButtonText,
-                            parseInt(String(item.quantity || 0)) <= 1 &&
-                              styles.quantityButtonTextDisabled,
-                          ]}
-                        >
-                          −
-                        </Text>
+                        <Text style={styles.quantityButtonText}>−</Text>
                       </TouchableOpacity>
                       <Text style={styles.quantityText}>
                         {parseInt(String(item.quantity || 0))}
@@ -1419,7 +1074,6 @@ export default function OrderSummaryApp() {
                       <TouchableOpacity
                         style={styles.quantityButton}
                         onPress={() => incrementQuantity(item._id)}
-                        activeOpacity={0.7}
                       >
                         <Text style={styles.quantityButtonText}>+</Text>
                       </TouchableOpacity>
@@ -1448,14 +1102,13 @@ export default function OrderSummaryApp() {
                       }}
                     >
                       <Text style={styles.dropdownText}>
-                        Starch Level:{" "}
-                        {getStarchLevelText(item.starchLevel || 3)}
+                        Starch Level: {getStarchLevelText(item.starchLevel || 3)}
                       </Text>
                     </TouchableOpacity>
                   </View>
 
                   <View style={styles.checkboxContainer}>
-                    {item.options?.zipper !== undefined ? (
+                    {item.options?.zipper !== undefined && (
                       <TouchableOpacity
                         style={[
                           styles.checkbox,
@@ -1464,14 +1117,14 @@ export default function OrderSummaryApp() {
                         onPress={() => toggleOption(item._id, "zipper")}
                       >
                         <View style={styles.checkboxInner}>
-                          {item.options.zipper ? (
+                          {item.options.zipper && (
                             <Text style={styles.checkmark}>✓</Text>
-                          ) : null}
+                          )}
                         </View>
                         <Text style={styles.checkboxText}>Zipper</Text>
                       </TouchableOpacity>
-                    ) : null}
-                    {item.options?.button !== undefined ? (
+                    )}
+                    {item.options?.button !== undefined && (
                       <TouchableOpacity
                         style={[
                           styles.checkbox,
@@ -1480,13 +1133,13 @@ export default function OrderSummaryApp() {
                         onPress={() => toggleOption(item._id, "button")}
                       >
                         <View style={styles.checkboxInner}>
-                          {item.options.button ? (
+                          {item.options.button && (
                             <Text style={styles.checkmark}>✓</Text>
-                          ) : null}
+                          )}
                         </View>
                         <Text style={styles.checkboxText}>Button</Text>
                       </TouchableOpacity>
-                    ) : null}
+                    )}
                     <TouchableOpacity
                       style={[
                         styles.checkbox,
@@ -1495,9 +1148,9 @@ export default function OrderSummaryApp() {
                       onPress={() => toggleOption(item._id, "washAndFold")}
                     >
                       <View style={styles.checkboxInner}>
-                        {item.options?.washAndFold ? (
+                        {item.options?.washAndFold && (
                           <Text style={styles.checkmark}>✓</Text>
-                        ) : null}
+                        )}
                       </View>
                       <Text style={styles.checkboxText}>Wash & Fold</Text>
                     </TouchableOpacity>
@@ -1506,7 +1159,6 @@ export default function OrderSummaryApp() {
                   <TouchableOpacity
                     style={styles.deleteButton}
                     onPress={() => deleteItem(item._id)}
-                    activeOpacity={0.7}
                   >
                     <MaterialIcons name="delete" size={20} color="#FF4757" />
                   </TouchableOpacity>
@@ -1534,15 +1186,16 @@ export default function OrderSummaryApp() {
             </View>
 
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>
-                Delivery Charge ({deliveryDistance > 0 ? deliveryDistance.toFixed(2) : '10'}km @ $
-                {globalPricing?.deliveryChargePerKm ?? 25}/km)
-                {distanceLoading && " ⏳"}
-              </Text>
-              <Text style={styles.summaryValue}>
-                ${calculations?.deliveryCharge?.toFixed(2) ?? "0.00"}
-              </Text>
-            </View>
+  <Text style={styles.summaryLabel}>
+    Delivery Charge ({deliveryDistance > 0 ? deliveryDistance.toFixed(2) : '10 (default)'}km @ $
+    {globalPricing?.deliveryChargePerKm ?? 25}/km)
+    {distanceLoading && " ⏳"}
+    {deliveryDistance <= 0 && !distanceLoading && " ⚠️ Using default"}
+  </Text>
+  <Text style={styles.summaryValue}>
+    ${calculations?.deliveryCharge?.toFixed(2) ?? "0.00"}
+  </Text>
+</View>
 
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Platform Fee</Text>
@@ -1817,7 +1470,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#F7F7FA",
-    paddingTop: 60,
+    paddingTop: 0,
   },
   loadingContainer: {
     justifyContent: "center",
@@ -1829,8 +1482,8 @@ const styles = StyleSheet.create({
   },
   headerContainer: {
     paddingHorizontal: 20,
-    marginBottom: 40,
-    top: 29,
+    marginBottom:40,
+    top: 9,
     flexDirection: "row",
     alignItems: "center",
   },

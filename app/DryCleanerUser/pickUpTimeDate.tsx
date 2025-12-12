@@ -742,9 +742,9 @@ const styles = StyleSheet.create({
   titleSection: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: height * 0.02,
-    marginTop: height * 0.05,
-    marginBottom: height * 0.02,
+    paddingVertical:height * 0.01,
+    marginTop: -10,
+    marginBottom: height * 0.,
   },
   title: {
     fontSize: width * 0.045,

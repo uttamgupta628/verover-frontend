@@ -41,10 +41,7 @@ const MOCK_COORDINATES = {
 };
 
 // ============================================================================
-// GEOCODING CACHE - OUTSIDE COMPONENT TO PERSIST ACROSS RENDERS
-// ============================================================================
-// ============================================================================
-// GEOCODING CACHE - OUTSIDE COMPONENT TO PERSIST ACROSS RENDERS
+// GEOCODING CACHE
 // ============================================================================
 const geocodeCache = new Map<string, { 
   latitude: number; 
@@ -52,6 +49,10 @@ const geocodeCache = new Map<string, {
   provider: string;
   timestamp: number;
 } | null>();
+
+const directionsCache = new Map<string, any>();
+let lastDirectionsRequestTime = 0;
+const MIN_REQUEST_INTERVAL = 1000;
 
 const CACHE_EXPIRY = 7 * 24 * 60 * 60 * 1000; // 7 days
 const MAX_RETRIES = 2;
@@ -61,20 +62,6 @@ const RETRY_DELAY = 2000;
 let preferredProvider: 'google' | 'locationiq' = 'google';
 let googleFailureCount = 0;
 const MAX_GOOGLE_FAILURES = 3;
-
-// ============================================================================
-// DIRECTIONS CACHE - OUTSIDE COMPONENT TO PERSIST ACROSS RENDERS
-// ============================================================================
-const directionsCache = new Map<string, {
-  routes: any;
-  timestamp: number;
-  distance: string;
-  duration: string;
-}>();
-
-// Throttling for API requests
-let lastDirectionsRequestTime = 0;
-const MIN_REQUEST_INTERVAL = 1000; // 1 second between requests
 
 // LocationIQ Geocoding
 const geocodeWithLocationIQ = async (address: string): Promise<{ 
@@ -100,9 +87,6 @@ const geocodeWithLocationIQ = async (address: string): Promise<{
       };
       console.log('✅ [LocationIQ] Success:', coords);
       return coords;
-    } else if (data.error) {
-      console.error('❌ [LocationIQ] Error:', data.error);
-      return null;
     }
     
     console.log('❌ [LocationIQ] No results found');
@@ -113,7 +97,7 @@ const geocodeWithLocationIQ = async (address: string): Promise<{
   }
 };
 
-// Google Geocoding with Retry Logic
+// Google Geocoding
 const geocodeWithGoogle = async (
   address: string, 
   retryCount = 0
@@ -129,50 +113,39 @@ const geocodeWithGoogle = async (
     const data = await response.json();
 
     if (data.status === "OVER_QUERY_LIMIT") {
-      console.warn(`⚠️ [Google] Rate limit hit (attempt ${retryCount + 1}/${MAX_RETRIES})`);
+      console.warn(`⚠️ [Google] Rate limit hit`);
       googleFailureCount++;
       
-      // Switch to LocationIQ after multiple failures
       if (googleFailureCount >= MAX_GOOGLE_FAILURES) {
-        console.log('🔄 Switching primary provider to LocationIQ due to repeated Google failures');
         preferredProvider = 'locationiq';
       }
       
       if (retryCount < MAX_RETRIES) {
         const delay = RETRY_DELAY * Math.pow(2, retryCount);
-        console.log(`⏳ [Google] Waiting ${delay}ms before retry...`);
         await new Promise(resolve => setTimeout(resolve, delay));
         return geocodeWithGoogle(address, retryCount + 1);
       }
       
-      console.error('❌ [Google] Max retries reached');
       return null;
     }
 
     if (data.status === "OK" && data.results?.[0]) {
       const location = data.results[0].geometry.location;
-      const coords = {
+      googleFailureCount = 0;
+      return {
         latitude: location.lat,
         longitude: location.lng,
       };
-      console.log('✅ [Google] Success:', coords);
-      
-      // Reset failure count on success
-      googleFailureCount = 0;
-      
-      return coords;
-    } else {
-      console.error('❌ [Google] Failed:', data.status, data.error_message);
-      return null;
     }
+    
+    return null;
   } catch (error) {
     console.error('❌ [Google] Exception:', error);
     return null;
   }
 };
 
-
-const DryCleaningPickup = () => {
+const DryCleaningDropoff = () => {
   const router = useRouter();
   const params = useLocalSearchParams();
   const mapRef = useRef<MapView>(null);
@@ -180,160 +153,161 @@ const DryCleaningPickup = () => {
   // Redux auth state
   const { user, token, isAuthenticated } = useSelector((state: any) => state.auth);
   
-  // SAFER PARSING: Get provider data from navigation params
-  const [providerData, setProviderData] = useState<any>(null);
+  // Parse booking data
+  const [bookingData, setBookingData] = useState<any>(null);
   const [parseError, setParseError] = useState<string | null>(null);
 
-  // Parse provider data on mount
   useEffect(() => {
     try {
-      if (params.providerData && typeof params.providerData === 'string') {
-        const parsed = JSON.parse(params.providerData);
-        console.log('📦 Parsed provider data:', parsed);
-        
-        if (!parsed.id && !parsed._id) {
-          throw new Error('Missing booking ID');
-        }
-        
-        setProviderData(parsed);
-      } else if (params.providerData && typeof params.providerData === 'object') {
-        setProviderData(params.providerData);
+      if (params.bookingData && typeof params.bookingData === 'string') {
+        const parsed = JSON.parse(params.bookingData);
+        console.log('📦 Parsed booking data:', parsed);
+        setBookingData(parsed);
+      } else if (params.bookingData && typeof params.bookingData === 'object') {
+        setBookingData(params.bookingData);
       } else {
         setParseError('No booking data provided');
       }
     } catch (error) {
-      console.error('❌ Error parsing provider data:', error);
+      console.error('❌ Error parsing booking data:', error);
       setParseError('Failed to parse booking data');
     }
-  }, [params.providerData]);
+  }, [params.bookingData]);
   
   // State management
-  const [isAccepting, setIsAccepting] = useState(false);
-  const [bookingDetails, setBookingDetails] = useState<any>(null);
+  const [isCompleting, setIsCompleting] = useState(false);
   const [loadingBooking, setLoadingBooking] = useState(false);
-  
-  // Set booking details when provider data is available
-  useEffect(() => {
-    if (providerData) {
-      setBookingDetails(providerData);
-    }
-  }, [providerData]);
+  const [bookingDetails, setBookingDetails] = useState<any>(null);
   
   // Map and location states
   const [currLoc, setCurrLoc] = useState<Coordinate | null>(null);
-  const [pickupLocation, setPickupLocation] = useState<Coordinate | null>(null);
+  const [dropoffLocation, setDropoffLocation] = useState<Coordinate | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
   const [routeCoordinates, setRouteCoordinates] = useState<Coordinate[]>([]);
   const [isRouteLoading, setIsRouteLoading] = useState(false);
   const [routeDistance, setRouteDistance] = useState<string>('');
   const [routeDuration, setRouteDuration] = useState<string>('');
-  const [isGeocodingPickup, setIsGeocodingPickup] = useState(false);
+  const [isGeocodingDropoff, setIsGeocodingDropoff] = useState(false);
 
   const hasFetchedRoute = useRef(false);
 
-  
-  // Check authentication on component mount
+  // Fetch booking details from backend
+  useEffect(() => {
+    const fetchBookingDetails = async () => {
+      if (!bookingData?.id && !bookingData?._id) return;
+      
+      try {
+        setLoadingBooking(true);
+        const bookingId = bookingData.id || bookingData._id;
+        
+        console.log('📡 Fetching booking details from backend:', bookingId);
+        
+        const response = await axiosInstance.get(`/users/bookings/${bookingId}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+        
+        if (response.data.success) {
+          console.log('✅ Booking details fetched:', response.data.data);
+          setBookingDetails(response.data.data);
+        } else {
+          console.warn('⚠️ Backend returned no data, using local data');
+          setBookingDetails(bookingData);
+        }
+      } catch (error: any) {
+        console.error('❌ Error fetching booking details:', error);
+        console.log('Using local booking data as fallback');
+        setBookingDetails(bookingData);
+      } finally {
+        setLoadingBooking(false);
+      }
+    };
+
+    fetchBookingDetails();
+  }, [bookingData, token]);
+
+  // Check authentication
   useEffect(() => {
     if (!isAuthenticated || !token) {
       Alert.alert(
         'Authentication Required',
         'Please log in to continue',
-        [
-          {
-            text: 'OK',
-            onPress: () => router.push('/login')
-          }
-        ]
+        [{ text: 'OK', onPress: () => router.push('/login') }]
       );
-      return;
     }
   }, [isAuthenticated, token]);
 
-  // ============================================================================
-  // IMPROVED GEOCODING WITH CACHING AND RETRY LOGIC
-  // ============================================================================
- const geocodeAddress = async (address: string): Promise<{ 
-  latitude: number; 
-  longitude: number 
-} | null> => {
-  if (!address || address.trim() === '') {
-    console.warn('⚠️ Empty address provided for geocoding');
-    return null;
-  }
-
-  // Check cache first
-  const cacheKey = address.toLowerCase().trim();
-  const cached = geocodeCache.get(cacheKey);
-  
-  if (cached && cached.latitude) {
-    const age = Date.now() - cached.timestamp;
-    if (age < CACHE_EXPIRY) {
-      console.log(`✅ [Cache] Using cached result from ${cached.provider}`);
-      return { latitude: cached.latitude, longitude: cached.longitude };
+  // Geocode address with caching
+  const geocodeAddress = async (address: string): Promise<{ 
+    latitude: number; 
+    longitude: number 
+  } | null> => {
+    if (!address || address.trim() === '') {
+      console.warn('⚠️ Empty address provided for geocoding');
+      return null;
     }
-    // Cache expired
-    geocodeCache.delete(cacheKey);
-  }
 
-  let result: { latitude: number; longitude: number } | null = null;
-  let usedProvider = '';
-
-  // Try preferred provider first
-  if (preferredProvider === 'google') {
-    console.log('🔄 Trying Google Maps first...');
-    result = await geocodeWithGoogle(address);
+    const cacheKey = address.toLowerCase().trim();
+    const cached = geocodeCache.get(cacheKey);
     
-    if (result) {
-      usedProvider = 'Google';
-    } else {
-      // Fallback to LocationIQ
-      console.log('🔄 Google failed, trying LocationIQ...');
-      result = await geocodeWithLocationIQ(address);
-      if (result) usedProvider = 'LocationIQ';
+    if (cached && cached.latitude) {
+      const age = Date.now() - cached.timestamp;
+      if (age < CACHE_EXPIRY) {
+        console.log(`✅ [Cache] Using cached result from ${cached.provider}`);
+        return { latitude: cached.latitude, longitude: cached.longitude };
+      }
+      geocodeCache.delete(cacheKey);
     }
-  } else {
-    // LocationIQ is preferred
-    console.log('🔄 Trying LocationIQ first (Google quota exceeded)...');
-    result = await geocodeWithLocationIQ(address);
-    
-    if (result) {
-      usedProvider = 'LocationIQ';
-    } else {
-      // Fallback to Google
-      console.log('🔄 LocationIQ failed, trying Google...');
+
+    let result: { latitude: number; longitude: number } | null = null;
+    let usedProvider = '';
+
+    if (preferredProvider === 'google') {
       result = await geocodeWithGoogle(address);
-      if (result) usedProvider = 'Google';
+      if (result) {
+        usedProvider = 'Google';
+      } else {
+        result = await geocodeWithLocationIQ(address);
+        if (result) usedProvider = 'LocationIQ';
+      }
+    } else {
+      result = await geocodeWithLocationIQ(address);
+      if (result) {
+        usedProvider = 'LocationIQ';
+      } else {
+        result = await geocodeWithGoogle(address);
+        if (result) usedProvider = 'Google';
+      }
     }
-  }
 
-  // Cache the result
-  if (result) {
-    geocodeCache.set(cacheKey, {
-      ...result,
-      provider: usedProvider,
-      timestamp: Date.now()
-    });
-    console.log(`✅ Successfully geocoded "${address}" using ${usedProvider}`);
-  } else {
-    // Cache null to avoid repeated failures
-    geocodeCache.set(cacheKey, null as any);
-    console.error(`❌ All providers failed for: "${address}"`);
-  }
+    if (result) {
+      geocodeCache.set(cacheKey, {
+        ...result,
+        provider: usedProvider,
+        timestamp: Date.now()
+      });
+      console.log(`✅ Successfully geocoded "${address}" using ${usedProvider}`);
+    } else {
+      geocodeCache.set(cacheKey, null as any);
+      console.error(`❌ All providers failed for: "${address}"`);
+    }
 
-  return result;
-};
-  // Extract pickup location from booking details
+    return result;
+  };
+
+  // Extract dropoff location from booking details
   useEffect(() => {
     if (!bookingDetails) return;
 
-    console.log('📦 Processing booking details for coordinates');
-    console.log('pickupCoords:', bookingDetails.pickupCoords);
-    console.log('pickupAddress:', bookingDetails.pickupAddress);
+    console.log('📦 Processing booking details for dropoff coordinates');
+    console.log('dropoffCoords:', bookingDetails.dropoffCoords);
+    console.log('dropoffAddress:', bookingDetails.dropoffAddress);
 
-    // PRIORITY 1: Use pickupCoords if valid
-    if (bookingDetails.pickupCoords) {
-      const coords = bookingDetails.pickupCoords;
+    // PRIORITY 1: Use dropoffCoords if valid
+    if (bookingDetails.dropoffCoords) {
+      const coords = bookingDetails.dropoffCoords;
       
       if (typeof coords.latitude === 'number' && 
           typeof coords.longitude === 'number' &&
@@ -342,8 +316,8 @@ const DryCleaningPickup = () => {
           coords.latitude !== 0 && 
           coords.longitude !== 0) {
         
-        console.log('✅ Using valid pickupCoords from booking');
-        setPickupLocation({
+        console.log('✅ Using valid dropoffCoords from booking');
+        setDropoffLocation({
           latitude: coords.latitude,
           longitude: coords.longitude,
         });
@@ -351,52 +325,51 @@ const DryCleaningPickup = () => {
       }
     }
 
-    // FALLBACK: Geocode pickup address with caching
-    if (bookingDetails.pickupAddress) {
-      console.log('📍 No valid coordinates, geocoding pickup address:', bookingDetails.pickupAddress);
-      geocodePickupAddress(bookingDetails.pickupAddress);
+    // FALLBACK: Geocode dropoff address
+    if (bookingDetails.dropoffAddress || bookingDetails.dropOff) {
+      const address = bookingDetails.dropoffAddress || bookingDetails.dropOff;
+      console.log('📍 No valid coordinates, geocoding dropoff address:', address);
+      geocodeDropoffAddress(address);
     } else {
-      console.warn('⚠️ No pickup location or address found in booking details');
+      console.warn('⚠️ No dropoff location or address found');
       Alert.alert(
         'Location Missing',
-        'No pickup location available for this booking.',
+        'No dropoff location available for this booking.',
         [{ text: 'OK' }]
       );
     }
   }, [bookingDetails]);
 
-  // Geocode pickup address with caching
-  const geocodePickupAddress = async (address: string) => {
-  try {
-    setIsGeocodingPickup(true);
-    
-    console.log('📍 Starting pickup address geocoding...');
-    const coords = await geocodeAddress(address);
-    
-    if (coords) {
-      setPickupLocation(coords);
-      console.log('✅ Set pickup location:', coords);
-    } else {
+  // Geocode dropoff address
+  const geocodeDropoffAddress = async (address: string) => {
+    try {
+      setIsGeocodingDropoff(true);
+      console.log('📍 Starting dropoff address geocoding...');
+      const coords = await geocodeAddress(address);
+      
+      if (coords) {
+        setDropoffLocation(coords);
+        console.log('✅ Set dropoff location:', coords);
+      } else {
+        Alert.alert(
+          'Location Not Found',
+          'Unable to find coordinates for the dropoff address.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('❌ Dropoff geocoding error:', error);
       Alert.alert(
-        'Location Not Found',
-        'Unable to find coordinates for this address. Please verify the address is correct.',
+        'Geocoding Error',
+        'An error occurred while finding the location.',
         [{ text: 'OK' }]
       );
+    } finally {
+      setIsGeocodingDropoff(false);
     }
-  } catch (error) {
-    console.error('❌ Pickup geocoding error:', error);
-    Alert.alert(
-      'Geocoding Error',
-      'An error occurred while finding the location. Please try again.',
-      [{ text: 'OK' }]
-    );
-  } finally {
-    setIsGeocodingPickup(false);
-  }
-};
+  };
 
-
-  // Get current location (driver's location)
+  // Get current location
   const getCurrentLocation = useCallback(async () => {
     setLocationLoading(true);
 
@@ -430,7 +403,6 @@ const DryCleaningPickup = () => {
 
     } catch (err: any) {
       console.error("Location error:", err);
-      // Use mock location if GPS fails
       const mockLocation = MOCK_COORDINATES.KOLKATA;
       console.log('⚠️ Using mock location:', mockLocation);
       setCurrLoc(mockLocation);
@@ -439,7 +411,7 @@ const DryCleaningPickup = () => {
     }
   }, []);
 
-  // Generate cache key from coordinates
+  // Generate cache key
   const getRouteKey = (origin: Coordinate, destination: Coordinate): string => {
     const oLat = origin.latitude.toFixed(4);
     const oLng = origin.longitude.toFixed(4);
@@ -448,18 +420,13 @@ const DryCleaningPickup = () => {
     return `${oLat},${oLng}->${dLat},${dLng}`;
   };
 
-  // Fetch route from Google Directions API with caching
+  // Fetch route from Google Directions API
   const fetchGoogleDirectionsRoute = useCallback(async (origin: Coordinate, destination: Coordinate) => {
     try {
       setIsRouteLoading(true);
-      console.log('🗺️ Fetching route from Google Directions API...');
-      console.log('Origin:', JSON.stringify(origin));
-      console.log('Destination:', JSON.stringify(destination));
+      console.log('🗺️ Fetching route to dropoff location...');
 
-      // Generate cache key
       const cacheKey = getRouteKey(origin, destination);
-      
-      // Check cache first (valid for 1 hour)
       const cached = directionsCache.get(cacheKey);
       const now = Date.now();
       
@@ -467,24 +434,12 @@ const DryCleaningPickup = () => {
         console.log('✅ Using cached route');
         
         const points = decodePolyline(cached.routes.overview_polyline.points);
-        console.log('📍 Cached route points:', points.length);
         setRouteCoordinates(points);
         setRouteDistance(cached.distance);
         setRouteDuration(cached.duration);
         
-        setBookingDetails((prev: any) => ({
-          ...prev,
-          calculatedDistance: cached.distance,
-          calculatedDuration: cached.duration,
-          distanceInKm: cached.routes.legs[0] 
-            ? (cached.routes.legs[0].distance.value / 1000).toFixed(2)
-            : '0',
-        }));
-
-        // Fit map to route
         setTimeout(() => {
           if (mapRef.current && points.length > 1) {
-            console.log('🗺️ Fitting map to cached route...');
             mapRef.current.fitToCoordinates(points, {
               edgePadding: { top: 100, right: 50, bottom: 350, left: 50 },
               animated: true,
@@ -496,38 +451,26 @@ const DryCleaningPickup = () => {
         return;
       }
 
-      // Throttle requests
       const timeSinceLastRequest = now - lastDirectionsRequestTime;
       if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
         const waitTime = MIN_REQUEST_INTERVAL - timeSinceLastRequest;
-        console.log(`⏳ Throttling: Waiting ${waitTime}ms before API call`);
         await new Promise(resolve => setTimeout(resolve, waitTime));
       }
 
-      // Make API request
       lastDirectionsRequestTime = Date.now();
       
       const originStr = `${origin.latitude},${origin.longitude}`;
       const destinationStr = `${destination.latitude},${destination.longitude}`;
 
       const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${originStr}&destination=${destinationStr}&mode=driving&key=${GOOGLE_MAPS_API_KEY}`;
-      
-      console.log('📍 Making API request...');
 
       const response = await fetch(url);
       const data = await response.json();
-
-      console.log('📊 API Response Status:', data.status);
 
       if (data.status === 'OK' && data.routes?.length > 0) {
         const route = data.routes[0];
         const leg = route.legs[0];
 
-        console.log('✅ Route received from API');
-        console.log('Distance:', leg.distance.text);
-        console.log('Duration:', leg.duration.text);
-
-        // Cache the response
         directionsCache.set(cacheKey, {
           routes: route,
           timestamp: Date.now(),
@@ -535,27 +478,13 @@ const DryCleaningPickup = () => {
           duration: leg.duration.text,
         });
 
-        console.log(`📊 Directions cache size: ${directionsCache.size} routes`);
-
-        // Decode polyline
         const points = decodePolyline(route.overview_polyline.points);
-        console.log('📍 Decoded points count:', points.length);
-        
         setRouteCoordinates(points);
         setRouteDistance(leg.distance.text);
         setRouteDuration(leg.duration.text);
 
-        setBookingDetails((prev: any) => ({
-          ...prev,
-          calculatedDistance: leg.distance.text,
-          calculatedDuration: leg.duration.text,
-          distanceInKm: (leg.distance.value / 1000).toFixed(2),
-        }));
-
-        // Fit map to route
         setTimeout(() => {
           if (mapRef.current && points.length > 1) {
-            console.log('🗺️ Fitting map to route with', points.length, 'points');
             mapRef.current.fitToCoordinates(points, {
               edgePadding: { top: 100, right: 50, bottom: 350, left: 50 },
               animated: true,
@@ -564,51 +493,33 @@ const DryCleaningPickup = () => {
         }, 1500);
 
       } else if (data.status === 'OVER_QUERY_LIMIT') {
-        console.error('❌ API quota exceeded - Using fallback');
-        Alert.alert(
-          'Route Information',
-          'API quota exceeded. Using estimated route. Please try again later.',
-          [{ text: 'OK' }]
-        );
+        console.error('❌ API quota exceeded');
         generateFallbackRoute(origin, destination);
-        
       } else {
-        console.error('❌ Directions API error:', data.status, data.error_message);
-        console.log('Using fallback route');
+        console.error('❌ Directions API error:', data.status);
         generateFallbackRoute(origin, destination);
       }
 
     } catch (error) {
       console.error('❌ Route fetch error:', error);
-      Alert.alert(
-        'Route Error',
-        'Could not fetch route. Using estimated path.',
-        [{ text: 'OK' }]
-      );
       generateFallbackRoute(origin, destination);
     } finally {
       setIsRouteLoading(false);
     }
   }, []);
 
-  // CRITICAL FIX: Only fetch route ONCE when all conditions are met
+  // Fetch route when conditions are met
   useEffect(() => {
-    if (!currLoc || !pickupLocation || !mapReady) {
-      console.log("⏸ Conditions not met for route fetch");
+    if (!currLoc || !dropoffLocation || !mapReady || hasFetchedRoute.current) {
       return;
     }
 
-    if (hasFetchedRoute.current) {
-      console.log("⚠ Route already fetched, skipping");
-      return;
-    }
-
-    console.log("🗺 Fetching route NOW (first time only)...");
+    console.log("🗺 Fetching route to dropoff...");
     hasFetchedRoute.current = true;
-    fetchGoogleDirectionsRoute(currLoc, pickupLocation);
-  }, [currLoc, pickupLocation, mapReady, fetchGoogleDirectionsRoute]);
+    fetchGoogleDirectionsRoute(currLoc, dropoffLocation);
+  }, [currLoc, dropoffLocation, mapReady, fetchGoogleDirectionsRoute]);
 
-  // Decode Google polyline format
+  // Decode polyline
   const decodePolyline = (encoded: string): Coordinate[] => {
     const points: Coordinate[] = [];
     let index = 0;
@@ -650,9 +561,9 @@ const DryCleaningPickup = () => {
     return points;
   };
 
-  // Fallback route generator
+  // Fallback route
   const generateFallbackRoute = (start: Coordinate, end: Coordinate) => {
-    console.log('⚠️ Using fallback route generator');
+    console.log('⚠️ Using fallback route');
     const route: Coordinate[] = [start];
     const pointsCount = 50;
     
@@ -661,10 +572,9 @@ const DryCleaningPickup = () => {
       const lat = start.latitude + (end.latitude - start.latitude) * progress;
       const lng = start.longitude + (end.longitude - start.longitude) * progress;
       
-      const variation = 0.002;
       route.push({
-        latitude: lat + (Math.random() - 0.5) * variation,
-        longitude: lng + (Math.random() - 0.5) * variation,
+        latitude: lat + (Math.random() - 0.5) * 0.002,
+        longitude: lng + (Math.random() - 0.5) * 0.002,
       });
     }
     
@@ -674,13 +584,6 @@ const DryCleaningPickup = () => {
     const distance = calculateDistance(start, end);
     setRouteDistance(formatDistance(distance));
     setRouteDuration(estimateDuration(distance));
-
-    setBookingDetails((prev: any) => ({
-      ...prev,
-      calculatedDistance: formatDistance(distance),
-      calculatedDuration: estimateDuration(distance),
-      distanceInKm: distance.toFixed(2),
-    }));
   };
 
   // Calculate distance
@@ -699,26 +602,19 @@ const DryCleaningPickup = () => {
     return R * c;
   };
 
-  // Format distance
   const formatDistance = (km: number) => {
-    if (km < 1) {
-      return `${Math.round(km * 1000)} m`;
-    }
+    if (km < 1) return `${Math.round(km * 1000)} m`;
     return `${km.toFixed(1)} km`;
   };
 
-  // Estimate duration
   const estimateDuration = (km: number) => {
     const hours = km / 40;
-    if (hours < 1) {
-      return `${Math.round(hours * 60)} min`;
-    }
+    if (hours < 1) return `${Math.round(hours * 60)} min`;
     const h = Math.floor(hours);
     const m = Math.round((hours - h) * 60);
     return `${h}h ${m}min`;
   };
 
-  // Initialize location on mount
   useEffect(() => {
     getCurrentLocation();
   }, [getCurrentLocation]);
@@ -727,6 +623,311 @@ const DryCleaningPickup = () => {
     setMapReady(true);
     console.log('✅ Map ready');
   }, []);
+
+  // Send notification to user
+  const sendNotificationToUser = async (notificationType: string) => {
+    try {
+      console.log('📲 Sending notification to user...');
+      
+      const response = await axiosInstance.post('/users/notifications/send', {
+        userId: bookingDetails?.userId || bookingDetails?.user?._id,
+        bookingId: bookingDetails?.id || bookingDetails?._id,
+        type: notificationType,
+        title: notificationType === 'dropoff_completed' ? 'Delivery Completed' : 'Driver Update',
+        message: notificationType === 'dropoff_completed' 
+          ? 'Your laundry has been delivered to the dry cleaning center!'
+          : 'Your driver has started the delivery.',
+        driverName: `${user.firstName} ${user.lastName}`.trim() || user.fullName,
+      }, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      
+      if (response.data.success) {
+        console.log('✅ Notification sent successfully');
+      }
+    } catch (error) {
+      console.error('❌ Error sending notification:', error);
+      // Don't block the flow if notification fails
+    }
+  };
+
+  // Add this helper function at the top of your DryCleaningDropoff component
+// (after the imports and before the component)
+
+// Define this OUTSIDE the component (after the geocoding functions, around line 130)
+const progressBookingToDropoffReady = async (
+  currentStatus: string, 
+  bookingId: string, 
+  token: string,
+  user: any
+): Promise<boolean> => {
+  console.log('📋 Starting status progression from:', currentStatus);
+  
+  const statusFlow = [
+    'accepted',
+    'in_progress',
+    'pickup_completed',
+    'en_route_to_dropoff',
+    'arrived_at_dropoff'
+  ];
+  
+  const currentIndex = statusFlow.indexOf(currentStatus);
+  const targetIndex = statusFlow.indexOf('arrived_at_dropoff');
+  
+  if (currentIndex === -1) {
+    console.warn(`⚠️ Unknown status: ${currentStatus}, starting from accepted`);
+    // Start from beginning if unknown status
+    const startIndex = 0;
+    for (let i = startIndex; i <= targetIndex; i++) {
+      await updateBookingStatus(statusFlow[i], bookingId, token, user);
+    }
+    return true;
+  }
+  
+  if (currentIndex >= targetIndex) {
+    console.log('✅ Already at or past arrived_at_dropoff');
+    return true;
+  }
+  
+  // Progress through each status
+  for (let i = currentIndex + 1; i <= targetIndex; i++) {
+    await updateBookingStatus(statusFlow[i], bookingId, token, user);
+  }
+  
+  console.log('✅ Successfully progressed to arrived_at_dropoff');
+  return true;
+};
+
+const updateBookingStatus = async (
+  status: string,
+  bookingId: string,
+  token: string,
+  user: any
+): Promise<void> => {
+  console.log(`⏳ Updating to: ${status}`);
+  
+  const payload: any = {
+    bookingId: bookingId,
+    status: status,
+    driverId: user._id,
+    driverName: `${user.firstName} ${user.lastName}`.trim() || user.fullName || 'Driver',
+  };
+  
+  // Add timestamps for specific statuses
+  const now = new Date().toISOString();
+  switch (status) {
+    case 'in_progress':
+      payload.startedAt = now;
+      break;
+    case 'pickup_completed':
+      payload.pickupCompletedAt = now;
+      break;
+    case 'arrived_at_dropoff':
+      payload.arrivedAt = now;
+      break;
+  }
+  
+  try {
+    const response = await axiosInstance.put('/users/update-status', payload, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      timeout: 10000,
+    });
+    
+    if (!response.data.success) {
+      throw new Error(`Failed to update to ${status}: ${response.data.message || 'Unknown error'}`);
+    }
+    
+    console.log(`✅ Updated to: ${status}`);
+    
+    // Small delay between updates
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+  } catch (error: any) {
+    console.error(`❌ Failed to update to ${status}:`, error.message);
+    throw error;
+  }
+};
+
+// Now update your handleCompleteDropoff function:
+const handleCompleteDropoff = async () => {
+  if (!bookingDetails?.id && !bookingDetails?._id) {
+    Alert.alert('Error', 'Invalid booking data - no booking ID found');
+    return;
+  }
+
+  if (!isAuthenticated || !user?._id) {
+    Alert.alert('Error', 'Authentication required. Please log in again.');
+    return;
+  }
+
+  Alert.alert(
+    'Complete Dropoff',
+    'Have you successfully dropped off the items at the dry cleaning center?',
+    [
+      {
+        text: 'Cancel',
+        style: 'cancel'
+      },
+      {
+        text: 'Confirm',
+        onPress: async () => {
+          try {
+            setIsCompleting(true);
+            
+            const bookingId = bookingDetails.id || bookingDetails._id;
+            const currentStatus = bookingDetails.status || 'accepted';
+            
+            console.log('📋 Starting dropoff completion process');
+            console.log('📋 Booking ID:', bookingId);
+            console.log('📋 Current status:', currentStatus);
+            
+            // Step 1: Progress to arrived_at_dropoff if needed
+            if (currentStatus !== 'arrived_at_dropoff' && currentStatus !== 'dropped_at_center') {
+              console.log('⚠️ Booking not at dropoff location yet');
+              console.log('📋 Auto-progressing through required statuses...');
+              
+              try {
+                await progressBookingToDropoffReady(
+                  currentStatus,
+                  bookingId,
+                  token,
+                  user
+                );
+                console.log('✅ Booking ready for dropoff completion');
+              } catch (progressError: any) {
+                console.error('❌ Status progression failed:', progressError);
+                throw new Error(`Failed to prepare booking: ${progressError.message}`);
+              }
+            }
+            
+            // Step 2: Mark as dropped_at_center
+            console.log('📤 Marking booking as dropped at center...');
+            
+            const completionPayload = {
+              bookingId: bookingId,
+              status: 'dropped_at_center',
+              dropoffCompletedAt: new Date().toISOString(),
+              driverId: user._id,
+              driverName: `${user.firstName} ${user.lastName}`.trim() || user.fullName || 'Driver',
+              routeDistance: routeDistance || bookingDetails.calculatedDistance || 'N/A',
+              routeDuration: routeDuration || bookingDetails.calculatedDuration || 'N/A',
+            };
+            
+            const response = await axiosInstance.put(
+              '/users/update-status',
+              completionPayload,
+              {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                },
+                timeout: 15000,
+              }
+            );
+            
+            if (!response.data.success) {
+              throw new Error(response.data.message || 'Failed to complete dropoff');
+            }
+            
+            console.log('✅ Dropoff marked as complete');
+            
+            // Step 3: Send notification to customer
+            try {
+              await sendNotificationToUser('dropoff_completed');
+              console.log('✅ Customer notification sent');
+            } catch (notifError) {
+              console.warn('⚠️ Notification failed (non-critical):', notifError);
+            }
+            
+            // Step 4: Prepare receipt data
+            const receiptData = {
+              ...bookingDetails,
+              id: bookingId,
+              _id: bookingId,
+              status: 'dropped_at_center',
+              dropoffCompletedAt: new Date().toISOString(),
+              completedAt: new Date().toISOString(),
+              deliveryCharge: bookingDetails.deliveryCharge || 
+                             bookingDetails.pricing?.deliveryCharge || 
+                             getDeliveryCharge(),
+              estimatedTip: bookingDetails.estimatedTip || 
+                           bookingDetails.pricing?.estimatedTip || 
+                           getEstimatedTip(),
+              totalEarnings: getTotalEarnings(),
+              calculatedDistance: routeDistance || bookingDetails.calculatedDistance || 'N/A',
+              calculatedDuration: routeDuration || bookingDetails.calculatedDuration || 'N/A',
+              routeDistance: routeDistance,
+              routeDuration: routeDuration,
+              driver: {
+                id: user._id,
+                _id: user._id,
+                name: `${user.firstName} ${user.lastName}`.trim() || user.fullName || 'Driver',
+                firstName: user.firstName,
+                lastName: user.lastName,
+                phone: user.phone,
+                email: user.email,
+              },
+              completedBy: user._id,
+            };
+            
+            console.log('✅ Dropoff completed successfully!');
+            console.log('📄 Receipt data prepared');
+            
+            // Step 5: Navigate to receipt
+            setTimeout(() => {
+              console.log('📄 Navigating to receipt page...');
+              router.replace({
+                pathname: '/dryCleanerDriver/recipet',
+                params: {
+                  bookingData: JSON.stringify(receiptData),
+                  success: 'true',
+                }
+              });
+            }, 500);
+
+          } catch (error: any) {
+            console.error('❌ Complete dropoff error:', error);
+            
+            let errorMessage = 'Failed to complete dropoff';
+            
+            if (error.response?.status === 400) {
+              errorMessage = error.response.data?.message || 
+                           error.response.data?.error || 
+                           'Invalid booking status. Please contact support.';
+            } else if (error.response?.status === 404) {
+              errorMessage = 'Booking not found. Please refresh and try again.';
+            } else if (error.response?.data?.message) {
+              errorMessage = error.response.data.message;
+            } else if (error.message) {
+              errorMessage = error.message;
+            }
+            
+            Alert.alert(
+              'Error Completing Dropoff',
+              errorMessage,
+              [
+                {
+                  text: 'Retry',
+                  onPress: handleCompleteDropoff
+                },
+                {
+                  text: 'Go Back',
+                  style: 'cancel',
+                  onPress: () => router.back()
+                }
+              ]
+            );
+          } finally {
+            setIsCompleting(false);
+          }
+        }
+      }
+    ]
+  );
+};
 
   // Render map
   const renderMap = () => {
@@ -745,8 +946,6 @@ const DryCleaningPickup = () => {
       longitudeDelta: 0.05,
     };
 
-    console.log('🗺️ Rendering map with', routeCoordinates.length, 'route points');
-
     return (
       <MapView
         ref={mapRef}
@@ -757,7 +956,6 @@ const DryCleaningPickup = () => {
         showsUserLocation={true}
         showsMyLocationButton={false}
         showsCompass={true}
-        showsTraffic={false}
         mapPadding={{
           top: 50,
           right: 0,
@@ -769,7 +967,7 @@ const DryCleaningPickup = () => {
         {routeCoordinates.length > 1 && (
           <Polyline
             coordinates={routeCoordinates}
-            strokeColor="#4285F4"
+            strokeColor="#FF8C00"
             strokeWidth={6}
             lineDashPattern={[0]}
             lineCap="round"
@@ -795,17 +993,17 @@ const DryCleaningPickup = () => {
           </Marker>
         )}
 
-        {/* Pickup marker */}
-        {pickupLocation && (
+        {/* Dropoff marker */}
+        {dropoffLocation && (
           <Marker
-            coordinate={pickupLocation}
-            title="Pickup Location"
-            description={bookingDetails?.pickupAddress || 'Pickup point'}
-            identifier="pickup"
+            coordinate={dropoffLocation}
+            title="Dropoff Location"
+            description={bookingDetails?.dropoffAddress || 'Dry Cleaning Center'}
+            identifier="dropoff"
             zIndex={2}
           >
-            <View style={styles.pickupMarker}>
-              <MaterialIcons name="location-pin" size={40} color="#FF8C00" />
+            <View style={styles.dropoffMarker}>
+              <MaterialIcons name="store" size={40} color="#FF8C00" />
             </View>
           </Marker>
         )}
@@ -813,122 +1011,7 @@ const DryCleaningPickup = () => {
     );
   };
 
-  // Get auth token
-  const getAuthToken = () => {
-    if (!token) {
-      throw new Error('No authentication token available');
-    }
-    return token;
-  };
-
-  // Handle accepting booking
-  const handleAcceptBooking = async () => {
-    if (!bookingDetails?.id && !bookingDetails?._id) {
-      Alert.alert('Error', 'Invalid booking data - no booking ID found');
-      return;
-    }
-
-    if (!isAuthenticated || !user?._id) {
-      Alert.alert('Error', 'Authentication required. Please log in again.');
-      return;
-    }
-
-    try {
-      setIsAccepting(true);
-      
-      const bookingId = bookingDetails.id || bookingDetails._id;
-      
-      const requestBody = {
-        bookingId: bookingId,
-        response: 'accept',
-        driverId: user._id,
-        driverName: `${user.firstName} ${user.lastName}`.trim() || user.fullName || 'Driver',
-        routeDistance: bookingDetails.distanceInKm || 0,
-        routeDuration: bookingDetails.calculatedDuration || 'N/A',
-      };
-
-      const response = await axiosInstance.put('/users/driver/respond', requestBody, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-      
-      if (response.data.success) {
-        Alert.alert(
-          'Success', 
-          'Booking request accepted successfully!',
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                router.push({
-                  pathname: '/dryCleanerDriver/dryCleanerDropup',
-                  params: {
-                    bookingData: JSON.stringify({
-                      ...bookingDetails,
-                      status: 'accepted',
-                      driverId: user._id,
-                      driverName: `${user.firstName} ${user.lastName}`.trim() || user.fullName || 'Driver',
-                    })
-                  }
-                });
-              }
-            }
-          ]
-        );
-      } else {
-        throw new Error(response.data.message || 'Failed to accept booking');
-      }
-
-    } catch (error: any) {
-      console.error('Accept booking error:', error);
-      Alert.alert(
-        'Error', 
-        `Failed to accept booking: ${error.message}`,
-        [
-          {
-            text: 'Retry',
-            onPress: handleAcceptBooking
-          },
-          {
-            text: 'Cancel',
-            style: 'cancel'
-          }
-        ]
-      );
-    } finally {
-      setIsAccepting(false);
-    }
-  };
-
-  // Handle rejecting booking
-  const handleRejectBooking = () => {
-    Alert.alert(
-      'Reject Booking',
-      'Are you sure you want to reject this booking request?',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel'
-        },
-        {
-          text: 'Reject',
-          style: 'destructive',
-          onPress: () => {
-            router.push({
-              pathname: '/CancelBookingScreen',
-              params: {
-                bookingData: JSON.stringify(bookingDetails),
-                rejectionType: 'driver_reject'
-              }
-            });
-          }
-        }
-      ]
-    );
-  };
-
-  // Get delivery charge
+  // Get pricing
   const getDeliveryCharge = () => {
     if (bookingDetails?.pricing?.deliveryCharge) {
       return parseFloat(bookingDetails.pricing.deliveryCharge).toFixed(2);
@@ -939,15 +1022,9 @@ const DryCleaningPickup = () => {
     if (bookingDetails?.price) {
       return parseFloat(bookingDetails.price).toFixed(2);
     }
-    if (bookingDetails?.pricing?.totalAmount) {
-      const total = parseFloat(bookingDetails.pricing.totalAmount);
-      const tip = parseFloat(getEstimatedTip());
-      return (total - tip).toFixed(2);
-    }
     return '0.00';
   };
 
-  // Get estimated tip
   const getEstimatedTip = () => {
     if (bookingDetails?.pricing?.estimatedTip) {
       return parseFloat(bookingDetails.pricing.estimatedTip).toFixed(2);
@@ -955,64 +1032,42 @@ const DryCleaningPickup = () => {
     if (bookingDetails?.estimatedTip) {
       return parseFloat(bookingDetails.estimatedTip).toFixed(2);
     }
-    if (bookingDetails?.tip) {
-      return parseFloat(bookingDetails.tip).toFixed(2);
-    }
     return '5.00';
   };
 
-  // Calculate total earnings
   const getTotalEarnings = () => {
     const deliveryCharge = parseFloat(getDeliveryCharge());
     const tip = parseFloat(getEstimatedTip());
     return (deliveryCharge + tip).toFixed(2);
   };
 
-  // If not authenticated
   if (!isAuthenticated || !token) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.headerContainer}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}>
+          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
             <MaterialIcons name="arrow-back" size={35} color={colors.brandColor} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Pick Up Dry Cleaning</Text>
+          <Text style={styles.headerTitle}>Drop Off Dry Cleaning</Text>
         </View>
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>Authentication required</Text>
-          <TouchableOpacity 
-            style={styles.backToLocatorButton}
-            onPress={() => router.push('/login')}
-          >
-            <Text style={styles.backToLocatorText}>Go to Login</Text>
-          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
   }
 
-  // If no booking details
   if (!bookingDetails && !loadingBooking) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.headerContainer}>
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}>
+          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
             <MaterialIcons name="arrow-back" size={35} color={colors.brandColor} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Pick Up Dry Cleaning</Text>
+          <Text style={styles.headerTitle}>Drop Off Dry Cleaning</Text>
         </View>
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>No booking details found</Text>
-          <TouchableOpacity 
-            style={styles.backToLocatorButton}
-            onPress={() => router.push('/dryCleanerDriver/orderRequest')}
-          >
-            <Text style={styles.backToLocatorText}>Back to Locator</Text>
-          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
@@ -1022,19 +1077,17 @@ const DryCleaningPickup = () => {
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header */}
       <View style={styles.headerContainer}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <MaterialIcons name="arrow-back" size={35} color={colors.brandColor} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Pick Up Dry Cleaning</Text>
+        <Text style={styles.headerTitle}>Drop Off Dry Cleaning</Text>
       </View>
 
-      {/* Geocoding loading indicator */}
-      {isGeocodingPickup && (
+      {/* Geocoding loading */}
+      {isGeocodingDropoff && (
         <View style={styles.geocodingOverlay}>
-          <ActivityIndicator size="large" color="#4A90E2" />
-          <Text style={styles.geocodingText}>Finding location...</Text>
+          <ActivityIndicator size="large" color="#FF8C00" />
+          <Text style={styles.geocodingText}>Finding dropoff location...</Text>
         </View>
       )}
 
@@ -1043,17 +1096,13 @@ const DryCleaningPickup = () => {
         {renderMap()}
 
         {/* Distance and Duration Info */}
-        {(routeDistance || bookingDetails?.calculatedDistance) && (
+        {routeDistance && (
           <View style={styles.routeInfoContainer}>
             <View style={styles.routeInfoCard}>
-              <MaterialIcons name="directions" size={20} color="#4285F4" />
-              <Text style={styles.routeInfoText}>
-                {routeDistance || bookingDetails.calculatedDistance}
-              </Text>
+              <MaterialIcons name="directions" size={20} color="#FF8C00" />
+              <Text style={styles.routeInfoText}>{routeDistance}</Text>
               <Text style={styles.routeInfoSeparator}>•</Text>
-              <Text style={styles.routeInfoText}>
-                {routeDuration || bookingDetails.calculatedDuration}
-              </Text>
+              <Text style={styles.routeInfoText}>{routeDuration}</Text>
             </View>
           </View>
         )}
@@ -1066,9 +1115,9 @@ const DryCleaningPickup = () => {
             disabled={locationLoading}
           >
             {locationLoading ? (
-              <ActivityIndicator size="small" color="#4A90E2" />
+              <ActivityIndicator size="small" color="#FF8C00" />
             ) : (
-              <MaterialIcons name="my-location" size={24} color="#4A90E2" />
+              <MaterialIcons name="my-location" size={24} color="#FF8C00" />
             )}
           </TouchableOpacity>
           <TouchableOpacity 
@@ -1082,80 +1131,61 @@ const DryCleaningPickup = () => {
               }
             }}
           >
-            <MaterialIcons name="zoom-out-map" size={24} color="#4A90E2" />
+            <MaterialIcons name="zoom-out-map" size={24} color="#FF8C00" />
           </TouchableOpacity>
         </View>
 
-        {/* Route Loading Indicator */}
+        {/* Route Loading */}
         {(isRouteLoading || loadingBooking) && (
           <View style={styles.routeLoadingContainer}>
-            <ActivityIndicator size="large" color="#4A90E2" />
+            <ActivityIndicator size="large" color="#FF8C00" />
             <Text style={styles.routeLoadingText}>
-              {loadingBooking ? 'Loading booking details...' : 'Calculating route...'}
+              {loadingBooking ? 'Loading booking...' : 'Calculating route...'}
             </Text>
           </View>
         )}
       </View>
 
-      {/* Bottom Card - Fixed at bottom */}
+      {/* Bottom Card */}
       <View style={styles.bottomCard}>
         <ScrollView 
           style={styles.scrollContainer}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
         >
-          {/* Provider Info */}
+          {/* Service Info */}
           <View style={styles.providerSection}>
             <View style={styles.providerInfoRow}>
               <View style={styles.providerIconContainer}>
-                <Image 
-                  source={images.washing} 
-                  style={styles.providerIcon} 
-                />
+                <Image source={images.washing} style={styles.providerIcon} />
               </View>
               <View style={styles.providerInfo}>
                 <Text style={styles.providerName}>
-                  {bookingDetails?.dryCleaner?.shopname || bookingDetails?.name || 'Dry Cleaning Service'}
+                  {bookingDetails?.dryCleaner?.shopname || 'Dry Cleaning Service'}
                 </Text>
                 <Text style={styles.orderNumber}>
                   Order: {bookingDetails?.orderNumber || bookingDetails?.id || 'N/A'}
                 </Text>
-                <Text style={[styles.status, { color: getStatusColor(bookingDetails?.status) }]}>
-                  Status: {bookingDetails?.status?.toUpperCase() || 'PENDING'}
+                <Text style={[styles.status, { color: '#FF8C00' }]}>
+                  Status: IN TRANSIT TO CENTER
                 </Text>
               </View>
-              <TouchableOpacity 
-                style={styles.orderDetailsButton}
-                onPress={() => {
-                  router.push({
-                    pathname: '/OrderDetailes',
-                    params: {
-                      bookingData: JSON.stringify(bookingDetails)
-                    }
-                  });
-                }}
-              >
-                <Text style={styles.orderDetailsText}>Details</Text>
-              </TouchableOpacity>
             </View>
           </View>
 
-          {/* Pickup and Dropoff */}
+          {/* Location Info */}
           <View style={styles.locationContainer}>
-            {/* Pickup */}
+            {/* Current Location */}
             <View style={styles.locationRow}>
               <View style={styles.locationIconContainer}>
-                <View style={styles.greenDot} />
+                <View style={styles.blueDot} />
               </View>
               <View style={styles.locationInfo}>
-                <Text style={styles.locationType}>Pickup</Text>
-                <Text style={styles.locationAddress}>
-                  {bookingDetails?.pickupAddress || 'Pickup location'}
-                </Text>
+                <Text style={styles.locationType}>Current Location</Text>
+                <Text style={styles.locationAddress}>Your current position</Text>
               </View>
             </View>
 
-            {/* Connecting Line */}
             <View style={styles.locationLine} />
 
             {/* Dropoff */}
@@ -1164,7 +1194,7 @@ const DryCleaningPickup = () => {
                 <View style={styles.orangeDot} />
               </View>
               <View style={styles.locationInfo}>
-                <Text style={styles.locationType}>Drop Off</Text>
+                <Text style={styles.locationType}>Drop Off Center</Text>
                 <Text style={styles.locationAddress}>
                   {bookingDetails?.dropoffAddress || bookingDetails?.dropOff || 'Dry Cleaning Center'}
                 </Text>
@@ -1177,13 +1207,13 @@ const DryCleaningPickup = () => {
             <View style={styles.tripDetailItem}>
               <MaterialIcons name="directions" size={20} color="#666" />
               <Text style={styles.tripDetailText}>
-                {routeDistance || bookingDetails?.calculatedDistance || 'Calculating...'}
+                {routeDistance || 'Calculating...'}
               </Text>
             </View>
             <View style={styles.tripDetailItem}>
               <MaterialIcons name="access-time" size={20} color="#666" />
               <Text style={styles.tripDetailText}>
-                {routeDuration || bookingDetails?.calculatedDuration || 'Calculating...'}
+                {routeDuration || 'Calculating...'}
               </Text>
             </View>
             <View style={styles.tripDetailItem}>
@@ -1205,89 +1235,31 @@ const DryCleaningPickup = () => {
             <View style={styles.divider} />
             <View style={[styles.costRow, styles.totalCostRow]}>
               <Text style={styles.totalLabel}>Total Earnings</Text>
-              <Text style={styles.totalValue}>
-                ${getTotalEarnings()}
-              </Text>
-            </View>
-            <View style={styles.pricingInfo}>
-              <Text style={styles.pricingInfoText}>
-                Route via Google Maps • Distance: {bookingDetails?.distanceInKm || '0'} km
-              </Text>
+              <Text style={styles.totalValue}>${getTotalEarnings()}</Text>
             </View>
           </View>
         </ScrollView>
 
-        {/* Buttons */}
+        {/* Complete Button */}
         <View style={styles.buttonContainer}>
-          {bookingDetails?.status === 'pending' || bookingDetails?.status === 'requested' ? (
-            <>
-              <TouchableOpacity 
-                style={[styles.acceptButton, isAccepting && styles.disabledButton]} 
-                onPress={handleAcceptBooking}
-                disabled={isAccepting}
-              >
-                {isAccepting ? (
-                  <ActivityIndicator color="#FFFFFF" size="small" />
-                ) : (
-                  <Text style={styles.acceptButtonText}>Accept Booking</Text>
-                )}
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={styles.rejectButton} 
-                onPress={handleRejectBooking}
-                disabled={isAccepting}
-              >
-                <Text style={styles.rejectButtonText}>Reject</Text>
-              </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              <TouchableOpacity 
-                style={styles.acceptButton} 
-                onPress={() => {
-                  router.push({
-                    pathname: '/dryCleanerDriver/dryCleanerDropup',
-                    params: {
-                      bookingData: JSON.stringify(bookingDetails)
-                    }
-                  });
-                }}
-              >
-                <Text style={styles.acceptButtonText}>Start Trip</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={styles.newPickupButton} 
-                onPress={() => {
-                  router.push('/dryCleanerDriver/dryCleaningLocator');
-                }}
-              >
-                <Text style={styles.newPickupButtonText}>New Pickup</Text>
-              </TouchableOpacity>
-            </>
-          )}
+          <TouchableOpacity 
+            style={[styles.completeButton, isCompleting && styles.disabledButton]} 
+            onPress={handleCompleteDropoff}
+            disabled={isCompleting}
+          >
+            {isCompleting ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <>
+                <MaterialIcons name="check-circle" size={24} color="#FFFFFF" />
+                <Text style={styles.completeButtonText}>Complete Dropoff</Text>
+              </>
+            )}
+          </TouchableOpacity>
         </View>
       </View>
     </SafeAreaView>
   );
-};
-
-// Helper function to get status color
-const getStatusColor = (status: string) => {
-  switch (status?.toLowerCase()) {
-    case 'accepted':
-      return '#4CAF50';
-    case 'pending':
-    case 'requested':
-      return '#FF8C00';
-    case 'rejected':
-      return '#FF0000';
-    case 'completed':
-      return '#2196F3';
-    default:
-      return '#666666';
-  }
 };
 
 const styles = StyleSheet.create({
@@ -1310,7 +1282,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 3,
-    marginTop: -60
+    marginTop: -60,
   },
   backButton: {
     width: 40,
@@ -1367,7 +1339,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#4A90E2',
+    backgroundColor: '#4285F4',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 3,
@@ -1378,7 +1350,7 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 5,
   },
-  pickupMarker: {
+  dropoffMarker: {
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1479,7 +1451,6 @@ const styles = StyleSheet.create({
   providerInfoRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
   },
   providerIconContainer: {
     width: 50,
@@ -1512,18 +1483,6 @@ const styles = StyleSheet.create({
   status: {
     fontSize: 12,
     fontWeight: '500',
-    textTransform: 'uppercase',
-  },
-  orderDetailsButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    backgroundColor: '#F0F0F0',
-    borderRadius: 8,
-  },
-  orderDetailsText: {
-    fontSize: 14,
-    color: '#666666',
-    fontWeight: '500',
   },
   locationContainer: {
     marginBottom: 20,
@@ -1545,11 +1504,11 @@ const styles = StyleSheet.create({
     marginRight: 12,
     marginTop: 2,
   },
-  greenDot: {
+  blueDot: {
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#4285F4',
   },
   orangeDot: {
     width: 12,
@@ -1642,76 +1601,26 @@ const styles = StyleSheet.create({
     backgroundColor: '#E0E0E0',
     marginVertical: 4,
   },
-  pricingInfo: {
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#E0E0E0',
-  },
-  pricingInfoText: {
-    fontSize: 12,
-    color: '#666',
-    fontStyle: 'italic',
-    textAlign: 'center',
-  },
   buttonContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
     padding: 20,
     paddingTop: 0,
     backgroundColor: '#FFFFFF',
   },
-  acceptButton: {
-    flex: 1,
+  completeButton: {
+    flexDirection: 'row',
     height: 56,
-    backgroundColor: '#FF8C00',
+    backgroundColor: '#4CAF50',
     borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#FF8C00',
+    gap: 8,
+    shadowColor: '#4CAF50',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
     elevation: 5,
   },
-  acceptButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  rejectButton: {
-    flex: 1,
-    height: 56,
-    backgroundColor: '#FF4444',
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#FF4444',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  rejectButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  newPickupButton: {
-    flex: 1,
-    height: 56,
-    backgroundColor: '#6B7280',
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#6B7280',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  newPickupButtonText: {
+  completeButtonText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#FFFFFF',
@@ -1729,19 +1638,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#FF0000',
     textAlign: 'center',
-    marginBottom: 20,
-  },
-  backToLocatorButton: {
-    backgroundColor: colors.brandColor || '#FF8C00',
-    paddingHorizontal: 30,
-    paddingVertical: 15,
-    borderRadius: 25,
-  },
-  backToLocatorText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '500',
   },
 });
 
-export default DryCleaningPickup;
+export default DryCleaningDropoff;

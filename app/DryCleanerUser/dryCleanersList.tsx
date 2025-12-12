@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -11,17 +11,17 @@ import {
   Alert,
   Modal,
   RefreshControl,
-  Dimensions
-} from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Ionicons, MaterialIcons } from '@expo/vector-icons';
-import colors from '../../assets/color';
-import { images } from '../../assets/images/images';
-import axios from 'axios';
-import { useDispatch } from 'react-redux';
-import { setSelectedCleaner } from '../../components/redux/userSlice';
+  Dimensions,
+} from "react-native";
+import { useRouter, useLocalSearchParams } from "expo-router";
+import { Ionicons, MaterialIcons } from "@expo/vector-icons";
+import colors from "../../assets/color";
+import { images } from "../../assets/images/images";
+import axios from "axios";
+import { useDispatch } from "react-redux";
+import { setSelectedCleaner } from "../../components/redux/userSlice";
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 type RootStackParamList = {
   NumberofItems: { selectedCleaner: DryCleaner };
@@ -63,18 +63,18 @@ interface DryCleaner {
   distance?: number;
 }
 
-const CleanerCard = ({ 
-  cleaner, 
-  onSelect, 
+const CleanerCard = ({
+  cleaner,
+  onSelect,
   onViewDetails,
-  isSelected 
-}: { 
-  cleaner: DryCleaner; 
+  isSelected,
+}: {
+  cleaner: DryCleaner;
   onSelect: (cleaner: DryCleaner) => void;
   onViewDetails: (cleaner: DryCleaner) => void;
   isSelected: boolean;
 }) => (
-  <TouchableOpacity 
+  <TouchableOpacity
     style={[styles.cleanerCard, isSelected && styles.selectedCardBorder]}
     onPress={() => onViewDetails(cleaner)}
   >
@@ -87,20 +87,19 @@ const CleanerCard = ({
           <Text style={styles.cleanerName}>{cleaner.shopname}</Text>
           <View style={styles.ratingContainer}>
             <Text style={styles.starIcon}>★</Text>
-            <Text style={styles.rating}>{cleaner.rating || '4.2'}</Text>
+            <Text style={styles.rating}>{cleaner.rating || "4.2"}</Text>
           </View>
         </View>
         <Text style={styles.address}>
-          {cleaner.address 
+          {cleaner.address
             ? `${cleaner.address.street}, ${cleaner.address.city}`
-            : '123, Lincoln Street, New York'
-          }
+            : "123, Lincoln Street, New York"}
         </Text>
         <View style={styles.detailsContainer}>
           <View style={styles.detailItem}>
             <Ionicons name="location-outline" size={12} color="#666" />
             <Text style={styles.detailText}>
-              {cleaner.distance ? `${cleaner.distance} miles` : '1.24274 miles'}
+              {cleaner.distance ? `${cleaner.distance} miles` : "1.24274 miles"}
             </Text>
           </View>
           <View style={styles.detailItem}>
@@ -108,8 +107,7 @@ const CleanerCard = ({
             <Text style={styles.detailText}>
               {cleaner.hoursOfOperation && cleaner.hoursOfOperation.length > 0
                 ? `${cleaner.hoursOfOperation[0].open} - ${cleaner.hoursOfOperation[0].close}`
-                : '12:00 PM - 08:00 PM'
-              }
+                : "12:00 PM - 08:00 PM"}
             </Text>
           </View>
         </View>
@@ -139,7 +137,7 @@ const AvailabilitySlider = ({ schedule }: { schedule: any[] }) => {
         // Swipe right - go to previous page
         setCurrentIndex(currentIndex - 1);
       } else if (deltaX < 0 && currentIndex < totalPages - 1) {
-        // Swipe left - go to next page  
+        // Swipe left - go to next page
         setCurrentIndex(currentIndex + 1);
       }
     }
@@ -202,7 +200,7 @@ const AvailabilitySlider = ({ schedule }: { schedule: any[] }) => {
       )}
 
       {/* Swipeable area - now using touch events */}
-      <View 
+      <View
         style={styles.swipeArea}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
@@ -266,41 +264,42 @@ const AvailabilitySlider = ({ schedule }: { schedule: any[] }) => {
   );
 };
 
-const CleanerDetailsModal = ({ 
-  cleaner, 
-  visible, 
-  onClose, 
-  onSelect 
-}: { 
-  cleaner: DryCleaner | null; 
-  visible: boolean; 
+const CleanerDetailsModal = ({
+  cleaner,
+  visible,
+  onClose,
+  onSelect,
+}: {
+  cleaner: DryCleaner | null;
+  visible: boolean;
   onClose: () => void;
   onSelect: (cleaner: DryCleaner) => void;
 }) => {
   const router = useRouter();
   const dispatch = useDispatch();
-  
+
   if (!cleaner) return null;
 
   // Function to convert time number to formatted time string
   const formatTime = (timeNumber: string | number) => {
-    const time = typeof timeNumber === 'string' ? parseInt(timeNumber) : timeNumber;
-    if (time === 0) return '12:00 AM';
+    const time =
+      typeof timeNumber === "string" ? parseInt(timeNumber) : timeNumber;
+    if (time === 0) return "12:00 AM";
     if (time < 12) return `${time}:00 AM`;
-    if (time === 12) return '12:00 PM';
+    if (time === 12) return "12:00 PM";
     return `${time - 12}:00 PM`;
   };
 
   // Get day abbreviations for availability section
   const getDayAbbr = (day: string) => {
     const days: { [key: string]: string } = {
-      'Monday': 'MON',
-      'Tuesday': 'TUE', 
-      'Wednesday': 'WED',
-      'Thursday': 'THU',
-      'Friday': 'FRI',
-      'Saturday': 'SAT',
-      'Sunday': 'SUN'
+      Monday: "MON",
+      Tuesday: "TUE",
+      Wednesday: "WED",
+      Thursday: "THU",
+      Friday: "FRI",
+      Saturday: "SAT",
+      Sunday: "SUN",
     };
     return days[day] || day.substr(0, 3).toUpperCase();
   };
@@ -311,12 +310,12 @@ const CleanerDetailsModal = ({
       onClose();
       dispatch(setSelectedCleaner(cleaner));
       router.push({
-        pathname: '/dryCleanerUser/noOfItem',
-       params: { 
-        selectedCleaner: JSON.stringify(cleaner),
-        cleanerId: cleaner._id,
-        cleanerName: cleaner.shopname
-      }
+        pathname: "/dryCleanerUser/noOfItem",
+        params: {
+          selectedCleaner: JSON.stringify(cleaner),
+          cleanerId: cleaner._id,
+          cleanerName: cleaner.shopname,
+        },
       });
     }
   };
@@ -326,25 +325,27 @@ const CleanerDetailsModal = ({
     if (!cleaner?.hoursOfOperation || cleaner.hoursOfOperation.length === 0) {
       // Default schedule if no hours are available
       return [
-        { day: 'MON', open: '12:00 PM', close: '08:00 PM' },
-        { day: 'TUE', open: '12:00 PM', close: '08:00 PM' },
-        { day: 'WED', open: '12:00 PM', close: '08:00 PM' },
-        { day: 'THU', open: '12:00 PM', close: '08:00 PM' },
-        { day: 'FRI', open: '12:00 PM', close: '08:00 PM' },
+        { day: "MON", open: "12:00 PM", close: "08:00 PM" },
+        { day: "TUE", open: "12:00 PM", close: "08:00 PM" },
+        { day: "WED", open: "12:00 PM", close: "08:00 PM" },
+        { day: "THU", open: "12:00 PM", close: "08:00 PM" },
+        { day: "FRI", open: "12:00 PM", close: "08:00 PM" },
       ];
     }
 
     // Convert backend format to display format
-    return cleaner.hoursOfOperation.map(item => ({
-      day: getDayAbbr(item.day),
-      open: formatTime(item.open),
-      close: formatTime(item.close),
-      originalDay: item.day // Keep for sorting
-    })).sort((a, b) => {
-      // Sort by day of week
-      const daysOrder = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
-      return daysOrder.indexOf(a.day) - daysOrder.indexOf(b.day);
-    });
+    return cleaner.hoursOfOperation
+      .map((item) => ({
+        day: getDayAbbr(item.day),
+        open: formatTime(item.open),
+        close: formatTime(item.close),
+        originalDay: item.day, // Keep for sorting
+      }))
+      .sort((a, b) => {
+        // Sort by day of week
+        const daysOrder = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
+        return daysOrder.indexOf(a.day) - daysOrder.indexOf(b.day);
+      });
   };
 
   const schedule = processSchedule();
@@ -365,7 +366,10 @@ const CleanerDetailsModal = ({
           <View style={{ width: 24 }} />
         </View>
 
-        <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={styles.modalContent}
+          showsVerticalScrollIndicator={false}
+        >
           {/* Shop Image at the top */}
           <View style={styles.shopImageContainer}>
             {cleaner.shopimage && cleaner.shopimage.length > 0 ? (
@@ -377,7 +381,9 @@ const CleanerDetailsModal = ({
             ) : (
               <View style={styles.shopImagePlaceholder}>
                 <MaterialIcons name="store" size={40} color="#ccc" />
-                <Text style={styles.shopImagePlaceholderText}>No Shop Image</Text>
+                <Text style={styles.shopImagePlaceholderText}>
+                  No Shop Image
+                </Text>
               </View>
             )}
           </View>
@@ -392,20 +398,23 @@ const CleanerDetailsModal = ({
                   <Text style={styles.detailName}>{cleaner.shopname}</Text>
                   <View style={styles.detailRatingContainer}>
                     <Text style={styles.detailStarIcon}>★</Text>
-                    <Text style={styles.detailRating}>{cleaner.rating || '4.2'}</Text>
+                    <Text style={styles.detailRating}>
+                      {cleaner.rating || "4.2"}
+                    </Text>
                   </View>
                 </View>
                 <Text style={styles.detailAddress}>
-                  {cleaner.address 
+                  {cleaner.address
                     ? `${cleaner.address.street}, ${cleaner.address.city}`
-                    : '123, Lincoln Street, New York'
-                  }
+                    : "123, Lincoln Street, New York"}
                 </Text>
                 <View style={styles.detailMetrics}>
                   <View style={styles.detailMetricItem}>
                     <Ionicons name="location-outline" size={14} color="#666" />
                     <Text style={styles.detailMetricText}>
-                      {cleaner.distance ? `${cleaner.distance} miles` : '1.24274 miles'}
+                      {cleaner.distance
+                        ? `${cleaner.distance} miles`
+                        : "1.24274 miles"}
                     </Text>
                   </View>
                   <View style={styles.detailMetricItem}>
@@ -413,8 +422,7 @@ const CleanerDetailsModal = ({
                     <Text style={styles.detailMetricText}>
                       {schedule.length > 0
                         ? `${schedule[0].open} - ${schedule[0].close}`
-                        : '12:00 PM - 08:00 PM'
-                      }
+                        : "12:00 PM - 08:00 PM"}
                     </Text>
                   </View>
                 </View>
@@ -435,9 +443,8 @@ const CleanerDetailsModal = ({
           <View style={styles.detailSection}>
             <Text style={styles.sectionTitle}>About :</Text>
             <Text style={styles.aboutText}>
-              {cleaner.about || 
-                "Lorem Ipsum Is Simply Dummy Text Of The Printing And Typesetting Industry. Lorem Ipsum Has Been The Industry's Standard Dummy Text Ever Since The 1500s. When An Unknown Printer Took A Galley Of Type."
-              }
+              {cleaner.about ||
+                "Lorem Ipsum Is Simply Dummy Text Of The Printing And Typesetting Industry. Lorem Ipsum Has Been The Industry's Standard Dummy Text Ever Since The 1500s. When An Unknown Printer Took A Galley Of Type."}
             </Text>
           </View>
 
@@ -447,8 +454,8 @@ const CleanerDetailsModal = ({
               <View style={styles.contactPersonContainer}>
                 <View style={styles.contactPersonAvatar}>
                   {cleaner.contactPersonImg ? (
-                    <Image 
-                      source={{ uri: cleaner.contactPersonImg }} 
+                    <Image
+                      source={{ uri: cleaner.contactPersonImg }}
                       style={styles.avatarImage}
                     />
                   ) : (
@@ -457,12 +464,12 @@ const CleanerDetailsModal = ({
                 </View>
                 <View style={styles.contactPersonInfo}>
                   <Text style={styles.contactPersonName}>
-                    {cleaner.contactPerson || 'Jason Anderson'}
+                    {cleaner.contactPerson || "Jason Anderson"}
                   </Text>
                   <View style={styles.phoneContainer}>
                     <Ionicons name="call-outline" size={14} color="#666" />
                     <Text style={styles.phoneNumber}>
-                      {cleaner.phoneNumber || '+1 7025825215'}
+                      {cleaner.phoneNumber || "+1 7025825215"}
                     </Text>
                   </View>
                 </View>
@@ -478,7 +485,7 @@ const CleanerDetailsModal = ({
         </ScrollView>
 
         <View style={styles.modalActions}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.continueButton}
             onPress={handleContinue}
           >
@@ -494,59 +501,65 @@ const DryCleanersList = () => {
   const router = useRouter();
   const params = useLocalSearchParams();
   const dispatch = useDispatch();
-  
+
   const [dryCleaners, setDryCleaners] = useState<DryCleaner[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedCleaner, setSelectedCleaner] = useState<DryCleaner | null>(null);
+  const [selectedCleaner, setSelectedCleaner] = useState<DryCleaner | null>(
+    null
+  );
   const [modalVisible, setModalVisible] = useState(false);
   const [modalCleaner, setModalCleaner] = useState<DryCleaner | null>(null);
 
   const fetchDryCleaners = async () => {
     try {
       setLoading(true);
-      
+
       const response = await axios.get(
-        'https://vervoer-backend2.onrender.com/api/users/dry-cleaner',
+        "https://vervoer-backend2.onrender.com/api/users/dry-cleaner",
         {
           headers: {
-            'Content-Type': 'application/json'
-          }
+            "Content-Type": "application/json",
+          },
         }
       );
 
       if (response.data.success && response.data.data.dryCleaners) {
         setDryCleaners(response.data.data.dryCleaners);
       } else {
-        throw new Error('Invalid response format');
+        throw new Error("Invalid response format");
       }
     } catch (error: any) {
-      console.error('Error fetching dry cleaners:', error);
-      
+      console.error("Error fetching dry cleaners:", error);
+
       if (error.response) {
         const status = error.response.status;
-        const message = error.response.data?.message || 'Something went wrong.';
-        
+        const message = error.response.data?.message || "Something went wrong.";
+
         if (status === 401) {
-          Alert.alert('Unauthorized', 'Unable to access this resource.');
+          Alert.alert("Unauthorized", "Unable to access this resource.");
         } else if (status === 403) {
-          Alert.alert('Access Denied', 'You do not have permission to access this resource.');
+          Alert.alert(
+            "Access Denied",
+            "You do not have permission to access this resource."
+          );
         } else if (status === 500) {
-          Alert.alert('Server Error', 'Internal server error. Please try again later.');
+          Alert.alert(
+            "Server Error",
+            "Internal server error. Please try again later."
+          );
         } else {
-          Alert.alert('Error', message);
+          Alert.alert("Error", message);
         }
       } else if (error.request) {
         Alert.alert(
-          'Network Error',
-          'Unable to connect to the server. Please check your internet connection.',
-          [{ text: 'OK' }]
+          "Network Error",
+          "Unable to connect to the server. Please check your internet connection.",
+          [{ text: "OK" }]
         );
       } else {
-        Alert.alert(
-          'Error',
-          'Failed to load dry cleaners. Please try again.',
-          [{ text: 'OK' }]
-        );
+        Alert.alert("Error", "Failed to load dry cleaners. Please try again.", [
+          { text: "OK" },
+        ]);
       }
     } finally {
       setLoading(false);
@@ -568,10 +581,13 @@ const DryCleanersList = () => {
 
   const handleSelectDryCleaner = () => {
     if (!selectedCleaner) {
-      Alert.alert('Please select a dry cleaner', 'You need to select a dry cleaner before continuing.');
+      Alert.alert(
+        "Please select a dry cleaner",
+        "You need to select a dry cleaner before continuing."
+      );
       return;
     }
-    
+
     handleViewDetails(selectedCleaner);
   };
 
@@ -579,12 +595,12 @@ const DryCleanersList = () => {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.push('/userHome');
+      router.push("/userHome");
     }
   };
   const handleOrderHistory = () => {
     dispatch(setSelectedCleaner(selectedCleaner));
-    router.push('/DryCleanerUser/myOrder');
+    router.push("/DryCleanerUser/myOrder");
   };
 
   if (loading) {
@@ -605,7 +621,10 @@ const DryCleanersList = () => {
           <Ionicons name="arrow-back" size={24} color="#FF8C00" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>List of Dry Cleaners</Text>
-        <TouchableOpacity style={styles.headerAction} onPress={handleOrderHistory}>
+        <TouchableOpacity
+          style={styles.headerAction}
+          onPress={handleOrderHistory}
+        >
           <Text style={styles.orderHistoryText}>ORDER HISTORY</Text>
         </TouchableOpacity>
       </View>
@@ -617,8 +636,8 @@ const DryCleanersList = () => {
         </TouchableOpacity>
       </View>
 
-      <ScrollView 
-        style={styles.content} 
+      <ScrollView
+        style={styles.content}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -637,9 +656,10 @@ const DryCleanersList = () => {
             />
             <Text style={styles.emptyTitle}>No Dry Cleaners Found</Text>
             <Text style={styles.emptyText}>
-              We couldn't find any dry cleaners in your area. Please try again later.
+              We couldn't find any dry cleaners in your area. Please try again
+              later.
             </Text>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.retryButton}
               onPress={fetchDryCleaners}
             >
@@ -647,7 +667,7 @@ const DryCleanersList = () => {
             </TouchableOpacity>
           </View>
         ) : (
-          <>            
+          <>
             {dryCleaners.map((cleaner, index) => (
               <CleanerCard
                 key={cleaner._id || index}
@@ -663,7 +683,7 @@ const DryCleanersList = () => {
 
       {selectedCleaner && (
         <View style={styles.bottomContainer}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.selectButton}
             onPress={handleSelectDryCleaner}
           >
@@ -688,71 +708,71 @@ const DryCleanersList = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: "#ffffff",
   },
   loadingContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#666',
+    color: "#666",
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingVertical: 16,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: "#f0f0f0",
   },
   backButton: {
     padding: 4,
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: "600",
+    color: "#333",
   },
   headerAction: {
     padding: 4,
   },
   orderHistoryText: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#FF8C00',
+    fontWeight: "600",
+    color: "#FF8C00",
   },
   sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingVertical: 16,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
   },
   sectionTitle: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: "600",
+    color: "#333",
   },
   seeAllText: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#FF8C00',
+    fontWeight: "600",
+    color: "#FF8C00",
   },
   content: {
     flex: 1,
     paddingHorizontal: 20,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: "#f8f9fa",
   },
   emptyContainer: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     paddingVertical: 80,
   },
   emptyImage: {
@@ -763,14 +783,14 @@ const styles = StyleSheet.create({
   },
   emptyTitle: {
     fontSize: 20,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: "600",
+    color: "#333",
     marginBottom: 8,
   },
   emptyText: {
     fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
+    color: "#666",
+    textAlign: "center",
     marginBottom: 24,
     paddingHorizontal: 20,
   },
@@ -781,18 +801,18 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   retryButtonText: {
-    color: '#fff',
-    fontWeight: '600',
+    color: "#fff",
+    fontWeight: "600",
     fontSize: 16,
   },
   cleanerCard: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 12,
     marginBottom: 12,
     marginTop: 8,
     borderWidth: 1,
-    borderColor: '#e8e8e8',
-    shadowColor: '#000',
+    borderColor: "#e8e8e8",
+    shadowColor: "#000",
     shadowOffset: {
       width: 0,
       height: 2,
@@ -803,86 +823,86 @@ const styles = StyleSheet.create({
   },
   selectedCardBorder: {
     borderWidth: 2,
-    borderColor: '#FF8C00',
+    borderColor: "#FF8C00",
   },
   cardContent: {
-    flexDirection: 'row',
+    flexDirection: "row",
     padding: 16,
   },
   iconContainer: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#FF8C00',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "#FF8C00",
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: 12,
   },
   iconText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   cleanerInfo: {
     flex: 1,
   },
   nameRating: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 4,
   },
   cleanerName: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: "600",
+    color: "#333",
     flex: 1,
   },
   ratingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
   starIcon: {
-    color: '#FF8C00',
+    color: "#FF8C00",
     fontSize: 14,
     marginRight: 4,
   },
   rating: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: "600",
+    color: "#333",
   },
   address: {
     fontSize: 13,
-    color: '#666',
+    color: "#666",
     marginBottom: 12,
     lineHeight: 18,
   },
   detailsContainer: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 20,
   },
   detailItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
   detailText: {
     fontSize: 12,
-    color: '#666',
+    color: "#666",
     marginLeft: 4,
   },
   bottomContainer: {
     padding: 20,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
+    borderTopColor: "#e0e0e0",
   },
   selectButton: {
-    backgroundColor: '#FF8C00',
+    backgroundColor: "#FF8C00",
     paddingVertical: 16,
     borderRadius: 25,
-    alignItems: 'center',
-    shadowColor: '#FF8C00',
+    alignItems: "center",
+    shadowColor: "#FF8C00",
     shadowOffset: {
       width: 0,
       height: 4,
@@ -892,68 +912,68 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   selectButtonText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: '#f5f5f7',
+    backgroundColor: "#f5f5f7",
   },
   modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingVertical: 16,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: "#f0f0f0",
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: "600",
+    color: "#333",
   },
   modalContent: {
     flex: 1,
   },
   modalActions: {
     padding: 20,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
+    borderTopColor: "#e0e0e0",
   },
   shopImageContainer: {
     height: 200,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     marginHorizontal: 20,
     marginTop: 20,
     borderRadius: 16,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   shopImage: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
   },
   shopImagePlaceholder: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#f0f0f0',
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: "100%",
+    height: "100%",
+    backgroundColor: "#f0f0f0",
+    alignItems: "center",
+    justifyContent: "center",
   },
   shopImagePlaceholderText: {
     marginTop: 8,
     fontSize: 14,
-    color: '#999',
+    color: "#999",
   },
   detailCard: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 16,
     marginHorizontal: 20,
     marginBottom: 20,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: {
       width: 0,
       height: 4,
@@ -963,86 +983,86 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   detailCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+    flexDirection: "row",
+    alignItems: "flex-start",
     padding: 20,
   },
   detailIconContainer: {
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: '#FF8C00',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "#FF8C00",
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: 16,
   },
   detailIconText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 24,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   detailInfo: {
     flex: 1,
   },
   detailNameRating: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 6,
   },
   detailName: {
     fontSize: 20,
-    fontWeight: '700',
-    color: '#333',
+    fontWeight: "700",
+    color: "#333",
     flex: 1,
   },
   detailRatingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
   detailStarIcon: {
-    color: '#FF8C00',
+    color: "#FF8C00",
     fontSize: 16,
     marginRight: 4,
   },
   detailRating: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: "600",
+    color: "#333",
   },
   detailAddress: {
     fontSize: 14,
-    color: '#666',
+    color: "#666",
     marginBottom: 12,
     lineHeight: 20,
   },
   detailMetrics: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 10,
   },
   detailMetricItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
   detailMetricText: {
     fontSize: 13,
-    color: '#666',
+    color: "#666",
     marginLeft: 1,
   },
   qrCodeContainer: {
     marginLeft: 20,
-    alignSelf: 'flex-start',
+    alignSelf: "flex-start",
   },
   qrCode: {
     width: 50,
     height: 50,
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     borderWidth: 1,
-    borderColor: '#ddd',
-    shadowColor: '#000',
+    borderColor: "#ddd",
+    shadowColor: "#000",
     shadowOffset: {
       width: 0,
       height: 2,
@@ -1052,24 +1072,24 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   qrPattern: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     width: 20,
     height: 20,
   },
   qrDot: {
     width: 8,
     height: 8,
-    backgroundColor: '#333',
+    backgroundColor: "#333",
     margin: 1,
   },
   detailSection: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 16,
     marginHorizontal: 20,
     marginBottom: 16,
     padding: 20,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: {
       width: 0,
       height: 2,
@@ -1080,39 +1100,39 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: "600",
+    color: "#333",
     marginBottom: 12,
   },
   aboutText: {
     fontSize: 15,
-    color: '#666',
+    color: "#666",
     lineHeight: 22,
   },
   contactInfoCard: {
     borderRadius: 12,
     padding: 16,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: "#f8f9fa",
     borderWidth: 1,
-    borderColor: '#e9ecef',
+    borderColor: "#e9ecef",
   },
   contactPersonContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
   contactPersonAvatar: {
     width: 50,
     height: 50,
     borderRadius: 25,
-    backgroundColor: '#e0e0e0',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "#e0e0e0",
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: 16,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   avatarImage: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
     borderRadius: 25,
   },
   contactPersonInfo: {
@@ -1120,104 +1140,104 @@ const styles = StyleSheet.create({
   },
   contactPersonName: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: "600",
+    color: "#333",
     marginBottom: 6,
   },
   phoneContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
   phoneNumber: {
     fontSize: 15,
-    color: '#666',
+    color: "#666",
     marginLeft: 8,
   },
   availabilityContainer: {
-    backgroundColor: '#fff',
+    backgroundColor: "#fff",
     borderRadius: 12,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#e9ecef',
+    borderColor: "#e9ecef",
   },
   availabilityDaysRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginBottom: 12,
   },
   availabilityDayHeader: {
     flex: 1,
-    alignItems: 'center',
+    alignItems: "center",
   },
   dayHeaderText: {
     fontSize: 14,
-    fontWeight: '700',
-    color: '#333',
+    fontWeight: "700",
+    color: "#333",
   },
   availabilityTimesRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginBottom: 8,
   },
   availabilityTimeCell: {
     flex: 1,
-    alignItems: 'center',
+    alignItems: "center",
   },
   timeText: {
     fontSize: 13,
-    color: '#666',
-    fontWeight: '500',
+    color: "#666",
+    fontWeight: "500",
   },
   timeTextWithBullet: {
     fontSize: 13,
-    color: '#666',
-    fontWeight: '500',
+    color: "#666",
+    fontWeight: "500",
   },
   bullet: {
-    color: '#FF8C00',
+    color: "#FF8C00",
     fontSize: 16,
   },
   availabilitySeparator: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginBottom: 8,
   },
   separatorCell: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     height: 10,
   },
   verticalLine: {
     width: 1,
-    height: '100%',
-    backgroundColor: '#ddd',
+    height: "100%",
+    backgroundColor: "#ddd",
   },
   paginationContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
     marginTop: 16,
   },
   paginationDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#ccc',
+    backgroundColor: "#ccc",
     marginHorizontal: 4,
   },
   paginationDotActive: {
-    backgroundColor: '#FF8C00',
+    backgroundColor: "#FF8C00",
     width: 12,
     height: 8,
     borderRadius: 4,
   },
   continueButton: {
-    backgroundColor: '#FF8C00',
+    backgroundColor: "#FF8C00",
     paddingVertical: 18,
     borderRadius: 30,
-    alignItems: 'center',
-    shadowColor: '#FF8C00',
+    alignItems: "center",
+    shadowColor: "#FF8C00",
     shadowOffset: {
       width: 0,
       height: 6,
@@ -1227,21 +1247,21 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   continueButtonText: {
-    color: '#fff',
+    color: "#fff",
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   swipeHintContainer: {
-    alignItems: 'center',
+    alignItems: "center",
     marginBottom: 8,
   },
   swipeHintText: {
     fontSize: 12,
-    color: '#999',
-    fontStyle: 'italic',
+    color: "#999",
+    fontStyle: "italic",
   },
   swipeArea: {
-    width: '100%',
+    width: "100%",
   },
   paginationDotContainer: {
     padding: 4,
