@@ -133,12 +133,16 @@ function RootLayoutNav() {
         <Stack.Screen name="dryCleanerUser/payment" />
         
         {/* Parking User Screens */}
-        <Stack.Screen name="parkingUser/parking" />
-        <Stack.Screen name="parkingUser/historyScreen" />
-        <Stack.Screen name="parkingUser/LiveSessionScreen" />
-        <Stack.Screen name="parkingUser/FindParking" />
-        <Stack.Screen name="parkingUser/ParkingSlot" />
+            <Stack.Screen name="parkingUser/parking" options={{ headerShown: false }} />
+      <Stack.Screen name="parkingUser/historyScreen" options={{ headerShown: false }} />
+      <Stack.Screen name="parkingUser/LiveSessionScreen" options={{ headerShown: false }} />
+      <Stack.Screen name="parkingUser/FindParking" options={{ headerShown: false }} />
+      <Stack.Screen name="parkingUser/ParkingSlot" options={{ headerShown: false }} />
+      <Stack.Screen name="parkingUser/ParkingSpot" options={{ headerShown: false }} />
+      <Stack.Screen name="parkingUser/GarageScreen" options={{ headerShown: false }} />
+      <Stack.Screen name="parkingUser/ParkingSpace" options={{ headerShown: false }} />
         <Stack.Screen name="parkingUser/payment" />
+        <Stack.Screen name="parkingUser/Confirmation" options={{ headerShown: false }} />
       </Stack>
     </View>
   );

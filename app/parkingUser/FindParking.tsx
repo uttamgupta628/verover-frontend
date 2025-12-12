@@ -264,7 +264,7 @@ const FindParking: React.FC = () => {
   const handleContinue = () => {
     if (selectedLocation) {
       router.push({
-        pathname: "/parkingUser/historyScreen",
+        pathname: "/parkingUser/ParkingSlot",
         params: {
           latitude: selectedLocation.latitude.toString(),
           longitude: selectedLocation.longitude.toString(),
