@@ -1,34 +1,43 @@
-import React, { useCallback, useEffect, useState, useRef } from 'react';
+import * as Location from "expo-location";
+import { useRouter } from "expo-router";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-  Image,
-  Alert,
-  Platform,
-  Dimensions,
   ActivityIndicator,
+  Alert,
+  Dimensions,
+  Image,
   Linking,
+  Platform,
   SafeAreaView,
   ScrollView,
-} from 'react-native';
-import { useRouter } from 'expo-router';
-import { images } from '../../assets/images/images';
-import colors from '../../assets/color';
-import * as Location from 'expo-location';
-import MapView, { Marker, PROVIDER_GOOGLE, Region } from 'react-native-maps'; 
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import Constants from "expo-constants";
+import MapView, { Marker, PROVIDER_GOOGLE, Region } from "react-native-maps";
+import colors from "../../assets/color";
+import { images } from "../../assets/images/images";
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const HEADER_MARGIN_TOP = Platform.OS === 'ios' ? 50 : 70;
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+const HEADER_MARGIN_TOP = Platform.OS === "ios" ? 50 : 70;
+const GOOGLE_MAPS_API_KEY = Constants.expoConfig?.extra?.GOOGLE_MAPS_API_KEY;
+console.log("API Key loaded:", GOOGLE_MAPS_API_KEY ? "Yes" : "No");
 
 interface LocationCoords {
   longitude: number;
   latitude: number;
 }
 
-const CustomBackButton = ({ onPress, color = colors.primary }: { onPress: () => void; color?: string }) => (
+const CustomBackButton = ({
+  onPress,
+  color = colors.primary,
+}: {
+  onPress: () => void;
+  color?: string;
+}) => (
   <TouchableOpacity onPress={onPress} style={styles.backButton}>
     <Text style={[styles.backButtonText, { color }]}>←</Text>
   </TouchableOpacity>
@@ -37,61 +46,61 @@ const CustomBackButton = ({ onPress, color = colors.primary }: { onPress: () => 
 const FindParking: React.FC = () => {
   const router = useRouter();
   const [currLoc, setCurrLoc] = useState<LocationCoords | null>(null);
-  const [selectedLocation, setSelectedLocation] = useState<LocationCoords | null>(null);
-  const [error, setError] = useState<string | null>(null); 
-  const [qLocation, setQLocation] = useState<string>('');
+  const [selectedLocation, setSelectedLocation] =
+    useState<LocationCoords | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [qLocation, setQLocation] = useState<string>("");
   const [loading, setLoading] = useState(false);
-  const [mapReady, setMapReady] = useState(false); 
+  const [mapReady, setMapReady] = useState(false);
   const mapRef = useRef<MapView>(null);
 
   const getCurrentLocation = useCallback(async () => {
     setLoading(true);
-    
+
     try {
       let { status } = await Location.requestForegroundPermissionsAsync();
-      
-      if (status !== 'granted') {
+
+      if (status !== "granted") {
         Alert.alert(
-          'Permission Denied',
-          'Please enable location permission in settings.',
+          "Permission Denied",
+          "Please enable location permission in settings.",
           [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Open Settings', onPress: () => Linking.openSettings() },
+            { text: "Cancel", style: "cancel" },
+            { text: "Open Settings", onPress: () => Linking.openSettings() },
           ]
         );
-        setError('Location permission denied');
+        setError("Location permission denied");
         setLoading(false);
         return;
       }
 
       const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
-        timeout: 15000,
       });
 
       const newLocation = {
         latitude: location.coords.latitude,
         longitude: location.coords.longitude,
       };
-      
+
       setCurrLoc(newLocation);
       setSelectedLocation(newLocation);
       setError(null);
 
+      // Use Google Reverse Geocoding API
       try {
-        const [address] = await Location.reverseGeocodeAsync(newLocation);
-        if (address) {
-          const addressString = [
-            address.street,
-            address.city,
-            address.region,
-            address.postalCode
-          ].filter(Boolean).join(', ') || 'Current Location';
-          setQLocation(addressString);
+        const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${newLocation.latitude},${newLocation.longitude}&key=${GOOGLE_MAPS_API_KEY}`;
+        const response = await fetch(geocodeUrl);
+        const data = await response.json();
+
+        if (data.status === "OK" && data.results && data.results.length > 0) {
+          setQLocation(data.results[0].formatted_address);
+        } else {
+          setQLocation("Current Location");
         }
       } catch (geocodeError) {
-        console.log('Reverse geocode error:', geocodeError);
-        setQLocation('Current Location');
+        console.log("Reverse geocode error:", geocodeError);
+        setQLocation("Current Location");
       }
 
       if (mapRef.current) {
@@ -103,9 +112,12 @@ const FindParking: React.FC = () => {
         mapRef.current.animateToRegion(region, 1000);
       }
     } catch (err: any) {
-      console.error('Location error:', err);
-      setError('Unable to get current location');
-      Alert.alert('Location Error', 'Unable to get your current location. Please try again.');
+      console.error("Location error:", err);
+      setError("Unable to get current location");
+      Alert.alert(
+        "Location Error",
+        "Unable to get your current location. Please try again."
+      );
     } finally {
       setLoading(false);
     }
@@ -115,8 +127,8 @@ const FindParking: React.FC = () => {
     const initLocation = async () => {
       try {
         let { status } = await Location.getForegroundPermissionsAsync();
-        
-        if (status === 'granted') {
+
+        if (status === "granted") {
           getCurrentLocation();
         } else {
           const defaultLocation = {
@@ -124,8 +136,8 @@ const FindParking: React.FC = () => {
             longitude: 78.9629,
           };
           setSelectedLocation(defaultLocation);
-          setQLocation('India');
-          
+          setQLocation("India");
+
           // Animate to default location
           setTimeout(() => {
             if (mapRef.current) {
@@ -139,35 +151,45 @@ const FindParking: React.FC = () => {
           }, 1000);
         }
       } catch (err) {
-        console.error('Permission check error:', err);
+        console.error("Permission check error:", err);
       }
     };
 
     initLocation();
   }, [getCurrentLocation]);
 
-  // FIXED: Search location function
+  // ✅ FIXED: Using Google Geocoding API for search
   const searchLocation = async (query: string) => {
-    if (!query.trim()) return;
+    if (!query.trim()) {
+      Alert.alert("Empty Search", "Please enter a location to search");
+      return;
+    }
+
     setLoading(true);
+    setError(null);
 
     try {
-      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`;
+      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
+        query
+      )}&key=${GOOGLE_MAPS_API_KEY}`;
+
       const response = await fetch(url);
       const data = await response.json();
 
-      if (data && data.length > 0) {
-        const firstResult = data[0];
+      console.log("Google Geocoding Response:", data.status);
+
+      if (data.status === "OK" && data.results && data.results.length > 0) {
+        const firstResult = data.results[0];
         const newLocation = {
-          latitude: parseFloat(firstResult.lat),
-          longitude: parseFloat(firstResult.lon),
+          latitude: firstResult.geometry.location.lat,
+          longitude: firstResult.geometry.location.lng,
         };
 
         setSelectedLocation(newLocation);
-        setQLocation(firstResult.display_name);
+        setQLocation(firstResult.formatted_address);
         setError(null);
 
-        // FIXED: Proper region animation
+        // Animate map to new location
         if (mapRef.current) {
           const region: Region = {
             ...newLocation,
@@ -176,69 +198,87 @@ const FindParking: React.FC = () => {
           };
           mapRef.current.animateToRegion(region, 1000);
         }
+
+        Alert.alert("Location Found", firstResult.formatted_address);
+      } else if (data.status === "ZERO_RESULTS") {
+        setError("Location not found");
+        Alert.alert(
+          "Location Not Found",
+          "No results found. Try a different search term."
+        );
+      } else if (data.status === "REQUEST_DENIED") {
+        setError("API Key Error");
+        Alert.alert(
+          "API Error",
+          "There's an issue with the Google Maps API key. Please check your configuration."
+        );
+        console.error("API Key Error:", data.error_message);
       } else {
-        Alert.alert('Location not found', 'Try another search term');
+        setError("Search failed");
+        Alert.alert("Search Failed", data.error_message || "Please try again.");
       }
     } catch (err) {
-      console.error('Search error:', err);
-      Alert.alert('Error', 'Failed to search location');
+      console.error("Search error:", err);
+      setError("Network error");
+      Alert.alert(
+        "Error",
+        "Failed to search location. Check your internet connection."
+      );
     } finally {
       setLoading(false);
     }
   };
 
-  // FIXED: Map press handler
+  // ✅ FIXED: Map press handler with Google Reverse Geocoding
   const handleMapPress = useCallback(async (event: any) => {
     if (event?.nativeEvent?.coordinate) {
       const newLocation = event.nativeEvent.coordinate;
       setSelectedLocation(newLocation);
-      
+
       setLoading(true);
       try {
-        const [address] = await Location.reverseGeocodeAsync(newLocation);
-        if (address) {
-          const addressString = [
-            address.street,
-            address.city,
-            address.region,
-            address.postalCode
-          ].filter(Boolean).join(', ') || 'Selected Location';
-          setQLocation(addressString);
+        // Use Google Reverse Geocoding API
+        const geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${newLocation.latitude},${newLocation.longitude}&key=${GOOGLE_MAPS_API_KEY}`;
+        const response = await fetch(geocodeUrl);
+        const data = await response.json();
+
+        if (data.status === "OK" && data.results && data.results.length > 0) {
+          setQLocation(data.results[0].formatted_address);
         } else {
-          setQLocation('Selected Location');
+          setQLocation("Selected Location");
         }
       } catch (err) {
-        console.error('Reverse geocode error:', err);
-        setQLocation('Selected Location');
+        console.error("Reverse geocode error:", err);
+        setQLocation("Selected Location");
       } finally {
         setLoading(false);
       }
     }
   }, []);
 
-  // FIXED: Map ready handler
   const handleMapReady = useCallback(() => {
     setMapReady(true);
+    console.log("Map is ready");
   }, []);
 
   const handleContinue = () => {
     if (selectedLocation) {
       router.push({
-        pathname: '/ParkingSlot',
-        params: { 
+        pathname: "/parkingUser/ParkingSlot",
+        params: {
           latitude: selectedLocation.latitude.toString(),
           longitude: selectedLocation.longitude.toString(),
           address: qLocation,
-        }
+        },
       });
     } else {
-      Alert.alert('No Location Selected', 'Please select a location first');
+      Alert.alert("No Location Selected", "Please select a location first");
     }
   };
 
   const renderMap = () => {
     // For web, show placeholder
-    if (Platform.OS === 'web') {
+    if (Platform.OS === "web") {
       return (
         <View style={styles.mapPlaceholder}>
           <Text style={styles.placeholderText}>
@@ -251,10 +291,15 @@ const FindParking: React.FC = () => {
       );
     }
 
-    // FIXED: Proper initial region handling
-    const initialRegion = selectedLocation || currLoc || {
-      latitude: 20.5937,
-      longitude: 78.9629,
+    const initialCoords = selectedLocation ||
+      currLoc || {
+        latitude: 20.5937,
+        longitude: 78.9629,
+      };
+
+    const initialRegion: Region = {
+      latitude: initialCoords.latitude,
+      longitude: initialCoords.longitude,
       latitudeDelta: 0.05,
       longitudeDelta: 0.05,
     };
@@ -266,7 +311,7 @@ const FindParking: React.FC = () => {
         provider={PROVIDER_GOOGLE}
         initialRegion={initialRegion}
         onPress={handleMapPress}
-        onMapReady={handleMapReady} // Added onMapReady
+        onMapReady={handleMapReady}
         showsUserLocation={!!currLoc}
         showsMyLocationButton={false}
         showsCompass={true}
@@ -278,7 +323,7 @@ const FindParking: React.FC = () => {
         {selectedLocation && (
           <Marker
             coordinate={selectedLocation}
-            title={qLocation || 'Selected Location'}
+            title={qLocation || "Selected Location"}
             description="This location will be used to find parking"
             pinColor={colors.primary}
           />
@@ -289,7 +334,10 @@ const FindParking: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+      >
         <View style={styles.header}>
           <CustomBackButton onPress={() => router.back()} />
           <Text style={styles.headerTitle}>Find Parking</Text>
@@ -308,7 +356,7 @@ const FindParking: React.FC = () => {
 
         <View style={styles.locationSection}>
           <Text style={styles.locationTitle}>Location</Text>
-          
+
           <View style={styles.locationInputContainer}>
             <Image source={images.location} style={styles.locationIcon} />
             <TextInput
@@ -320,28 +368,33 @@ const FindParking: React.FC = () => {
               onSubmitEditing={() => searchLocation(qLocation)}
               returnKeyType="search"
             />
-            <TouchableOpacity 
-              onPress={getCurrentLocation} 
+            <TouchableOpacity
+              onPress={getCurrentLocation}
               disabled={loading}
               style={styles.currentLocationButton}
             >
               <Image
-                source={images.gps}
-                style={{ 
-                  width: 24, 
-                  height: 24, 
-                  opacity: loading ? 0.5 : 1 
+                source={images.Apple}
+                style={{
+                  width: 24,
+                  height: 24,
+                  opacity: loading ? 0.5 : 1,
                 }}
               />
             </TouchableOpacity>
           </View>
 
-          <TouchableOpacity 
-            onPress={getCurrentLocation} 
+          <TouchableOpacity
+            onPress={getCurrentLocation}
             disabled={loading}
             style={styles.useCurrentLocationButton}
           >
-            <Text style={[styles.useCurrentLocation, loading && styles.disabledText]}>
+            <Text
+              style={[
+                styles.useCurrentLocation,
+                loading && styles.disabledText,
+              ]}
+            >
               Use Current Location
             </Text>
           </TouchableOpacity>
@@ -349,23 +402,23 @@ const FindParking: React.FC = () => {
           <View style={styles.buttonContainer}>
             <TouchableOpacity
               style={[
-                styles.actionButton, 
+                styles.actionButton,
                 styles.applyButton,
-                (!qLocation.trim() || loading) && styles.disabledButton
+                (!qLocation.trim() || loading) && styles.disabledButton,
               ]}
               onPress={() => searchLocation(qLocation)}
               disabled={!qLocation.trim() || loading}
             >
               <Text style={styles.buttonText}>
-                {loading ? 'Searching...' : 'Search'}
+                {loading ? "Searching..." : "Search"}
               </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[
-                styles.actionButton, 
+                styles.actionButton,
                 styles.continueButton,
-                (!selectedLocation || loading) && styles.disabledButton
+                (!selectedLocation || loading) && styles.disabledButton,
               ]}
               onPress={handleContinue}
               disabled={!selectedLocation || loading}
@@ -374,9 +427,7 @@ const FindParking: React.FC = () => {
             </TouchableOpacity>
           </View>
 
-          {error && (
-            <Text style={styles.errorText}>{error}</Text>
-          )}
+          {error && <Text style={styles.errorText}>{error}</Text>}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -386,7 +437,7 @@ const FindParking: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
   },
   scrollView: {
     flex: 1,
@@ -395,9 +446,9 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
     marginTop: HEADER_MARGIN_TOP,
     marginBottom: 20,
@@ -407,77 +458,77 @@ const styles = StyleSheet.create({
   },
   backButtonText: {
     fontSize: 24,
-    fontWeight: '400',
+    fontWeight: "400",
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: '600',
+    fontWeight: "600",
     color: colors.primary,
-    textAlign: 'center',
+    textAlign: "center",
   },
   headerSpacer: {
     width: 40,
   },
   mapContainer: {
     height: SCREEN_HEIGHT * 0.4,
-    position: 'relative',
+    position: "relative",
   },
   map: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
   },
   mapPlaceholder: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: '#E5E5E5',
-    justifyContent: 'center',
-    alignItems: 'center',
+    width: "100%",
+    height: "100%",
+    backgroundColor: "#E5E5E5",
+    justifyContent: "center",
+    alignItems: "center",
     padding: 20,
   },
   placeholderText: {
-    color: '#666666',
+    color: "#666666",
     fontSize: 16,
-    fontWeight: '600',
-    textAlign: 'center',
+    fontWeight: "600",
+    textAlign: "center",
     marginBottom: 8,
   },
   placeholderSubtext: {
-    color: '#888888',
+    color: "#888888",
     fontSize: 14,
-    textAlign: 'center',
+    textAlign: "center",
   },
   loadingContainer: {
     ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.8)',
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.8)",
   },
   loadingText: {
     marginTop: 12,
     fontSize: 16,
     color: colors.primary,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   locationSection: {
     padding: 20,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
   },
   locationTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: "600",
     color: colors.primary,
     marginBottom: 16,
   },
   locationInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8F8F8',
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F8F8F8",
     borderRadius: 12,
     paddingHorizontal: 16,
     paddingVertical: 12,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#E0E0E0',
+    borderColor: "#E0E0E0",
   },
   locationIcon: {
     width: 20,
@@ -500,13 +551,13 @@ const styles = StyleSheet.create({
   useCurrentLocation: {
     color: colors.primary,
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   disabledText: {
     opacity: 0.5,
   },
   buttonContainer: {
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 12,
     marginBottom: 20,
   },
@@ -514,8 +565,8 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 16,
     borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   applyButton: {
     backgroundColor: colors.black,
@@ -524,17 +575,17 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
   },
   buttonText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   disabledButton: {
-    backgroundColor: '#E0E0E0',
+    backgroundColor: "#E0E0E0",
   },
   errorText: {
-    color: 'red',
+    color: "red",
     fontSize: 14,
-    textAlign: 'center',
+    textAlign: "center",
     marginTop: 8,
   },
 });

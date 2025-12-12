@@ -12,7 +12,7 @@ const MenuGrid: React.FC = () => {
       <MenuItem
         icon="car"
         label="Find Parking"
-        onPress={() => router.push("/parkingUser/FindParking")}
+        onPress={() => router.push("/parkingUser/GarageScreen")}
       />
 
       <MenuItem

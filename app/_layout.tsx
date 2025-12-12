@@ -68,6 +68,10 @@ function RootLayoutNav() {
       <Stack.Screen name="parkingUser/LiveSessionScreen" options={{ headerShown: false }} />
       <Stack.Screen name="parkingUser/FindParking" options={{ headerShown: false }} />
       <Stack.Screen name="parkingUser/ParkingSlot" options={{ headerShown: false }} />
+      <Stack.Screen name="parkingUser/ParkingSpot" options={{ headerShown: false }} />
+      <Stack.Screen name="parkingUser/GarageScreen" options={{ headerShown: false }} />
+      <Stack.Screen name="parkingUser/ParkingSpace" options={{ headerShown: false }} />
+      <Stack.Screen name="parkingUser/Confirmation" options={{ headerShown: false }} />
     </Stack>
   );
 }
