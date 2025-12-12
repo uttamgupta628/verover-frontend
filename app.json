@@ -1,5 +1,6 @@
 {
   "expo": {
+    "scheme": "vervoer",
     "name": "verover",
     "slug": "verover",
     "version": "1.0.0",
@@ -13,7 +14,10 @@
       },
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "This app needs access to your location to find nearby parking spots and dry cleaners.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "This app needs access to your location to find nearby parking spots and dry cleaners."
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "This app needs access to your location to find nearby parking spots and dry cleaners.",
+        "NSCameraUsageDescription": "This app needs access to your camera to take photos of your shop and contact person.",
+        "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to select images for your shop.",
+        "NSMicrophoneUsageDescription": "This app needs access to your microphone for video capture."
       }
     },
     "android": {

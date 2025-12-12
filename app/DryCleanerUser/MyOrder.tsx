@@ -48,7 +48,6 @@ const MyOrder = () => {
   // Refs
   const scrollViewRef = useRef<ScrollView>(null);
 
-  // Use Expo's focus effect to refresh data when screen comes into focus
   useFocusEffect(
     useCallback(() => {
       if (user) {

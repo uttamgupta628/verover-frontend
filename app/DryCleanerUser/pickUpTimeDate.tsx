@@ -10,7 +10,7 @@ import {
   SafeAreaView,
   StatusBar,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { IconButton } from 'react-native-paper';
 import colors from '../../assets/color';
 import { useDispatch, useSelector } from 'react-redux';
@@ -25,16 +25,106 @@ import {
 
 const { width, height } = Dimensions.get('window');
 
+interface OrderItem {
+  _id: string;
+  name: string;
+  category: string;
+  price: number;
+  quantity: number;
+  starchLevel: number;
+  washOnly: boolean;
+  additionalservice?: string;
+  dryCleanerId?: string;
+  dryCleanerName?: string;
+  options: {
+    washAndFold: boolean;
+    button: boolean;
+    zipper: boolean;
+  };
+}
+
+const formatScheduledDateTime = (date: string, month: string, time: string): string => {
+  try {
+    const currentYear = new Date().getFullYear();
+    const currentDate = new Date(); // ← ADD THIS LINE
+    
+    const monthNumber = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ].indexOf(month) + 1;
+    
+    if (monthNumber === 0) {
+      console.error('Invalid month:', month);
+      return new Date().toISOString();
+    }
+    
+    const timeMatch = time.match(/(\d+):(\d+)(AM|PM)/);
+    if (!timeMatch) {
+      console.error('Invalid time format:', time);
+      return new Date().toISOString();
+    }
+    
+    let hours = parseInt(timeMatch[1]);
+    const minutes = parseInt(timeMatch[2]);
+    const period = timeMatch[3];
+    
+    if (period === 'PM' && hours !== 12) hours += 12;
+    if (period === 'AM' && hours === 12) hours = 0;
+    
+    // Create the date object with current year first
+    let scheduledDate = new Date(
+      currentYear,
+      monthNumber - 1,
+      parseInt(date),
+      hours,
+      minutes,
+      0,
+      0
+    );
+    
+    // ✅ ADD THIS: If the scheduled date is in the past, use next year
+    if (scheduledDate <= currentDate) {
+      console.log(`📅 Date ${date} ${month} is in the past, using next year`);
+      scheduledDate = new Date(
+        currentYear + 1,
+        monthNumber - 1,
+        parseInt(date),
+        hours,
+        minutes,
+        0,
+        0
+      );
+    }
+    
+    const isoString = scheduledDate.toISOString();
+    console.log(`📅 Formatted DateTime: ${date} ${month} ${time} → ${isoString}`);
+    
+    return isoString;
+  } catch (error) {
+    console.error('Error formatting date time:', error);
+    return new Date().toISOString();
+  }
+};
+
 const PickupDeliveryScreen = () => {
   const router = useRouter();
+  const params = useLocalSearchParams();
   const dispatch = useDispatch();
   
-  // Get ALL data from Redux
+  // Get ALL data from Redux with better error handling
   const userState = useSelector((state: any) => state.user);
   const savedScheduling = userState?.scheduling;
   const existingOrder = userState?.order;
   const selectedItems = userState?.selections?.selectedItems || [];
   const selectedCleaner = userState?.order?.selectedCleaner || userState?.selections?.selectedCleaner;
+
+  // Get route params for fallback data
+  const { 
+    pickupAddress,
+    selectedAddressType,
+    dryCleanerId,
+    dryCleanerName 
+  } = params as any;
 
   // Use ref to track the latest state
   const stateRef = useRef({
@@ -53,6 +143,17 @@ const PickupDeliveryScreen = () => {
       userState
     };
   }, [existingOrder, selectedItems, selectedCleaner, userState]);
+
+  // Debug current state on mount
+  useEffect(() => {
+    console.log('🚀 PickupDeliveryScreen mounted with data:', {
+      hasExistingOrder: !!existingOrder,
+      existingOrderItems: existingOrder?.items?.length || 0,
+      selectedItemsCount: selectedItems.length,
+      hasSelectedCleaner: !!selectedCleaner,
+      routeParams: params
+    });
+  }, []);
 
   // State with initial values from Redux if available
   const [selectedPickupDate, setSelectedPickupDate] = useState<string>(
@@ -98,22 +199,32 @@ const PickupDeliveryScreen = () => {
     { label: 'December', value: 'December' },
   ];
 
-  // Save scheduling data to Redux
+  // Save scheduling data to Redux with formatted DateTime
   const saveToRedux = () => {
-    const schedulingData: SchedulingData = {
-      pickupDate: selectedPickupDate,
-      pickupTime: selectedPickupTime,
-      pickupMonth: pickupMonth,
-      deliveryDate: selectedDeliveryDate,
-      deliveryTime: selectedDeliveryTime,
-      deliveryMonth: deliveryMonth,
-      lastUpdated: new Date().toISOString(),
-    };
-    
-    dispatch(saveSchedulingData(schedulingData));
-    console.log('Scheduling data saved to Redux:', schedulingData);
+  const schedulingData: SchedulingData = {
+    pickupDate: selectedPickupDate,
+    pickupTime: selectedPickupTime,
+    pickupMonth: pickupMonth,
+    deliveryDate: selectedDeliveryDate,
+    deliveryTime: selectedDeliveryTime,
+    deliveryMonth: deliveryMonth,
+    lastUpdated: new Date().toISOString(),
+    // Add formatted ISO strings for the payment screen
+    scheduledPickupDateTime: formatScheduledDateTime(
+      selectedPickupDate, 
+      pickupMonth, 
+      selectedPickupTime
+    ),
+    scheduledDeliveryDateTime: formatScheduledDateTime(
+      selectedDeliveryDate, 
+      deliveryMonth, 
+      selectedDeliveryTime
+    ),
   };
-
+  
+  dispatch(saveSchedulingData(schedulingData));
+  console.log('📅 Scheduling data saved to Redux:', schedulingData);
+};
   // Save to Redux whenever state changes (debounced)
   useEffect(() => {
     const timeoutId = setTimeout(() => {
@@ -123,6 +234,249 @@ const PickupDeliveryScreen = () => {
     return () => clearTimeout(timeoutId);
   }, [selectedPickupDate, selectedPickupTime, pickupMonth, selectedDeliveryDate, selectedDeliveryTime, deliveryMonth]);
 
+  // Create a mock order for testing/demo purposes
+  const createMockOrder = (): OrderData => {
+    console.log('🛠️ Creating mock order for demo purposes');
+    
+    return {
+      items: [
+        {
+          _id: 'mock-item-1',
+          name: 'Shirt',
+          category: 'Clothing',
+          price: 80,
+          quantity: 2,
+          starchLevel: 3,
+          washOnly: false,
+          additionalservice: 'Normal Wash',
+          dryCleanerId: dryCleanerId || 'mock-cleaner-1',
+          dryCleanerName: dryCleanerName || 'Demo Dry Cleaner',
+          options: {
+            washAndFold: true,
+            button: false,
+            zipper: false,
+          },
+        }
+      ],
+      selectedCleaner: selectedCleaner || {
+        _id: dryCleanerId || 'mock-cleaner-1',
+        shopname: dryCleanerName || 'Demo Dry Cleaner',
+        address: pickupAddress || 'Demo Address',
+        rating: 4.5,
+        phoneNumber: '+1234567890',
+      },
+      totalAmount: 160,
+      totalItems: 2,
+      lastUpdated: new Date().toISOString(),
+    };
+  };
+
+  // Enhanced handleContinue with better error handling and fallbacks
+  const handleContinue = () => {
+    console.log('🔄 handleContinue called');
+    
+    // Save scheduling data FIRST with formatted DateTime
+    saveToRedux();
+    
+    // Use the ref to get the latest state
+    const { 
+      existingOrder: latestOrder, 
+      selectedItems: latestSelectedItems,
+      selectedCleaner: latestCleaner,
+      userState: latestUserState 
+    } = stateRef.current;
+    
+    console.log('📦 Current state analysis:', {
+      hasExistingOrder: !!latestOrder,
+      existingOrderItems: latestOrder?.items?.length || 0,
+      hasSelectedItems: latestSelectedItems?.length > 0,
+      selectedItemsCount: latestSelectedItems?.length || 0,
+      hasUserState: !!latestUserState,
+      hasPickupAddress: !!pickupAddress
+    });
+
+    let orderDataToSave: OrderData | null = null;
+
+    // CASE 1: We have existing order data - use it
+    if (latestOrder?.items?.length > 0) {
+      console.log('✅ Using existing order data');
+      orderDataToSave = {
+        ...latestOrder,
+        lastUpdated: new Date().toISOString(),
+      };
+    }
+    // CASE 2: No order data but we have selected items with quantity - build from selectedItems
+    else if (latestSelectedItems?.some((item: any) => item.quantity > 0)) {
+      console.log('🔄 Building order from selected items');
+      
+      const itemsWithQuantity = latestSelectedItems.filter((item: any) => item.quantity > 0);
+      console.log('📝 Items with quantity:', itemsWithQuantity);
+      
+      // Calculate totals
+      const totalItems = itemsWithQuantity.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0);
+      const totalAmount = itemsWithQuantity.reduce((sum: number, item: any) => {
+        const price = parseFloat(item.price) || 0;
+        const quantity = parseInt(item.quantity) || 0;
+        return sum + (price * quantity);
+      }, 0);
+
+      console.log('💰 Calculated totals:', { totalItems, totalAmount });
+
+      // Create proper order structure
+      orderDataToSave = {
+        items: itemsWithQuantity.map((item: any) => ({
+          _id: item.id || item._id || `temp-${Date.now()}-${Math.random()}`,
+          name: item.name || 'Unknown Item',
+          category: item.category || 'general',
+          price: parseFloat(item.price) || 0,
+          quantity: parseInt(item.quantity) || 1,
+          starchLevel: item.starchLevel || item.strachLevel || 3,
+          washOnly: item.washOnly || false,
+          additionalservice: item.additionalservice || '',
+          dryCleanerId: item.dryCleanerId,
+          dryCleanerName: item.dryCleanerName,
+          options: item.options || {
+            washAndFold: false,
+            button: false,
+            zipper: false,
+          },
+        })),
+        selectedCleaner: latestCleaner || latestOrder?.selectedCleaner,
+        totalAmount: totalAmount,
+        totalItems: totalItems,
+        lastUpdated: new Date().toISOString(),
+      };
+    }
+    // CASE 3: Check if we have items in selections that can be converted
+    else if (latestUserState?.selections?.selectedItems?.some((item: any) => item.quantity > 0)) {
+      console.log('🔍 Found items in userState selections');
+      const selectionItems = latestUserState.selections.selectedItems.filter((item: any) => item.quantity > 0);
+      
+      const totalItems = selectionItems.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0);
+      const totalAmount = selectionItems.reduce((sum: number, item: any) => {
+        const price = parseFloat(item.price) || 0;
+        const quantity = parseInt(item.quantity) || 0;
+        return sum + (price * quantity);
+      }, 0);
+
+      orderDataToSave = {
+        items: selectionItems.map((item: any) => ({
+          _id: item.id || item._id || `temp-${Date.now()}-${Math.random()}`,
+          name: item.name || 'Unknown Item',
+          category: item.category || 'general',
+          price: parseFloat(item.price) || 0,
+          quantity: parseInt(item.quantity) || 1,
+          starchLevel: item.starchLevel || item.strachLevel || 3,
+          washOnly: item.washOnly || false,
+          additionalservice: item.additionalservice || '',
+          dryCleanerId: item.dryCleanerId,
+          dryCleanerName: item.dryCleanerName,
+          options: item.options || {
+            washAndFold: false,
+            button: false,
+            zipper: false,
+          },
+        })),
+        selectedCleaner: latestCleaner || latestUserState?.order?.selectedCleaner,
+        totalAmount: totalAmount,
+        totalItems: totalItems,
+        lastUpdated: new Date().toISOString(),
+      };
+    }
+    else {
+      console.warn('⚠️ No order data found - showing options to user');
+      
+      Alert.alert(
+        'No Items in Order',
+        'You need to add items to your order before scheduling pickup. What would you like to do?',
+        [
+          {
+            text: 'Add Items Now',
+            onPress: () => {
+              // Navigate back to item selection
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.push('/dryCleanerUser/noOfItem');
+              }
+            },
+          },
+          {
+            text: 'Use Demo Order',
+            onPress: () => {
+              console.log('🎭 User chose demo order');
+              const demoOrder = createMockOrder();
+              saveOrderAndNavigate(demoOrder);
+            },
+            style: 'destructive',
+          },
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+        ]
+      );
+      return;
+    }
+
+    // Validate the order data before saving
+    if (!orderDataToSave || orderDataToSave.totalItems === 0 || orderDataToSave.totalAmount === 0) {
+      console.error('❌ Invalid order data created:', orderDataToSave);
+      Alert.alert(
+        'Invalid Order',
+        'Your order appears to be empty. Please add items before proceeding.',
+        [
+          {
+            text: 'Go Back',
+            onPress: () => router.back(),
+          },
+          {
+            text: 'Add Items',
+            onPress: () => router.push('/dryCleanerUser/noOfItem'),
+          },
+        ]
+      );
+      return;
+    }
+
+    saveOrderAndNavigate(orderDataToSave);
+  };
+
+  const saveOrderAndNavigate = (orderData: OrderData) => {
+    console.log('💾 Saving order data to Redux:', {
+      totalItems: orderData.totalItems,
+      totalAmount: orderData.totalAmount,
+      itemsCount: orderData.items.length
+    });
+    
+    dispatch(disableOrderProtection());
+    
+    // Save to Redux
+    dispatch(saveOrderData(orderData));
+    
+    console.log('✅ Order data saved, navigating to payment');
+    
+    // Navigate after a brief delay to ensure Redux update completes
+    setTimeout(() => {
+      router.push({
+        pathname: '/dryCleanerUser/payment',
+        params: {
+          ...(pickupAddress && { pickupAddress }),
+          ...(selectedAddressType && { selectedAddressType }),
+        }
+      });
+    }, 300);
+  };
+
+  const handleGoBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.push('/userHome');
+    }
+  };
+
+  // Render components
   interface DateButtonProps {
     date: string;
     isSelected: boolean;
@@ -169,188 +523,6 @@ const PickupDeliveryScreen = () => {
     </TouchableOpacity>
   );
 
-  // FIXED: handleContinue - properly builds order from available data
-  const handleContinue = () => {
-    console.log('🔄 handleContinue called');
-    
-    // Use the ref to get the latest state
-    const { 
-      existingOrder: latestOrder, 
-      selectedItems: latestSelectedItems,
-      selectedCleaner: latestCleaner,
-      userState: latestUserState 
-    } = stateRef.current;
-    
-    console.log('📦 Latest order in Redux:', latestOrder);
-    console.log('📦 Latest selected items:', latestSelectedItems);
-    console.log('📦 Latest selected items length:', latestSelectedItems?.length);
-    console.log('🏪 Latest cleaner:', latestCleaner);
-    console.log('🔍 Full user state:', latestUserState);
-
-    // Save scheduling data first
-    saveToRedux();
-
-    // Check what data we have available
-    const hasOrderData = latestOrder && latestOrder.items && latestOrder.items.length > 0;
-    const hasSelectedItems = latestSelectedItems && latestSelectedItems.length > 0;
-    const hasItemsWithQuantity = latestSelectedItems?.some((item: any) => item.quantity > 0);
-
-    console.log('📊 Data Status:', {
-      hasOrderData,
-      hasSelectedItems,
-      hasItemsWithQuantity,
-      orderItemsCount: latestOrder?.items?.length || 0,
-      selectedItemsCount: latestSelectedItems?.length || 0,
-      itemsWithQuantity: latestSelectedItems?.filter((item: any) => item.quantity > 0).length || 0
-    });
-
-    let orderDataToSave: OrderData | null = null;
-
-    // CASE 1: We have existing order data - use it
-    if (hasOrderData) {
-      console.log('✅ Using existing order data');
-      orderDataToSave = {
-        ...latestOrder,
-        lastUpdated: new Date().toISOString(),
-      };
-    }
-    // CASE 2: No order data but we have selected items with quantity - build from selectedItems
-    else if (hasSelectedItems && hasItemsWithQuantity) {
-      console.log('🔄 Building order from selected items');
-      
-      const itemsWithQuantity = latestSelectedItems.filter((item: any) => item.quantity > 0);
-      console.log('📝 Items with quantity:', itemsWithQuantity);
-      
-      // Calculate totals
-      const totalItems = itemsWithQuantity.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0);
-      const totalAmount = itemsWithQuantity.reduce((sum: number, item: any) => {
-        const price = parseFloat(item.price) || 0;
-        const quantity = parseInt(item.quantity) || 0;
-        return sum + (price * quantity);
-      }, 0);
-
-      console.log('💰 Calculated totals:', { totalItems, totalAmount });
-
-      // Create proper order structure
-      orderDataToSave = {
-        items: itemsWithQuantity.map((item: any) => ({
-          _id: item.id || item._id || `temp-${Date.now()}-${Math.random()}`,
-          name: item.name || 'Unknown Item',
-          category: item.category || 'general',
-          price: parseFloat(item.price) || 0,
-          quantity: parseInt(item.quantity) || 1,
-          starchLevel: item.starchLevel || item.strachLevel || 3, // Handle typo in API
-          washOnly: item.washOnly || false,
-          additionalservice: item.additionalservice || '',
-          dryCleanerId: item.dryCleanerId,
-          dryCleanerName: item.dryCleanerName,
-          options: item.options || {
-            washAndFold: false,
-            button: false,
-            zipper: false,
-          },
-        })),
-        selectedCleaner: latestCleaner || latestOrder?.selectedCleaner,
-        totalAmount: totalAmount,
-        totalItems: totalItems,
-        lastUpdated: new Date().toISOString(),
-      };
-      
-      console.log('💾 Order data built from selected items:', orderDataToSave);
-    }
-    // CASE 3: Check if we have items in selections that can be converted
-    else if (latestUserState?.selections?.selectedItems?.some((item: any) => item.quantity > 0)) {
-      console.log('🔍 Found items in selections with quantity');
-      const selectionItems = latestUserState.selections.selectedItems.filter((item: any) => item.quantity > 0);
-      
-      const totalItems = selectionItems.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0);
-      const totalAmount = selectionItems.reduce((sum: number, item: any) => {
-        const price = parseFloat(item.price) || 0;
-        const quantity = parseInt(item.quantity) || 0;
-        return sum + (price * quantity);
-      }, 0);
-
-      orderDataToSave = {
-        items: selectionItems.map((item: any) => ({
-          _id: item.id || item._id || `temp-${Date.now()}-${Math.random()}`,
-          name: item.name || 'Unknown Item',
-          category: item.category || 'general',
-          price: parseFloat(item.price) || 0,
-          quantity: parseInt(item.quantity) || 1,
-          starchLevel: item.starchLevel || item.strachLevel || 3,
-          washOnly: item.washOnly || false,
-          additionalservice: item.additionalservice || '',
-          dryCleanerId: item.dryCleanerId,
-          dryCleanerName: item.dryCleanerName,
-          options: item.options || {
-            washAndFold: false,
-            button: false,
-            zipper: false,
-          },
-        })),
-        selectedCleaner: latestCleaner || latestUserState?.order?.selectedCleaner,
-        totalAmount: totalAmount,
-        totalItems: totalItems,
-        lastUpdated: new Date().toISOString(),
-      };
-    }
-    // CASE 4: No data available
-    else {
-      console.error('❌ No valid order data found anywhere');
-      Alert.alert(
-        'No Items Selected',
-        'Please add items to your order before proceeding to checkout.',
-        [
-          {
-            text: 'Go Back',
-            onPress: () => router.back(),
-          },
-        ]
-      );
-      return;
-    }
-
-    // Validate the order data before saving
-    if (!orderDataToSave || orderDataToSave.totalItems === 0 || orderDataToSave.totalAmount === 0) {
-      console.error('❌ Invalid order data created:', orderDataToSave);
-      Alert.alert(
-        'Invalid Order',
-        'Your order appears to be empty. Please add items before proceeding.',
-        [
-          {
-            text: 'Go Back',
-            onPress: () => router.back(),
-          },
-        ]
-      );
-      return;
-    }
-
-    // Save the order data
-    console.log('💾 Saving order data to Redux:', orderDataToSave);
-    
-    // Disable protection first to ensure save goes through
-    dispatch(disableOrderProtection());
-    
-    // Save to Redux
-    dispatch(saveOrderData(orderDataToSave));
-    
-    console.log('✅ Order data saved, navigating to DryorderSummary');
-    
-    // Navigate after a brief delay to ensure Redux update completes
-    setTimeout(() => {
-      router.push('/DryorderSummary');
-    }, 300);
-  };
-
-  const handleGoBack = () => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.push('/userHome');
-    }
-  };
-
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
@@ -364,6 +536,13 @@ const PickupDeliveryScreen = () => {
             <IconButton icon="arrow-left" size={28} iconColor={colors.brandColor} />
           </TouchableOpacity>
           <Text style={styles.title}>Schedule Pickup and Delivery</Text>
+        </View>
+
+        {/* Info Banner */}
+        <View style={styles.infoBanner}>
+          <Text style={styles.infoText}>
+            📍 Pickup from: {pickupAddress || 'Address not set'}
+          </Text>
         </View>
 
         {/* PICKUP SECTION */}
@@ -527,6 +706,9 @@ const PickupDeliveryScreen = () => {
                 {`Cleaner: ${selectedCleaner.shopname || selectedCleaner}`}
               </Text>
             )}
+            <Text style={styles.debugText}>
+              {`Pickup Address: ${pickupAddress || 'Not set'}`}
+            </Text>
           </View>
         )}
 
@@ -538,14 +720,12 @@ const PickupDeliveryScreen = () => {
           style={styles.continueButton}
           onPress={handleContinue}
         >
-          <Text style={styles.continueButtonText}>Continue</Text>
+          <Text style={styles.continueButtonText}>Continue to Order Summary</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
 };
-
-
 
 const styles = StyleSheet.create({
   container: {
@@ -573,6 +753,19 @@ const styles = StyleSheet.create({
     color: '#000000',
     flex: 1,
     flexWrap: 'wrap',
+  },
+  infoBanner: {
+    backgroundColor: '#E3F2FD',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 20,
+    borderLeftWidth: 4,
+    borderLeftColor: '#2196F3',
+  },
+  infoText: {
+    fontSize: 14,
+    color: '#1565C0',
+    fontWeight: '500',
   },
   section: {
     marginBottom: height * 0.04,
@@ -747,7 +940,7 @@ const styles = StyleSheet.create({
     color: '#666',
     marginBottom: 2,
   },
-   debugTitle: {
+  debugTitle: {
     fontSize: width * 0.035,
     color: '#333',
     fontWeight: 'bold',

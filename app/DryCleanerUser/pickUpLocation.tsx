@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -99,7 +99,6 @@ const US_STATES = [
   { isoCode: 'WY', name: 'Wyoming' },
 ];
 
-// Enhanced cities data with proper structure
 const US_CITIES: { [key: string]: Array<{name: string, value: string}> } = {
   'NJ': [
     { name: 'Newark', value: 'Newark' },
@@ -150,7 +149,7 @@ const US_CITIES: { [key: string]: Array<{name: string, value: string}> } = {
   ]
 };
 
-const API_BASE_URL = 'http://localhost:5000';
+const API_BASE_URL = 'https://vervoer-backend2.onrender.com/api';
 
 const CustomBackButton = ({ onPress, color = colors.primary }: { onPress: () => void; color?: string }) => (
   <TouchableOpacity onPress={onPress} style={styles.backButton}>
@@ -158,27 +157,29 @@ const CustomBackButton = ({ onPress, color = colors.primary }: { onPress: () => 
   </TouchableOpacity>
 );
 
-// Memoized selector to fix Redux warning
-const selectSavedAddresses = (state: any) => state.user?.addresses || {};
-
 const PickupLocation = () => {
   const router = useRouter();
   const params = useLocalSearchParams();
   
-  // Redux hooks with memoized selector
   const dispatch = useDispatch();
-  const savedAddresses = useSelector(selectSavedAddresses);
+  
+  // FIXED: Create a stable default value
+  const defaultAddresses = useMemo(() => ({}), []);
+  
+  // Use a properly memoized selector
+  const savedAddresses = useSelector((state: any) => {
+    return state.user?.addresses || defaultAddresses;
+  });
 
   const [selectedAddress, setSelectedAddress] = useState<string>('home');
   const [address, setAddress] = useState<string>('');
   const [city, setCity] = useState<string>('');
   const [state, setState] = useState<string>('NJ');
   const [zipCode, setZipCode] = useState<string>('07030');
-  const [statesList, setStatesList] = useState<any[]>(US_STATES);
+  const [statesList] = useState<any[]>(US_STATES);
   const [citiesList, setCitiesList] = useState<Array<{name: string, value: string}>>(US_CITIES['NJ'] || []);
   const [loading, setLoading] = useState<boolean>(false);
 
-  // New scheduling states
   const [isScheduled, setIsScheduled] = useState<boolean>(false);
   const [selectedDate, setSelectedDate] = useState<string>('');
   const [selectedTime, setSelectedTime] = useState<string>('');
@@ -189,7 +190,6 @@ const PickupLocation = () => {
   const [showDriverSelection, setShowDriverSelection] = useState<boolean>(false);
   const [checkingAvailability, setCheckingAvailability] = useState<boolean>(false);
 
-  // Get route params
   const { 
     dryCleanerId, 
     driverId, 
@@ -199,14 +199,12 @@ const PickupLocation = () => {
     isScheduled: routeIsScheduled 
   } = params as any;
 
-  // Set initial scheduling state
   useEffect(() => {
     if (routeIsScheduled) {
       setIsScheduled(true);
     }
   }, [routeIsScheduled]);
 
-  // Load cities when state changes - FIXED
   useEffect(() => {
     console.log('State changed to:', state);
     if (state && US_CITIES[state]) {
@@ -225,15 +223,7 @@ const PickupLocation = () => {
     }
   }, [state]);
 
-  // Check available drivers when date/time/dryCleanerId changes
-  useEffect(() => {
-    if (isScheduled && selectedDate && selectedTime && dryCleanerId) {
-      checkAvailableDrivers();
-    }
-  }, [selectedDate, selectedTime, dryCleanerId, isScheduled]);
-
-  // Generate time slots for the picker
-  const generateTimeSlots = () => {
+  const timeSlots = useMemo(() => {
     const slots = [];
     for (let hour = 6; hour <= 22; hour++) {
       for (let minute of [0, 30]) {
@@ -247,12 +237,9 @@ const PickupLocation = () => {
       }
     }
     return slots;
-  };
+  }, []);
 
-  const timeSlots = generateTimeSlots();
-
-  // Generate dates for the next 7 days
-  const generateDateOptions = () => {
+  const dateOptions = useMemo(() => {
     const dates = [];
     const today = new Date();
     
@@ -272,12 +259,9 @@ const PickupLocation = () => {
       dates.push({ value: dateString, label: displayDate });
     }
     return dates;
-  };
+  }, []);
 
-  const dateOptions = generateDateOptions();
-
-  // Updated authentication token function
-  const checkAuthToken = async () => {
+  const checkAuthToken = useCallback(async () => {
     try {
       const loginData = await AsyncStorage.getItem('loginKey');
       
@@ -300,10 +284,9 @@ const PickupLocation = () => {
       console.error('Error parsing loginKey data:', error);
       return null;
     }
-  };
+  }, []);
 
-  // Check available drivers for scheduling
-  const checkAvailableDrivers = async () => {
+  const checkAvailableDrivers = useCallback(async () => {
     if (!selectedDate || !selectedTime || !dryCleanerId) return;
 
     setCheckingAvailability(true);
@@ -329,7 +312,6 @@ const PickupLocation = () => {
         const data = await response.json();
         setAvailableDrivers(data.data.drivers || []);
         
-        // If a specific driver was pre-selected, check if they're available
         if (driverId) {
           const isDriverAvailable = data.data.drivers.some((driver: AvailableDriver) => driver._id === driverId);
           if (isDriverAvailable) {
@@ -354,23 +336,25 @@ const PickupLocation = () => {
     } finally {
       setCheckingAvailability(false);
     }
-  };
+  }, [selectedDate, selectedTime, dryCleanerId, driverId, checkAuthToken]);
 
-  // Handle state change - FIXED
-  const handleStateChange = (stateCode: string) => {
+  useEffect(() => {
+    if (isScheduled && selectedDate && selectedTime && dryCleanerId) {
+      checkAvailableDrivers();
+    }
+  }, [selectedDate, selectedTime, dryCleanerId, isScheduled, checkAvailableDrivers]);
+
+  const handleStateChange = useCallback((stateCode: string) => {
     console.log('State changed to:', stateCode);
     setState(stateCode);
-    // The useEffect will handle the cities update
-  };
+  }, []);
 
-  // Handle city change - FIXED
-  const handleCityChange = (cityValue: string) => {
+  const handleCityChange = useCallback((cityValue: string) => {
     console.log('City changed to:', cityValue);
     setCity(cityValue);
-  };
+  }, []);
 
-  // Handle address type selection - FIXED
-  const handleAddressSelect = (type: string) => {
+  const handleAddressSelect = useCallback((type: string) => {
     console.log('Address type selected:', type);
     setSelectedAddress(type);
     
@@ -395,17 +379,17 @@ const PickupLocation = () => {
       setZipCode('');
       console.log('Reset to new address form');
     }
-  };
+  }, [savedAddresses, citiesList]);
 
-  // Save address to Redux store
-  const saveAddress = async (addressType: 'home' | 'office') => {
+  const saveAddress = useCallback(async (addressType: 'home' | 'office') => {
     if (!address || !city || !state || !zipCode) {
       Alert.alert('Error', 'Please fill in all address fields');
       return false;
     }
 
     try {
-      const fullAddress = `${address}, ${city}, ${getStateName(state)}, ${zipCode}`;
+      const stateName = statesList.find(s => s.isoCode === state)?.name || '';
+      const fullAddress = `${address}, ${city}, ${stateName}, ${zipCode}`;
       const addressData: ReduxSavedAddress = {
         type: addressType,
         street: address,
@@ -415,7 +399,6 @@ const PickupLocation = () => {
         fullAddress,
       };
 
-      // Save to Redux store
       dispatch(saveUserAddress(addressData));
       
       console.log('Address saved to Redux:', addressData);
@@ -424,10 +407,9 @@ const PickupLocation = () => {
       console.error('Error saving address to Redux:', error);
       return false;
     }
-  };
+  }, [address, city, state, zipCode, statesList, dispatch]);
 
-  // Create immediate booking request
-  const createBookingRequest = async () => {
+  const createBookingRequest = useCallback(async () => {
     if (!dryCleanerId || !driverId || !distance || !time) {
       Alert.alert('Error', 'Missing booking information');
       return;
@@ -449,7 +431,8 @@ const PickupLocation = () => {
       }
 
       const token = tokenInfo.value;
-      const fullAddress = `${address}, ${city}, ${getStateName(state)}, ${zipCode}`;
+      const stateName = statesList.find(s => s.isoCode === state)?.name || '';
+      const fullAddress = `${address}, ${city}, ${stateName}, ${zipCode}`;
       
       const bookingData = {
         dryCleanerId,
@@ -505,10 +488,9 @@ const PickupLocation = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [dryCleanerId, driverId, distance, time, address, city, state, zipCode, bookingType, selectedAddress, checkAuthToken, statesList, router]);
 
-  // Create scheduled booking request
-  const createScheduledBookingRequest = async () => {
+  const createScheduledBookingRequest = useCallback(async () => {
     if (!dryCleanerId || !selectedDriverId || !distance || !time) {
       Alert.alert('Error', 'Missing booking information');
       return;
@@ -535,7 +517,8 @@ const PickupLocation = () => {
       }
 
       const token = tokenInfo.value;
-      const fullAddress = `${address}, ${city}, ${getStateName(state)}, ${zipCode}`;
+      const stateName = statesList.find(s => s.isoCode === state)?.name || '';
+      const fullAddress = `${address}, ${city}, ${stateName}, ${zipCode}`;
       
       const bookingData = {
         dryCleanerId,
@@ -591,10 +574,9 @@ const PickupLocation = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [dryCleanerId, selectedDriverId, distance, time, address, city, state, zipCode, selectedDate, selectedTime, selectedAddress, checkAuthToken, statesList, router]);
 
-  // Handle continue button
-  const handleContinue = async () => {
+  const handleContinue = useCallback(async () => {
     console.log('Continue pressed with:', { address, city, state, zipCode });
     
     if (!address || !city || !state || !zipCode) {
@@ -602,7 +584,6 @@ const PickupLocation = () => {
       return;
     }
 
-    // Save address if it's home or office type
     if (selectedAddress === 'home' || selectedAddress === 'office') {
       try {
         await saveAddress(selectedAddress as 'home' | 'office');
@@ -611,7 +592,6 @@ const PickupLocation = () => {
       }
     }
 
-    // If we have booking parameters, create the booking
     if (dryCleanerId && (driverId || isScheduled)) {
       if (isScheduled) {
         if (!selectedDriverId) {
@@ -623,8 +603,8 @@ const PickupLocation = () => {
         await createBookingRequest();
       }
     } else {
-      // Navigate to next step (DropLocation)
-      const fullAddress = `${address}, ${city}, ${getStateName(state)}, ${zipCode}`;
+      const stateName = statesList.find(s => s.isoCode === state)?.name || '';
+      const fullAddress = `${address}, ${city}, ${stateName}, ${zipCode}`;
       router.push({
         pathname: '/dryCleanerUser/pickUpTimeDate',
         params: {
@@ -633,34 +613,26 @@ const PickupLocation = () => {
         }
       });
     }
-  };
+  }, [address, city, state, zipCode, selectedAddress, saveAddress, dryCleanerId, driverId, isScheduled, selectedDriverId, createScheduledBookingRequest, createBookingRequest, statesList, router]);
 
-  // Get address title based on selected address type
-  const getAddressTitle = () => {
+  const getAddressTitle = useCallback(() => {
     if (selectedAddress === 'home') return 'Enter Home Address Details';
     if (selectedAddress === 'office') return 'Enter Office Address Details';
     if (selectedAddress === 'new') return 'Enter New Address Details';
     return 'Enter Address Details';
-  };
+  }, [selectedAddress]);
 
-  // Get state name from state code
-  const getStateName = (stateCode: string) => {
-    const stateObj = statesList.find(state => state.isoCode === stateCode);
-    return stateObj ? stateObj.name : '';
-  };
-
-  // Check if address is saved and available
-  const isAddressAvailable = (type: 'home' | 'office') => {
+  const isAddressAvailable = useCallback((type: 'home' | 'office') => {
     return savedAddresses[type] && Object.keys(savedAddresses[type]!).length > 0;
-  };
+  }, [savedAddresses]);
 
-  const handleGoBack = () => {
+  const handleGoBack = useCallback(() => {
     if (router.canGoBack()) {
       router.back();
     } else {
       router.push('/userHome');
     }
-  };
+  }, [router]);
 
   return (
     <SafeAreaView style={styles.container}>

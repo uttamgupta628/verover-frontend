@@ -58,12 +58,35 @@ export default function Login() {
   const handleLogin = async (data: LoginFormData) => {
     setLoading(true);
     try {
-      await dispatch(loginWithEmailPassword(data.email, data.password, data.userType));
-      // Navigation is handled by AuthGuard in _layout.tsx
-      router.replace('/userHome');
+      // Call the login thunk - it returns the axios response
+      const response = await dispatch(loginWithEmailPassword(data.email, data.password, data.userType) as any);
+      
+      console.log('Login response:', response);
+      
+      // Check if the response indicates success
+      if (response && response.data) {
+        // Login was successful - the Redux state is already updated by loginSuccess
+        console.log('Login successful, redirecting...');
+        
+        // Redirect based on user type
+        if (data.userType === 'merchant') {
+          router.replace('/merchantHome');
+        } else if (data.userType === 'driver') {
+          router.replace('/driverHome');
+        } else {
+          router.replace('/userHome');
+        }
+      } else {
+        // If response doesn't have data, something went wrong
+        throw new Error('Invalid response from server');
+      }
+      
     } catch (error: any) {
+      console.error('Login error caught:', error);
+      
       let errorMessage = 'Login failed. Please try again.';
       
+      // Handle Axios errors
       if (error.response?.data) {
         const errorData = error.response.data;
         
@@ -75,8 +98,10 @@ export default function Login() {
             errorMessage = errorCode.replace(/_/g, ' ').toLowerCase();
             errorMessage = errorMessage.charAt(0).toUpperCase() + errorMessage.slice(1);
           }
-        } else {
-          errorMessage = errorData.message || errorData.error || errorData;
+        } else if (errorData.message) {
+          errorMessage = errorData.message;
+        } else if (typeof errorData === 'string') {
+          errorMessage = errorData;
         }
       } else if (error.message) {
         errorMessage = error.message;
@@ -255,7 +280,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingBottom: 40, // Add padding at bottom
+    paddingBottom: 40,
   },
   backButton: {
     padding: 16,
