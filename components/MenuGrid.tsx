@@ -1,8 +1,8 @@
 // src/components/MenuGrid/MenuGrid.tsx
-import React from "react";
-import { View, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
-import MenuItem from "../components/MenuItem"
+import React from "react";
+import { StyleSheet, View } from "react-native";
+import MenuItem from "../components/MenuItem";
 
 const MenuGrid: React.FC = () => {
   const router = useRouter();
@@ -12,7 +12,7 @@ const MenuGrid: React.FC = () => {
       <MenuItem
         icon="car"
         label="Find Parking"
-        onPress={() => router.push("/parkingUser/GarageScreen")}
+        onPress={() => router.push("/parkingUser/FindParking")}
       />
 
       <MenuItem

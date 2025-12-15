@@ -5,7 +5,10 @@
     "slug": "verover",
     "version": "1.0.0",
     "extra": {
-      "GOOGLE_MAPS_API_KEY": "AIzaSyBn5c5hk6ko6gEwZ3IyWK6AkU4_U_tp_4g"
+      "GOOGLE_MAPS_API_KEY": "AIzaSyBn5c5hk6ko6gEwZ3IyWK6AkU4_U_tp_4g",
+      "eas": {
+        "projectId": "18dc5699-c25d-497d-91be-e4d48b0769b4"
+      }
     },
     "ios": {
       "supportsTablet": true,
@@ -29,7 +32,8 @@
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION"
-      ]
+      ],
+      "package": "com.arnab_007.verover"
     }
   }
 }

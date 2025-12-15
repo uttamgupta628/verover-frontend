@@ -1,36 +1,80 @@
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Image,
-  TextInput,
-  Platform,
   Alert,
   Dimensions,
+  Image,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { useRouter, useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { images } from "../../assets/images/images";
 import colors from "../../assets/color";
-import { responsiveHeight } from "react-native-responsive-dimensions";
+import { images } from "../../assets/images/images";
 
 import MapView, { Marker } from "react-native-maps";
 
 const { height } = Dimensions.get("window");
 
+interface LocationData {
+  latitude: number;
+  longitude: number;
+  address?: string;
+}
+
 const ParkingSlot = () => {
   const router = useRouter();
   const params = useLocalSearchParams();
 
-  const location = params.location
-    ? JSON.parse(params.location as string)
-    : null;
+  // Parse location from params
+  const parseLocation = (): LocationData | null => {
+    try {
+      // First try to get location as JSON string
+      if (params.location) {
+        const locationStr = Array.isArray(params.location)
+          ? params.location[0]
+          : params.location;
+        return JSON.parse(locationStr);
+      }
 
+      // Fallback: check for individual params (backward compatibility)
+      if (params.latitude && params.longitude) {
+        return {
+          latitude: parseFloat(
+            Array.isArray(params.latitude)
+              ? params.latitude[0]
+              : params.latitude
+          ),
+          longitude: parseFloat(
+            Array.isArray(params.longitude)
+              ? params.longitude[0]
+              : params.longitude
+          ),
+          address: params.address
+            ? Array.isArray(params.address)
+              ? params.address[0]
+              : params.address
+            : "Selected Location",
+        };
+      }
+
+      return null;
+    } catch (error) {
+      console.error("Error parsing location:", error);
+      return null;
+    }
+  };
+
+  const [location, setLocation] = useState<LocationData | null>(() =>
+    parseLocation()
+  );
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<Date | null>(null);
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -56,22 +100,17 @@ const ParkingSlot = () => {
 
   useEffect(() => {
     if (!location) {
-      Alert.alert(
-        "No location selected",
-        "Please select a location first",
-        [
-          {
-            text: "Cancel",
-            style: "cancel",
-            onPress: () =>
-              router.replace("/userHome"),
-          },
-          {
-            text: "OK",
-            onPress: () => router.back(),
-          },
-        ]
-      );
+      Alert.alert("No location selected", "Please select a location first", [
+        {
+          text: "Cancel",
+          style: "cancel",
+          onPress: () => router.replace("/userHome"),
+        },
+        {
+          text: "OK",
+          onPress: () => router.back(),
+        },
+      ]);
     }
   }, [location]);
 
@@ -86,9 +125,7 @@ const ParkingSlot = () => {
         const diffHrs = Math.floor(
           (diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)
         );
-        const diffMins = Math.floor(
-          (diffMs % (1000 * 60 * 60)) / (1000 * 60)
-        );
+        const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
 
         setDuration({
           days: diffDays,
@@ -165,107 +202,119 @@ const ParkingSlot = () => {
       {/* Map */}
       {renderMap()}
 
-      {/* Bottom Sheet */}
-      <View style={styles.bottomSheet}>
-        {/* Location */}
-        <Text style={styles.sectionTitle}>Location</Text>
-        <View style={styles.textInputContainer}>
-          <Image source={images.location} style={styles.icon} />
-          <TextInput
-            style={styles.textInput}
-            placeholder="Your selected location"
-            placeholderTextColor="#999"
-            value={
-              location
-                ? `Lat: ${location.latitude.toFixed(4)}, Lng: ${location.longitude.toFixed(4)}`
-                : ""
-            }
-            editable={false}
-          />
-        </View>
+      {/* Scrollable Bottom Sheet */}
+      <ScrollView
+        style={styles.bottomSheetScrollView}
+        contentContainerStyle={styles.bottomSheetContent}
+        showsVerticalScrollIndicator={true}
+      >
+        <View style={styles.bottomSheet}>
+          {/* Location */}
+          <Text style={styles.sectionTitle}>Location</Text>
+          <View style={styles.textInputContainer}>
+            <Image source={images.location} style={styles.icon} />
+            <TextInput
+              style={styles.textInput}
+              placeholder="Your selected location"
+              placeholderTextColor="#999"
+              value={
+                location
+                  ? `Lat: ${location.latitude.toFixed(
+                      4
+                    )}, Lng: ${location.longitude.toFixed(4)}`
+                  : ""
+              }
+              editable={false}
+            />
+          </View>
 
-        <TouchableOpacity onPress={() => router.back()}>
-          <Text style={styles.useLocationText}>Change Location</Text>
-        </TouchableOpacity>
+          <TouchableOpacity onPress={() => router.back()}>
+            <Text style={styles.useLocationText}>Change Location</Text>
+          </TouchableOpacity>
 
-        {/* When */}
-        <Text style={styles.sectionTitle}>When</Text>
-        <TouchableOpacity
-          style={styles.textInputContainer}
-          onPress={() => setShowDatePicker(true)}
-        >
-          <Image source={images.calender} style={styles.icon} />
-          <Text style={[styles.textInput, !dateTimeText && styles.placeholder]}>
-            {dateTimeText || "Select Date & Time"}
-          </Text>
-        </TouchableOpacity>
+          {/* When */}
+          <Text style={styles.sectionTitle}>When</Text>
+          <TouchableOpacity
+            style={styles.textInputContainer}
+            onPress={() => setShowDatePicker(true)}
+          >
+            <Image source={images.calender} style={styles.icon} />
+            <Text
+              style={[styles.textInput, !dateTimeText && styles.placeholder]}
+            >
+              {dateTimeText || "Select Date & Time"}
+            </Text>
+          </TouchableOpacity>
 
-        {/* Duration */}
-        <Text style={styles.sectionTitle}>Duration</Text>
-        <View style={styles.durationContainer}>
-          <Image source={images.calender} style={styles.icon} />
-          <View style={styles.durationInputs}>
-            <View style={styles.durationField}>
-              <Text style={styles.durationValue}>{duration.days}</Text>
-              <Text style={styles.durationLabel}>Days</Text>
-            </View>
-            <View style={styles.durationField}>
-              <Text style={styles.durationValue}>{duration.hours}</Text>
-              <Text style={styles.durationLabel}>Hours</Text>
-            </View>
-            <View style={styles.durationField}>
-              <Text style={styles.durationValue}>{duration.minutes}</Text>
-              <Text style={styles.durationLabel}>Minutes</Text>
+          {/* Duration */}
+          <Text style={styles.sectionTitle}>Duration</Text>
+          <View style={styles.durationContainer}>
+            <Image source={images.calender} style={styles.icon} />
+            <View style={styles.durationInputs}>
+              <View style={styles.durationField}>
+                <Text style={styles.durationValue}>{duration.days}</Text>
+                <Text style={styles.durationLabel}>Days</Text>
+              </View>
+              <View style={styles.durationField}>
+                <Text style={styles.durationValue}>{duration.hours}</Text>
+                <Text style={styles.durationLabel}>Hours</Text>
+              </View>
+              <View style={styles.durationField}>
+                <Text style={styles.durationValue}>{duration.minutes}</Text>
+                <Text style={styles.durationLabel}>Minutes</Text>
+              </View>
             </View>
           </View>
+
+          {/* Date / Time pickers */}
+          {showDatePicker && (
+            <DateTimePicker
+              value={selectedDate || new Date()}
+              mode="date"
+              minimumDate={new Date()}
+              onChange={onDateChange}
+            />
+          )}
+
+          {showTimePicker && (
+            <DateTimePicker
+              value={selectedTime || new Date()}
+              mode="time"
+              is24Hour
+              onChange={onTimeChange}
+            />
+          )}
+
+          {/* Continue - This stays inside the scroll view but will be visible */}
+          <TouchableOpacity
+            style={[
+              styles.pickSlotButton,
+              (!selectedDate || !selectedTime) && { opacity: 0.5 },
+            ]}
+            disabled={!selectedDate || !selectedTime}
+            onPress={() =>
+              router.push({
+                pathname: "/parkingUser/ParkingSpot",
+                params: {
+                  location: JSON.stringify(location),
+                  endTime: getSelectedDate().toISOString(),
+                },
+              })
+            }
+          >
+            <Text style={styles.pickSlotButtonText}>Pick Parking Slot</Text>
+          </TouchableOpacity>
         </View>
-
-        {/* Date / Time pickers */}
-        {showDatePicker && (
-          <DateTimePicker
-            value={selectedDate || new Date()}
-            mode="date"
-            minimumDate={new Date()}
-            onChange={onDateChange}
-          />
-        )}
-
-        {showTimePicker && (
-          <DateTimePicker
-            value={selectedTime || new Date()}
-            mode="time"
-            is24Hour
-            onChange={onTimeChange}
-          />
-        )}
-
-        {/* Continue */}
-        <TouchableOpacity
-          style={[
-            styles.pickSlotButton,
-            (!selectedDate || !selectedTime) && { opacity: 0.5 },
-          ]}
-          disabled={!selectedDate || !selectedTime}
-          onPress={() =>
-            router.push({
-              pathname: "/parkingUser/ParkingSpot",
-              params: {
-                location: JSON.stringify(location),
-                endTime: getSelectedDate().toISOString(),
-              },
-            })
-          }
-        >
-          <Text style={styles.pickSlotButtonText}>Pick Parking Slot</Text>
-        </TouchableOpacity>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 };
 
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#FFF" },
+  container: {
+    flex: 1,
+    backgroundColor: "#FFF",
+  },
 
   header: {
     flexDirection: "row",
@@ -300,12 +349,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
 
+  bottomSheetScrollView: {
+    flex: 1,
+  },
+
+  bottomSheetContent: {
+    flexGrow: 1,
+  },
+
   bottomSheet: {
     backgroundColor: "#FFF",
     padding: 20,
     borderTopLeftRadius: 25,
     borderTopRightRadius: 25,
     marginTop: -20,
+    paddingBottom: 30, // Extra padding for better scrolling
   },
 
   sectionTitle: {
@@ -375,6 +433,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderRadius: 25,
     alignItems: "center",
+    marginTop: 10,
   },
   pickSlotButtonText: {
     color: "#FFF",

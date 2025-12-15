@@ -1,3 +1,4 @@
+import Constants from "expo-constants";
 import * as Location from "expo-location";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -16,7 +17,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import Constants from "expo-constants";
 import MapView, { Marker, PROVIDER_GOOGLE, Region } from "react-native-maps";
 import colors from "../../assets/color";
 import { images } from "../../assets/images/images";
@@ -263,19 +263,23 @@ const FindParking: React.FC = () => {
 
   const handleContinue = () => {
     if (selectedLocation) {
+      // Create a location object with all necessary data
+      const locationData = {
+        latitude: selectedLocation.latitude,
+        longitude: selectedLocation.longitude,
+        address: qLocation || "Selected Location",
+      };
+
       router.push({
         pathname: "/parkingUser/ParkingSlot",
         params: {
-          latitude: selectedLocation.latitude.toString(),
-          longitude: selectedLocation.longitude.toString(),
-          address: qLocation,
+          location: JSON.stringify(locationData), // Pass as JSON string
         },
       });
     } else {
       Alert.alert("No Location Selected", "Please select a location first");
     }
   };
-
   const renderMap = () => {
     // For web, show placeholder
     if (Platform.OS === "web") {

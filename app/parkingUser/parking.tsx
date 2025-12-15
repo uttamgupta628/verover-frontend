@@ -1,11 +1,11 @@
 // src/pages/Parking.tsx
-import React from "react";
-import { View, StyleSheet } from "react-native";
-import { StatusBar } from "expo-status-bar";
 import { useRouter } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import React from "react";
+import { StyleSheet, View } from "react-native";
 
-import ParkingTitle from "../../components/ParkingTitle";
 import MenuGrid from "../../components/MenuGrid";
+import ParkingTitle from "../../components/ParkingTitle";
 import { ParkingViewType } from "../../components/Types";
 
 const Parking: React.FC = () => {
@@ -23,7 +23,7 @@ const Parking: React.FC = () => {
         router.push("/parkingUser/LiveSessionScreen");
         break;
       case "findParking":
-        router.push("/parkingUser/GarageScreen");
+        router.push("/parkingUser/FindParking");
         break;
       default:
         break;

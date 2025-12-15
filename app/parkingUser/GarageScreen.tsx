@@ -1,12 +1,11 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
   Image,
-  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -18,10 +17,10 @@ import Contact from "../../components/Garage/Conatact";
 
 import axiosInstance from "../../api/axios";
 import {
-  ParkingLot,
   GarageMerchantDetails,
-  User,
+  ParkingLot,
   Residence,
+  User,
 } from "../../types";
 
 import { responsiveHeight } from "react-native-responsive-dimensions";
@@ -36,10 +35,9 @@ const GarageScreen = () => {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
   const [merchantDetails, setMerchantDetails] = useState<
-    Partial<GarageMerchantDetails> &
-      { owner?: User } &
-      Partial<ParkingLot> &
-      Partial<Residence> | null
+    | (Partial<GarageMerchantDetails> & { owner?: User } & Partial<ParkingLot> &
+        Partial<Residence>)
+    | null
   >(null);
 
   // Fetch merchant details
@@ -82,9 +80,7 @@ const GarageScreen = () => {
         </View>
 
         <View style={styles.infoContent}>
-          <Text style={styles.parkingTitle}>
-            {name || "Parking Location"}
-          </Text>
+          <Text style={styles.parkingTitle}>{name || "Parking Location"}</Text>
 
           <Text style={styles.parkingAddress}>
             {lot?.address || "Address not provided"}
@@ -234,65 +230,64 @@ const GarageScreen = () => {
   );
 };
 
-
 /* ------------------ Styles ------------------ */
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
   },
   content: {
     flex: 1,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 8,
     height: 60,
-    marginTop: '20%',
-    backgroundColor: 'transparent',
+    marginTop: "20%",
+    backgroundColor: "transparent",
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: '500',
-    color: '#000000',
+    fontWeight: "500",
+    color: "#000000",
   },
   imageWrapper: {
-    width: '100%',
-    height: '100%',
-    position: 'relative',
+    width: "100%",
+    height: "100%",
+    position: "relative",
     borderRadius: 50,
   },
   imageGalleryContainer: {
     height: responsiveHeight(30),
-    width: '90%',
+    width: "90%",
     backgroundColor: colors.lightGray,
-    justifyContent: 'center',
-    alignItems: 'center',
-    position: 'relative',
-    alignSelf: 'center',
+    justifyContent: "center",
+    alignItems: "center",
+    position: "relative",
+    alignSelf: "center",
     borderRadius: 50,
   },
   imageContainer: {
     height: 180,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: "#F5F5F5",
     borderRadius: 16,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   parkingImage: {
-    width: '100%',
-    height: '100%',
+    width: "100%",
+    height: "100%",
   },
   parkingInfoCard: {
-    flexDirection: 'row',
+    flexDirection: "row",
     padding: 16,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     margin: 16,
     borderRadius: 12,
   },
   parkingCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderRadius: 12,
     padding: 16,
   },
@@ -301,14 +296,14 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: 8,
     backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     marginRight: 12,
   },
   typeText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   infoCard: {
     padding: 0, // Override padding from parkingInfoCard
@@ -316,7 +311,7 @@ const styles = StyleSheet.create({
   infoSection: {
     padding: 16,
     borderTopWidth: 8,
-    borderTopColor: '#F5F5F5',
+    borderTopColor: "#F5F5F5",
   },
   infoItem: {
     marginBottom: 16,
@@ -326,32 +321,32 @@ const styles = StyleSheet.create({
   },
   parkingTitle: {
     fontSize: 16,
-    fontWeight: '500',
-    color: '#000000',
+    fontWeight: "500",
+    color: "#000000",
     marginBottom: 4,
   },
   parkingAddress: {
     fontSize: 14,
-    color: '#666666',
+    color: "#666666",
     marginBottom: 8,
   },
   parkingMetrics: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
   metric: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginRight: 16,
   },
   metricText: {
     fontSize: 14,
-    color: '#666666',
+    color: "#666666",
     marginLeft: 4,
   },
   priceText: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: "600",
     color: colors.primary,
   },
   // infoSection: {
@@ -361,34 +356,34 @@ const styles = StyleSheet.create({
   // },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#000000',
+    fontWeight: "600",
+    color: "#000000",
     marginBottom: 16,
     paddingHorizontal: 8,
   },
   subTitle: {
     fontSize: 16,
-    fontWeight: '500',
-    color: '#000000',
+    fontWeight: "500",
+    color: "#000000",
     marginBottom: 8,
   },
   description: {
     fontSize: 14,
-    color: '#666666',
+    color: "#666666",
     lineHeight: 20,
   },
   availabilityText: {
     fontSize: 14,
-    color: '#666666',
+    color: "#666666",
   },
   contactItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   contactLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
   avatar: {
     width: 40,
@@ -397,10 +392,10 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   contactCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
 
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     padding: 16,
     borderRadius: 12,
   },
@@ -412,32 +407,32 @@ const styles = StyleSheet.create({
   },
   contactDetails: {
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: "center",
   },
   contactName: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#333333',
+    fontWeight: "600",
+    color: "#333333",
   },
   contactPhone: {
     fontSize: 14,
-    color: '#666666',
+    color: "#666666",
   },
   callButton: {
-    backgroundColor: '#666666',
+    backgroundColor: "#666666",
     paddingHorizontal: 20,
     paddingVertical: 8,
     borderRadius: 10,
     marginRight: 16,
   },
   callButtonText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   phoneContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
   phoneIcon: {
     margin: 0,
@@ -445,25 +440,25 @@ const styles = StyleSheet.create({
     marginLeft: -8,
   },
   bottomBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     padding: 16,
     borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
-    backgroundColor: '#FFFFFF',
+    borderTopColor: "#F0F0F0",
+    backgroundColor: "#FFFFFF",
   },
   priceContainer: {
     flex: 1,
   },
   priceLabel: {
     fontSize: 14,
-    color: '#666666',
+    color: "#666666",
   },
   price: {
     fontSize: 20,
-    fontWeight: '600',
-    color: '#000000',
+    fontWeight: "600",
+    color: "#000000",
   },
   bookButton: {
     backgroundColor: colors.primary,
@@ -472,20 +467,20 @@ const styles = StyleSheet.create({
     borderRadius: 24,
   },
   bookButtonText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   arrowButton: {
-    position: 'absolute',
-    top: '50%',
+    position: "absolute",
+    top: "50%",
     marginTop: -22, // Adjust to vertically center
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
     borderRadius: 22,
     width: 44,
     height: 44,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     zIndex: 1,
   },
   leftArrow: {
@@ -497,4 +492,3 @@ const styles = StyleSheet.create({
 });
 
 export default GarageScreen;
-

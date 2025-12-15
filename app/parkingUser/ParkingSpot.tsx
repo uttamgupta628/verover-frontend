@@ -1,48 +1,78 @@
-import React, { useEffect, useState, useRef, useMemo } from "react";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
+  ActivityIndicator,
   Alert,
   Dimensions,
-  ActivityIndicator,
   Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 import { IconButton } from "react-native-paper";
-import { useRouter, useLocalSearchParams } from "expo-router";
-import VehicleTypeSelector from "../../components/Parking/VehicleTypeSelector";
-import ParkingSpotCard from "../../components/Parking/ParkingSpotCard";
-import BottomButtons from "../../components/Parking/BottomButtons";
 import colors from "../../assets/color";
+import BottomButtons from "../../components/Parking/BottomButtons";
+import ParkingSpotCard from "../../components/Parking/ParkingSpotCard";
+import VehicleTypeSelector from "../../components/Parking/VehicleTypeSelector";
 
 import {
-  ParkingLot,
-  GarageMerchantDetails,
-  Residence,
   AxiosResponse,
+  GarageMerchantDetails,
+  ParkingLot,
+  Residence,
 } from "../../types";
 
-import axiosInstance from "../../api/axios";
 import * as Location from "expo-location";
+import axiosInstance from "../../api/axios";
 
 import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
+
+const { height } = Dimensions.get("window");
+
+interface LocationData {
+  latitude: number;
+  longitude: number;
+  address?: string;
+}
 
 const ParkingSpot = () => {
   const router = useRouter();
   const params = useLocalSearchParams();
 
-  const location = params.location
-    ? JSON.parse(params.location as string)
-    : null;
+  // Parse location from params - memoized
+  const location = useMemo(() => {
+    try {
+      if (params.location) {
+        const locationStr = Array.isArray(params.location)
+          ? params.location[0]
+          : params.location;
+        return JSON.parse(locationStr) as LocationData;
+      }
+      return null;
+    } catch (error) {
+      console.error("Error parsing location:", error);
+      return null;
+    }
+  }, [params.location]);
 
   const endTime = params.endTime as string;
   const startTime = params.startTime as string | undefined;
 
-  const [selectedVehicle, setSelectedVehicle] =
-    useState<"car" | "bike">("car");
+  console.log("ParkingSpot - Received params:", {
+    location,
+    endTime,
+    startTime,
+  });
 
+  const [selectedVehicle, setSelectedVehicle] = useState<"car" | "bike">("car");
   const [selectedSpot, setSelectedSpot] = useState<string | null>(null);
   const [selectedLot, setSelectedLot] = useState<
     | { lot: ParkingLot; type: "L" }
@@ -61,94 +91,186 @@ const ParkingSpot = () => {
   } | null>(null);
 
   const [loading, setLoading] = useState(false);
-  const [routeLoading, setRouteLoading] = useState(false);
-
-  const [showAllGarages, setShowAllGarages] = useState(false);
-  const [showAllLots, setShowAllLots] = useState(false);
-  const [showAllResidences, setShowAllResidences] = useState(false);
-
-  const mapRef = useRef<MapView>(null);
+  const [locationLoading, setLocationLoading] = useState(true);
+  const [hasFetchedData, setHasFetchedData] = useState(false);
 
   const [expandedSection, setExpandedSection] = useState<
     "garage" | "lot" | "residence" | null
   >("garage");
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const { status } =
-          await Location.requestForegroundPermissionsAsync();
+  const mapRef = useRef<MapView>(null);
+  const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-        if (status !== "granted") return;
+  // Get current location - only once
+  useEffect(() => {
+    let isMounted = true;
+
+    const getCurrentLocation = async () => {
+      if (!location) return;
+
+      try {
+        setLocationLoading(true);
+        const { status } = await Location.requestForegroundPermissionsAsync();
+
+        if (status !== "granted") {
+          console.log("Location permission denied");
+          if (isMounted) {
+            setCurrentLocation(location); // Use selected location as fallback
+            setLocationLoading(false);
+          }
+          return;
+        }
 
         const pos = await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Highest,
+          accuracy: Location.Accuracy.Balanced,
         });
 
-        setCurrentLocation({
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-        });
+        if (isMounted) {
+          setCurrentLocation({
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+          });
+          setLocationLoading(false);
+        }
       } catch (err) {
         console.log("Location error:", err);
-      }
-    })();
-  }, []);
-
-  /* ------------------------------------------------
-      FETCH PARKING LIST
-  ------------------------------------------------ */
-  useEffect(() => {
-    if (!location) return;
-
-    setLoading(true);
-
-    const fetchData = async () => {
-      try {
-        const paramsReq = {
-          latitude: location.latitude,
-          longitude: location.longitude,
-          startTime: startTime ? startTime : new Date().toISOString(),
-          endTime: endTime,
-        };
-
-        const [garageRes, parkingRes, residenceRes] = await Promise.all([
-          axiosInstance.get<AxiosResponse<GarageMerchantDetails[]>>(
-            "/merchants/garage/search",
-            { params: paramsReq }
-          ),
-          axiosInstance.get<AxiosResponse<ParkingLot[]>>(
-            "/merchants/parkinglot/search",
-            { params: paramsReq }
-          ),
-          axiosInstance.get<AxiosResponse<Residence[]>>(
-            "/merchants/residence/search",
-            { params: paramsReq }
-          ),
-        ]);
-
-        if (Array.isArray(garageRes.data?.data))
-          setGarageResult(garageRes.data.data);
-
-        if (Array.isArray(parkingRes.data?.data))
-          setParkingResult(parkingRes.data.data);
-
-        if (Array.isArray(residenceRes.data?.data))
-          setResidenceResult(residenceRes.data.data);
-      } catch (error) {
-        console.log("Parking fetch failed:", error);
-        Alert.alert("Error", "Could not load parking spots.");
-      } finally {
-        setLoading(false);
+        if (isMounted) {
+          setCurrentLocation(location); // Use selected location as fallback
+          setLocationLoading(false);
+        }
       }
     };
 
-    fetchData();
-  }, [location, endTime, startTime]);
+    getCurrentLocation();
 
-  /* ------------------------------------------------
-      FILTER BASED ON VEHICLE TYPE
-  ------------------------------------------------ */
+    return () => {
+      isMounted = false;
+    };
+  }, []); // Empty dependency - run only once on mount
+
+  // Fetch parking data - optimized with cleanup and timeout
+  useEffect(() => {
+    if (!location || hasFetchedData || loading) {
+      return;
+    }
+
+    console.log("Fetching parking data for location:", location);
+
+    // Clear any existing timeout
+    if (fetchTimeoutRef.current) {
+      clearTimeout(fetchTimeoutRef.current);
+    }
+
+    // Set a timeout to prevent immediate multiple calls
+    fetchTimeoutRef.current = setTimeout(() => {
+      const fetchData = async () => {
+        let isMounted = true;
+
+        try {
+          setLoading(true);
+
+          const paramsReq = {
+            latitude: location.latitude,
+            longitude: location.longitude,
+            startTime: startTime ? startTime : new Date().toISOString(),
+            endTime: endTime,
+          };
+
+          console.log("API request params:", paramsReq);
+
+          // Make API calls with timeout and error handling
+          const [garageRes, parkingRes, residenceRes] = await Promise.all([
+            axiosInstance
+              .get<AxiosResponse<GarageMerchantDetails[]>>(
+                "/merchants/garage/search",
+                {
+                  params: paramsReq,
+                  timeout: 10000, // 10 second timeout
+                }
+              )
+              .catch((err) => {
+                console.log("Garage API error:", err.message);
+                return { data: { data: [] } };
+              }),
+            axiosInstance
+              .get<AxiosResponse<ParkingLot[]>>(
+                "/merchants/parkinglot/search",
+                {
+                  params: paramsReq,
+                  timeout: 10000,
+                }
+              )
+              .catch((err) => {
+                console.log("Parking lot API error:", err.message);
+                return { data: { data: [] } };
+              }),
+            axiosInstance
+              .get<AxiosResponse<Residence[]>>("/merchants/residence/search", {
+                params: paramsReq,
+                timeout: 10000,
+              })
+              .catch((err) => {
+                console.log("Residence API error:", err.message);
+                return { data: { data: [] } };
+              }),
+          ]);
+
+          if (isMounted) {
+            setGarageResult(garageRes.data?.data || []);
+            setParkingResult(parkingRes.data?.data || []);
+            setResidenceResult(residenceRes.data?.data || []);
+            setHasFetchedData(true);
+
+            console.log(
+              "Fetched data - Garages:",
+              garageRes.data?.data?.length || 0
+            );
+            console.log(
+              "Fetched data - Parking Lots:",
+              parkingRes.data?.data?.length || 0
+            );
+            console.log(
+              "Fetched data - Residences:",
+              residenceRes.data?.data?.length || 0
+            );
+          }
+        } catch (error: any) {
+          console.log("Parking fetch failed:", error);
+          if (isMounted) {
+            Alert.alert(
+              "Error",
+              "Could not load parking spots. Please try again."
+            );
+          }
+        } finally {
+          if (isMounted) {
+            setLoading(false);
+          }
+        }
+      };
+
+      fetchData();
+    }, 500); // 500ms delay to prevent multiple calls
+
+    return () => {
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current);
+      }
+    };
+  }, [location, endTime, startTime, hasFetchedData, loading]); // Added dependencies
+
+  // Reset data when location changes
+  useEffect(() => {
+    if (location && !hasFetchedData) {
+      setGarageResult([]);
+      setParkingResult([]);
+      setResidenceResult([]);
+      setSelectedSpot(null);
+      setSelectedLot(null);
+    }
+  }, [location, hasFetchedData]);
+
+  // Filter based on vehicle type - memoized
   const filteredGarages = useMemo(
     () =>
       garageResult.filter(
@@ -173,35 +295,64 @@ const ParkingSpot = () => {
     [residenceResult, selectedVehicle]
   );
 
-  /* ------------------------------------------------
-      MAP RENDER
-  ------------------------------------------------ */
-  const renderMap = () => {
-    if (!location || !currentLocation) {
+  // Handle vehicle change
+  const handleVehicleChange = useCallback((vehicle: "car" | "bike") => {
+    setSelectedVehicle(vehicle);
+    setSelectedSpot(null);
+    setSelectedLot(null);
+  }, []);
+
+  // Handle spot selection
+  const handleSpotSelect = useCallback(
+    (
+      id: string,
+      lot: ParkingLot | GarageMerchantDetails | Residence,
+      type: "G" | "L" | "R"
+    ) => {
+      setSelectedSpot(id);
+      if (type === "G") {
+        setSelectedLot({ lot: lot as GarageMerchantDetails, type: "G" });
+      } else if (type === "L") {
+        setSelectedLot({ lot: lot as ParkingLot, type: "L" });
+      } else {
+        setSelectedLot({ lot: lot as Residence, type: "R" });
+      }
+    },
+    []
+  );
+
+  // Render map - memoized
+  const renderMap = useCallback(() => {
+    if (locationLoading || !location) {
       return (
         <View style={styles.mapPlaceholder}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={{ marginTop: 10 }}>Loading map...</Text>
+          <Text style={{ marginTop: 10, color: colors.primary }}>
+            Loading map...
+          </Text>
         </View>
       );
     }
 
+    const mapCenter = currentLocation || location;
     const allLocations = [
       ...filteredGarages.map((i) => ({
         ...i,
-        pType: "G",
+        pType: "G" as const,
         name: i.garageName,
         gpsLocation: i.location,
       })),
       ...filteredParkingLots.map((i) => ({
         ...i,
-        pType: "L",
+        pType: "L" as const,
         name: i.parkingName,
+        gpsLocation: i.location,
       })),
       ...filteredResidences.map((i) => ({
         ...i,
-        pType: "R",
+        pType: "R" as const,
         name: i.residenceName,
+        gpsLocation: i.location,
       })),
     ];
 
@@ -211,13 +362,13 @@ const ParkingSpot = () => {
         style={styles.map}
         provider={PROVIDER_GOOGLE}
         initialRegion={{
-          latitude: location.latitude,
-          longitude: location.longitude,
-          latitudeDelta: 0.09,
-          longitudeDelta: 0.04,
+          latitude: mapCenter.latitude,
+          longitude: mapCenter.longitude,
+          latitudeDelta: 0.05,
+          longitudeDelta: 0.05,
         }}
-        showsUserLocation
-        showsMyLocationButton
+        showsUserLocation={!!currentLocation}
+        showsMyLocationButton={true}
       >
         {/* Selected location marker */}
         <Marker
@@ -228,32 +379,70 @@ const ParkingSpot = () => {
 
         {/* All parking markers */}
         {allLocations.map((item) => {
-          const coords = item?.gpsLocation?.coordinates;
-          if (!coords) return null;
+          if (!item.gpsLocation?.coordinates) return null;
 
+          const [longitude, latitude] = item.gpsLocation.coordinates;
           return (
             <Marker
               key={`${item.pType}-${item._id}`}
-              coordinate={{ latitude: coords[1], longitude: coords[0] }}
+              coordinate={{ latitude, longitude }}
               title={item.name}
               pinColor={selectedSpot === item._id ? "red" : colors.secondary}
               onPress={() => {
-                setSelectedSpot(item._id);
-                setSelectedLot({ lot: item as any, type: item.pType as any });
+                handleSpotSelect(item._id, item as any, item.pType);
               }}
             />
           );
         })}
       </MapView>
     );
-  };
+  }, [
+    location,
+    currentLocation,
+    locationLoading,
+    filteredGarages,
+    filteredParkingLots,
+    filteredResidences,
+    selectedSpot,
+    handleSpotSelect,
+  ]);
 
-  /* ------------------------------------------------
-      SECTION TOGGLE
-  ------------------------------------------------ */
-  const toggleSection = (section: "garage" | "lot" | "residence") => {
-    setExpandedSection((prev) => (prev === section ? null : section));
-  };
+  // Toggle section
+  const toggleSection = useCallback(
+    (section: "garage" | "lot" | "residence") => {
+      setExpandedSection((prev) => (prev === section ? null : section));
+    },
+    []
+  );
+
+  // Handle retry fetch
+  const handleRetryFetch = useCallback(() => {
+    setHasFetchedData(false);
+    setGarageResult([]);
+    setParkingResult([]);
+    setResidenceResult([]);
+    setSelectedSpot(null);
+    setSelectedLot(null);
+  }, []);
+
+  if (!location) {
+    return (
+      <View style={styles.errorContainer}>
+        <Text style={styles.errorText}>No location selected</Text>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.back()}
+        >
+          <Text style={styles.backButtonText}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const totalResults =
+    filteredGarages.length +
+    filteredParkingLots.length +
+    filteredResidences.length;
 
   return (
     <View style={styles.container}>
@@ -263,136 +452,180 @@ const ParkingSpot = () => {
           <IconButton icon="arrow-left" size={30} iconColor={colors.primary} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Book Parking</Text>
+        <TouchableOpacity onPress={handleRetryFetch} disabled={loading}>
+          <IconButton
+            icon="refresh"
+            size={24}
+            iconColor={loading ? "#CCC" : colors.primary}
+          />
+        </TouchableOpacity>
       </View>
 
       {/* MAP */}
       {renderMap()}
 
-      {(loading || routeLoading) && (
+      {/* LOADING OVERLAY */}
+      {(loading || locationLoading) && (
         <View style={styles.loadingOverlay}>
           <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>
+            {loading ? "Loading parking spots..." : "Getting your location..."}
+          </Text>
         </View>
       )}
 
-      {/* LIST */}
-      <ScrollView showsVerticalScrollIndicator={false}>
+      {/* PARKING LIST */}
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={true}
+      >
         <View style={styles.bottomSheet}>
+          <View style={styles.resultsHeader}>
+            <Text style={styles.resultsCount}>
+              {totalResults} parking spots found
+            </Text>
+            {hasFetchedData && !loading && (
+              <TouchableOpacity onPress={handleRetryFetch}>
+                <Text style={styles.retryText}>Refresh</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
           <VehicleTypeSelector
             selectedVehicle={selectedVehicle}
-            onSelectVehicle={setSelectedVehicle}
+            onSelectVehicle={handleVehicleChange}
           />
 
           {/* Garage Section */}
-          <TouchableOpacity
-            style={styles.sectionHeader}
-            onPress={() => toggleSection("garage")}
-          >
-            <Text style={styles.sectionTitle}>
-              Garages ({filteredGarages.length})
-            </Text>
-            <IconButton
-              icon={expandedSection === "garage" ? "chevron-up" : "chevron-down"}
-              size={24}
-              iconColor="#FFF"
-            />
-          </TouchableOpacity>
-
-          {expandedSection === "garage" &&
-            filteredGarages
-              .slice(0, showAllGarages ? filteredGarages.length : 2)
-              .map((item) => (
-                <ParkingSpotCard
-                  key={item._id}
-                  type="G"
-                  id={item._id}
-                  title={item.garageName}
-                  address={item.address}
-                  duration="5 min"
-                  rating="4.2"
-                  price={item.price.toString()}
-                  selected={selectedSpot === item._id}
-                  onSelect={() => {
-                    setSelectedSpot(item._id);
-                    setSelectedLot({ lot: item, type: "G" });
-                  }}
+          {filteredGarages.length > 0 && (
+            <>
+              <TouchableOpacity
+                style={styles.sectionHeader}
+                onPress={() => toggleSection("garage")}
+              >
+                <Text style={styles.sectionTitle}>
+                  Garages ({filteredGarages.length})
+                </Text>
+                <IconButton
+                  icon={
+                    expandedSection === "garage" ? "chevron-up" : "chevron-down"
+                  }
+                  size={24}
+                  iconColor="#FFF"
                 />
-              ))}
+              </TouchableOpacity>
+
+              {expandedSection === "garage" &&
+                filteredGarages.map((item) => (
+                  <ParkingSpotCard
+                    key={item._id}
+                    type="G"
+                    id={item._id}
+                    title={item.garageName}
+                    address={item.address}
+                    duration="5 min"
+                    rating="4.2"
+                    price={item.price.toString()}
+                    selected={selectedSpot === item._id}
+                    onSelect={() => handleSpotSelect(item._id, item, "G")}
+                  />
+                ))}
+            </>
+          )}
 
           {/* Parking Lot Section */}
-          <TouchableOpacity
-            style={styles.sectionHeader}
-            onPress={() => toggleSection("lot")}
-          >
-            <Text style={styles.sectionTitle}>
-              Parking Lots ({filteredParkingLots.length})
-            </Text>
-            <IconButton
-              icon={expandedSection === "lot" ? "chevron-up" : "chevron-down"}
-              size={24}
-              iconColor="#FFF"
-            />
-          </TouchableOpacity>
-
-          {expandedSection === "lot" &&
-            filteredParkingLots
-              .slice(0, showAllLots ? filteredParkingLots.length : 2)
-              .map((item) => (
-                <ParkingSpotCard
-                  key={item._id}
-                  type="L"
-                  id={item._id}
-                  title={item.parkingName}
-                  address={item.address}
-                  duration="5 min"
-                  rating="4.2"
-                  price={item.price.toString()}
-                  selected={selectedSpot === item._id}
-                  onSelect={() => {
-                    setSelectedSpot(item._id);
-                    setSelectedLot({ lot: item, type: "L" });
-                  }}
+          {filteredParkingLots.length > 0 && (
+            <>
+              <TouchableOpacity
+                style={styles.sectionHeader}
+                onPress={() => toggleSection("lot")}
+              >
+                <Text style={styles.sectionTitle}>
+                  Parking Lots ({filteredParkingLots.length})
+                </Text>
+                <IconButton
+                  icon={
+                    expandedSection === "lot" ? "chevron-up" : "chevron-down"
+                  }
+                  size={24}
+                  iconColor="#FFF"
                 />
-              ))}
+              </TouchableOpacity>
+
+              {expandedSection === "lot" &&
+                filteredParkingLots.map((item) => (
+                  <ParkingSpotCard
+                    key={item._id}
+                    type="L"
+                    id={item._id}
+                    title={item.parkingName}
+                    address={item.address}
+                    duration="5 min"
+                    rating="4.2"
+                    price={item.price.toString()}
+                    selected={selectedSpot === item._id}
+                    onSelect={() => handleSpotSelect(item._id, item, "L")}
+                  />
+                ))}
+            </>
+          )}
 
           {/* Residence Section */}
-          <TouchableOpacity
-            style={styles.sectionHeader}
-            onPress={() => toggleSection("residence")}
-          >
-            <Text style={styles.sectionTitle}>
-              Residences ({filteredResidences.length})
-            </Text>
-            <IconButton
-              icon={
-                expandedSection === "residence"
-                  ? "chevron-up"
-                  : "chevron-down"
-              }
-              size={24}
-              iconColor="#FFF"
-            />
-          </TouchableOpacity>
-
-          {expandedSection === "residence" &&
-            filteredResidences
-              .slice(0, showAllResidences ? filteredResidences.length : 2)
-              .map((item) => (
-                <ParkingSpotCard
-                  key={item._id}
-                  type="R"
-                  id={item._id}
-                  title={item.residenceName}
-                  address={item.address}
-                  duration="5 min"
-                  rating="4.0"
-                  price={item.price.toString()}
-                  selected={selectedSpot === item._id}
-                  onSelect={() => {
-                    setSelectedSpot(item._id);
-                    setSelectedLot({ lot: item, type: "R" });
-                  }}
+          {filteredResidences.length > 0 && (
+            <>
+              <TouchableOpacity
+                style={styles.sectionHeader}
+                onPress={() => toggleSection("residence")}
+              >
+                <Text style={styles.sectionTitle}>
+                  Residences ({filteredResidences.length})
+                </Text>
+                <IconButton
+                  icon={
+                    expandedSection === "residence"
+                      ? "chevron-up"
+                      : "chevron-down"
+                  }
+                  size={24}
+                  iconColor="#FFF"
                 />
-              ))}
+              </TouchableOpacity>
+
+              {expandedSection === "residence" &&
+                filteredResidences.map((item) => (
+                  <ParkingSpotCard
+                    key={item._id}
+                    type="R"
+                    id={item._id}
+                    title={item.residenceName}
+                    address={item.address}
+                    duration="5 min"
+                    rating="4.0"
+                    price={item.price.toString()}
+                    selected={selectedSpot === item._id}
+                    onSelect={() => handleSpotSelect(item._id, item, "R")}
+                  />
+                ))}
+            </>
+          )}
+
+          {/* No Results */}
+          {hasFetchedData && !loading && totalResults === 0 && (
+            <View style={styles.noResultsContainer}>
+              <Text style={styles.noResultsTitle}>No parking spots found</Text>
+              <Text style={styles.noResultsText}>
+                Try adjusting your search criteria or select a different
+                location.
+              </Text>
+              <TouchableOpacity
+                style={styles.retryButton}
+                onPress={handleRetryFetch}
+              >
+                <Text style={styles.retryButtonText}>Search Again</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       </ScrollView>
 
@@ -415,7 +648,7 @@ const ParkingSpot = () => {
 
             if (selectedLot.type !== "R") {
               router.push({
-                pathname: "/ParkingSpace",
+                pathname: "/parkingUser/ParkingSpace",
                 params: {
                   lot: JSON.stringify(selectedLot.lot),
                   type: selectedLot.type,
@@ -440,7 +673,36 @@ const ParkingSpot = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#FFF" },
+  container: {
+    flex: 1,
+    backgroundColor: "#FFF",
+  },
+
+  errorContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#FFF",
+  },
+
+  errorText: {
+    fontSize: 18,
+    color: colors.primary,
+    marginBottom: 20,
+  },
+
+  backButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 30,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+
+  backButtonText: {
+    color: "#FFF",
+    fontSize: 16,
+    fontWeight: "600",
+  },
 
   header: {
     position: "absolute",
@@ -450,16 +712,15 @@ const styles = StyleSheet.create({
     zIndex: 2,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 8,
     height: 60,
-    backgroundColor: "rgba(255,255,255,0.5)",
   },
 
   headerTitle: {
     fontSize: 20,
     fontWeight: "500",
-    color: "#000",
-    marginLeft: 10,
+    color: colors.primary,
   },
 
   map: {
@@ -475,13 +736,41 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
 
+  scrollView: {
+    flex: 1,
+  },
+
+  scrollContent: {
+    flexGrow: 1,
+  },
+
   bottomSheet: {
     backgroundColor: "#FFF",
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
     paddingHorizontal: 20,
-    paddingBottom: 20,
-    minHeight: Dimensions.get("window").height * 0.4,
+    paddingBottom: 100,
+    minHeight: height * 0.4,
+  },
+
+  resultsHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 10,
+    marginBottom: 15,
+  },
+
+  resultsCount: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: colors.primary,
+  },
+
+  retryText: {
+    fontSize: 14,
+    color: colors.primary,
+    textDecorationLine: "underline",
   },
 
   sectionHeader: {
@@ -501,12 +790,51 @@ const styles = StyleSheet.create({
     color: "#FFF",
   },
 
+  noResultsContainer: {
+    alignItems: "center",
+    paddingVertical: 40,
+  },
+
+  noResultsTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: colors.primary,
+    marginBottom: 8,
+  },
+
+  noResultsText: {
+    fontSize: 14,
+    color: "#666",
+    textAlign: "center",
+    marginBottom: 20,
+  },
+
+  retryButton: {
+    backgroundColor: colors.primary,
+    paddingHorizontal: 30,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+
+  retryButtonText: {
+    color: "#FFF",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+
   loadingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.2)",
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
     justifyContent: "center",
     alignItems: "center",
     zIndex: 10,
+  },
+
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: colors.primary,
+    fontWeight: "500",
   },
 });
 
