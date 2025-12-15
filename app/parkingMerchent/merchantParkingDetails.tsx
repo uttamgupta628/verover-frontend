@@ -513,7 +513,7 @@ const ParkingDetails = () => {
       });
 
       const response = await axiosInstance.put(
-        `/merchants/parkinglot/${parkingLotId}`,
+        `/merchants/parkinglot/update/${parkingLotId}`,
         data,
         {
           headers: {
