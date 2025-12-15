@@ -23,7 +23,7 @@ const Parking: React.FC = () => {
         router.push("/parkingUser/LiveSessionScreen");
         break;
       case "findParking":
-        router.push("/parkingUser/FindParking");
+        router.push("/parkingUser/GarageScreen");
         break;
       default:
         break;

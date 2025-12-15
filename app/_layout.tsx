@@ -1,13 +1,13 @@
-import { Stack, useRouter, useSegments } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useEffect, useState } from 'react';
-import { View } from 'react-native';
-import { Provider } from 'react-redux';
-import { initAuthFromStorage } from '../components/redux/authSlice';
-import { useAppDispatch, useAppSelector } from '../components/redux/hooks';
-import { store } from '../components/store';
-import Header from './Header';
-import StripeWrapper from './stripWrapper';
+import { Stack, useRouter, useSegments } from "expo-router";
+import * as SplashScreen from "expo-splash-screen";
+import { useEffect, useState } from "react";
+import { View } from "react-native";
+import { Provider } from "react-redux";
+import { initAuthFromStorage } from "../components/redux/authSlice";
+import { useAppDispatch, useAppSelector } from "../components/redux/hooks";
+import { store } from "../components/store";
+import Header from "./Header";
+import StripeWrapper from "./stripWrapper";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -15,7 +15,9 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   const segments = useSegments();
   const router = useRouter();
   const dispatch = useAppDispatch();
-  const { isAuthenticated, loading, user } = useAppSelector((state) => state.auth);
+  const { isAuthenticated, loading, user } = useAppSelector(
+    (state) => state.auth
+  );
   const [isRouterReady, setIsRouterReady] = useState(false);
 
   useEffect(() => {
@@ -31,24 +33,35 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (loading || !isRouterReady) return;
 
-    const inTabsGroup = segments[0] === '(tabs)';
-    const onAuthScreen = ['login', 'signup', 'forgot-password', 'forgot-reset-password', 'forgot-success', 'email-otp', 'EmailOTPSuccess'].includes(segments[0] as string);
-    const onOnboarding = segments[0] === 'onboarding';
-    const onSplash = segments.length === 0 || segments[0] === 'index' || segments[0] === 'splash';
+    const inTabsGroup = segments[0] === "(tabs)";
+    const onAuthScreen = [
+      "login",
+      "signup",
+      "forgot-password",
+      "forgot-reset-password",
+      "forgot-success",
+      "email-otp",
+      "EmailOTPSuccess",
+    ].includes(segments[0] as string);
+    const onOnboarding = segments[0] === "onboarding";
+    const onSplash =
+      segments.length === 0 ||
+      segments[0] === "index" ||
+      segments[0] === "splash";
 
     if (onSplash || onOnboarding) return;
 
     if (!isAuthenticated && inTabsGroup) {
-      router.replace('/login');
+      router.replace("/login");
     } else if (isAuthenticated && onAuthScreen) {
       // Redirect to appropriate home based on user type
-      if (user?.userType === 'merchant') {
-        router.replace('/merchantHome');
-      } else if (user?.userType === 'driver') {
-        router.replace('/driverHome');
+      if (user?.userType === "merchant") {
+        router.replace("/merchantHome");
+      } else if (user?.userType === "driver") {
+        router.replace("/driverHome");
       } else {
         // Default to user home
-        router.replace('/userHome');
+        router.replace("/userHome");
       }
     }
   }, [isAuthenticated, segments, loading, isRouterReady, user]);
@@ -66,7 +79,7 @@ function RootLayoutNav() {
       SplashScreen.hideAsync();
       setIsReady(true);
     }, 100);
-    
+
     return () => clearTimeout(timer);
   }, []);
 
@@ -77,17 +90,24 @@ function RootLayoutNav() {
 
   // Check if we should hide header
   const hideHeaderScreens = [
-    'login', 'signup', 'forgot-password', 'forgot-success', 
-    'forgot-reset-password', 'email-otp', 'EmailOTPSuccess', 
-    'onboarding', 'index', 'splash'
+    "login",
+    "signup",
+    "forgot-password",
+    "forgot-success",
+    "forgot-reset-password",
+    "email-otp",
+    "EmailOTPSuccess",
+    "onboarding",
+    "index",
+    "splash",
   ];
-  
+
   const shouldShowHeader = !hideHeaderScreens.includes(segments[0] as string);
 
   return (
     <View style={{ flex: 1 }}>
       {shouldShowHeader && <Header notificationCount={3} />}
-      
+
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="splash" />
@@ -100,9 +120,9 @@ function RootLayoutNav() {
         <Stack.Screen name="email-otp" />
         <Stack.Screen name="EmailOTPSuccess" />
         <Stack.Screen name="userHome" />
-        <Stack.Screen name="merchantHome" /> 
+        <Stack.Screen name="merchantHome" />
         <Stack.Screen name="driverHome" />
-        
+
         {/* Driver Screens */}
         <Stack.Screen name="dryCleanerDriver/driverHistory" />
         <Stack.Screen name="QRCode" />
@@ -111,18 +131,22 @@ function RootLayoutNav() {
         <Stack.Screen name="FoodDeliveryHome" />
         <Stack.Screen name="Vehicleinfo" />
         <Stack.Screen name="MicroMobility" />
-        
+
         {/* Merchant Screens */}
         <Stack.Screen name="parkingMerchent/merchantParkinglotList" />
         <Stack.Screen name="parkingMerchent/merchantGarageList" />
+        <Stack.Screen name="parkingMerchent/merchantGarageDetails" />
         <Stack.Screen name="parkingMerchent/merchantParkingDetails" />
         <Stack.Screen name="parkingMerchent/registerParkingLot" />
-        <Stack.Screen name="parkingMerchant/merchantGarageList" />
-        <Stack.Screen name="parkingMerchant/merchantResidenceList" />
+
         <Stack.Screen name="merchant/dryClean" />
         <Stack.Screen name="merchant/merchantGarageForm" />
         <Stack.Screen name="merchant/merchantBookingHistoryScreen" />
-        
+        <Stack.Screen name="parkingMerchent/merchantResidenceList" />
+        <Stack.Screen name="parkingMerchent/merchantResidenceDetails" />
+        <Stack.Screen name="parkingMerchent/registerGarage" />
+        <Stack.Screen name="parkingMerchent/registerResidence" />
+
         {/* Dry Cleaner User Screens */}
         <Stack.Screen name="dryCleanerUser/myOrder" />
         <Stack.Screen name="dryCleanerUser/allDrycleanerLocation" />
@@ -131,14 +155,45 @@ function RootLayoutNav() {
         <Stack.Screen name="dryCleanerUser/pickUpLocation" />
         <Stack.Screen name="dryCleanerUser/pickUpTimeDate" />
         <Stack.Screen name="dryCleanerUser/payment" />
-        
+
         {/* Parking User Screens */}
-        <Stack.Screen name="parkingUser/parking" />
-        <Stack.Screen name="parkingUser/historyScreen" />
-        <Stack.Screen name="parkingUser/LiveSessionScreen" />
-        <Stack.Screen name="parkingUser/FindParking" />
-        <Stack.Screen name="parkingUser/ParkingSlot" />
+        <Stack.Screen
+          name="parkingUser/parking"
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="parkingUser/historyScreen"
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="parkingUser/LiveSessionScreen"
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="parkingUser/FindParking"
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="parkingUser/ParkingSlot"
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="parkingUser/ParkingSpot"
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="parkingUser/GarageScreen"
+          options={{ headerShown: false }}
+        />
+        <Stack.Screen
+          name="parkingUser/ParkingSpace"
+          options={{ headerShown: false }}
+        />
         <Stack.Screen name="parkingUser/payment" />
+        <Stack.Screen
+          name="parkingUser/Confirmation"
+          options={{ headerShown: false }}
+        />
       </Stack>
     </View>
   );

@@ -5,8 +5,7 @@
     "slug": "verover",
     "version": "1.0.0",
     "extra": {
-      "GOOGLE_MAPS_API_KEY": "AIzaSyBn5c5hk6ko6gEwZ3IyWK6AkU4_U_tp_4g",
-     "STRIPE_PUBLISHABLE_KEY": "pk_test_51SaGUy38jla8PJ9QpsvULyDCxRRuSkIbalrFm3WkcAgwxWUcfAaFz1pVZszxvIY51FDYhqBY1ipQHExEs947J3I100qQLaneAM"
+      "GOOGLE_MAPS_API_KEY": "AIzaSyBn5c5hk6ko6gEwZ3IyWK6AkU4_U_tp_4g"
     },
     "ios": {
       "supportsTablet": true,
@@ -29,43 +28,8 @@
       },
       "permissions": [
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION",
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE",
-        "READ_MEDIA_IMAGES"
-      ],
-      "package": "com.asrtech123.verover"
-    },
-    "plugins": [
-      [
-        "@stripe/stripe-react-native",
-        {
-          "merchantIdentifier": "com.vervoer",
-          "enableGooglePay": true
-        }
-      ],
-      [
-        "expo-image-picker",
-        {
-          "photosPermission": "This app needs access to your photos to upload shop and profile images.",
-          "cameraPermission": "This app needs access to your camera to take photos of your shop and contact person."
-        }
-      ],
-      [
-        "expo-camera",
-        {
-          "cameraPermission": "This app needs access to your camera to take photos."
-        }
-      ],
-      [
-        "expo-media-library",
-        {
-          "photosPermission": "This app needs access to your photo library to save and select images.",
-          "savePhotosPermission": "This app needs permission to save photos to your library.",
-          "isAccessMediaLocationEnabled": true
-        }
+        "ACCESS_COARSE_LOCATION"
       ]
-    ]
+    }
   }
 }

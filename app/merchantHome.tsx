@@ -95,7 +95,7 @@ export default function MerchantHome() {
         <TouchableOpacity
           style={styles.button}
           onPress={() => {
-            router.push("/parkingMerchant/merchantResidenceList");
+            router.push("/parkingMerchent/merchantResidenceList");
           }}
         >
           <Image source={images.Parking} style={styles.parkingImage} />
