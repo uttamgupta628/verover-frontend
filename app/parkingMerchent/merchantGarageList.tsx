@@ -90,10 +90,8 @@ const MerchantGarageList = () => {
   };
 
   const handleAddGarage = () => {
-  router.push({
-    pathname: 'parkingMerchent/registerGarage',
-    params: { garageId: '' }
-  });
+    console.log("Navigating to registerGarage");
+  router.push('/parkingMerchent/registerGarage');
 };
 
   const handleGaragePress = (garage: Garage) => {

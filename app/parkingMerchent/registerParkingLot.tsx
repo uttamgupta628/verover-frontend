@@ -1,633 +1,857 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  View,
-  Text,
-  TextInput,
-  ScrollView,
-  TouchableOpacity,
-  StyleSheet,
-  SafeAreaView,
-  StatusBar,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  LayoutAnimation,
-  UIManager,
+    View,
+    Text,
+    TouchableOpacity,
+    StyleSheet,
+    ScrollView,
+    TextInput,
+    Alert,
+    ActivityIndicator,
+    Platform,
+    Image,
 } from 'react-native';
-import { ArrowLeft, Camera, Plus, X, Clock, DollarSign, MapPin, User, Mail } from 'lucide-react-native';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { responsiveHeight, responsiveWidth, responsiveFontSize } from 'react-native-responsive-dimensions';
+import { useSelector } from 'react-redux';
+import { RootState } from '../../components/redux/store';
+import axiosInstance from '../../api/axios';
+import * as ImagePicker from 'expo-image-picker'; // Changed to Expo ImagePicker
+import * as Location from 'expo-location';
+import colors from '../../assets/color';
+import { ArrowLeft, Camera, X, Plus, Trash2 } from 'lucide-react-native';
 
-// Enable layout animation for Android
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
+// Interface for working hours
+interface WorkingHours {
+    day: 'SUN' | 'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT';
+    isOpen?: boolean;
+    openTime?: string;
+    closeTime?: string;
+    is24Hours: boolean;
 }
 
-const COLORS = {
-  primary: '#F59E0B', // Orange
-  secondary: '#FFF7ED', // Light Orange BG
-  background: '#FFFFFF',
-  surface: '#F8F9FA',
-  text: '#1F2937',
-  textLight: '#6B7280',
-  border: '#E5E7EB',
-  danger: '#EF4444',
-  success: '#10B981',
-};
-
-// --- Reusable Components ---
-
-const SectionHeader = ({ title, subtitle }) => (
-  <View style={styles.sectionHeaderContainer}>
-    <Text style={styles.sectionHeader}>{title}</Text>
-    {subtitle && <Text style={styles.sectionSubtitle}>{subtitle}</Text>}
-  </View>
-);
-
-const CustomToggle = ({ value, onToggle, label, activeLabel = 'YES', inactiveLabel = 'NO' }) => (
-  <View style={styles.toggleWrapper}>
-    {label && <Text style={styles.inputLabel}>{label}</Text>}
-    <TouchableOpacity
-      activeOpacity={0.8}
-      onPress={onToggle}
-      style={[
-        styles.toggleContainer,
-        { 
-          backgroundColor: value ? COLORS.primary : COLORS.surface,
-          borderColor: value ? COLORS.primary : COLORS.border 
-        }
-      ]}
-    >
-      <View style={styles.toggleInternal}>
-        <Text style={[styles.toggleText, { color: value ? '#fff' : COLORS.textLight }]}>
-          {value ? activeLabel : inactiveLabel}
-        </Text>
-      </View>
-      <View style={[
-        styles.toggleKnob, 
-        value ? { right: 2 } : { left: 2 }
-      ]} />
-    </TouchableOpacity>
-  </View>
-);
-
-const FormInput = ({ label, value, onChangeText, placeholder, icon, multiline, keyboardType = 'default' }) => (
-  <View style={styles.inputGroup}>
-    {label && <Text style={styles.inputLabel}>{label}</Text>}
-    <View style={[styles.inputContainer, multiline && styles.textAreaContainer]}>
-      {icon && <View style={styles.inputIconWrapper}>{icon}</View>}
-      <TextInput
-        style={[styles.input, multiline && styles.textArea]}
-        placeholder={placeholder}
-        placeholderTextColor="#9CA3AF"
-        value={value}
-        onChangeText={onChangeText}
-        multiline={multiline}
-        keyboardType={keyboardType}
-        textAlignVertical={multiline ? 'top' : 'center'}
-      />
-    </View>
-  </View>
-);
-
-const DaySchedule = ({ dayData, onUpdate }) => {
-  const { day, isOpen, openTime, closeTime, is24Hours } = dayData;
-
-  const handleToggleOpen = () => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    onUpdate({ ...dayData, isOpen: !isOpen });
-  };
-
-  const handleToggle24Hr = () => {
-    onUpdate({ ...dayData, is24Hours: !is24Hours });
-  };
-
-  return (
-    <View style={styles.dayCard}>
-      <View style={styles.dayHeader}>
-        <Text style={styles.dayTitle}>{day}</Text>
-        <CustomToggle 
-          value={isOpen} 
-          onToggle={handleToggleOpen} 
-          activeLabel="OPEN" 
-          inactiveLabel="CLOSED" 
-        />
-      </View>
-
-      {isOpen && (
-        <View style={styles.dayBody}>
-          <View style={styles.timeRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.subLabel}>Open Time</Text>
-              <View style={[styles.timeInput, is24Hours && styles.disabledInput]}>
-                <Text style={styles.timeText}>{is24Hours ? '00:00' : openTime}</Text>
-              </View>
-            </View>
-            <View style={{ width: 15 }} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.subLabel}>Close Time</Text>
-              <View style={[styles.timeInput, is24Hours && styles.disabledInput]}>
-                <Text style={styles.timeText}>{is24Hours ? '23:59' : closeTime}</Text>
-              </View>
-            </View>
-          </View>
-          
-          <View style={styles.dayFooter}>
-             <CustomToggle 
-              label="24 Hours?" 
-              value={is24Hours} 
-              onToggle={handleToggle24Hr} 
-            />
-          </View>
-        </View>
-      )}
-    </View>
-  );
-};
-
-// --- Main Screen ---
-
-export default function RegisterParkingLot() {
-  // State: Basic Info
-  const [name, setName] = useState('');
-  const [address, setAddress] = useState('');
-  const [price, setPrice] = useState('');
-  const [about, setAbout] = useState('');
-  const [contactName, setContactName] = useState('');
-  const [email, setEmail] = useState('');
-  
-  // State: Vehicle Type
-  const [vehicleType, setVehicleType] = useState('Both');
-  
-  // State: Images
-  const [imageCount, setImageCount] = useState(0);
-
-  // State: Zones (Dynamic)
-  const [zones, setZones] = useState([
-    { id: '1', name: 'Zone A', capacity: '10', occupied: '0' },
-    { id: '2', name: 'Zone B', capacity: '5', occupied: '0' },
-  ]);
-
-  // State: Schedule (7 Days)
-  const initialSchedule = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map(day => ({
-    day,
-    isOpen: day !== 'SAT' && day !== 'SUN', // Example logic
-    openTime: '09:00',
-    closeTime: '21:00',
-    is24Hours: false,
-  }));
-  const [schedule, setSchedule] = useState(initialSchedule);
-
-  // Derived State: Total Slots Calculation
-  const totalSlots = useMemo(() => {
-    return zones.reduce((acc, zone) => acc + (parseInt(zone.capacity) || 0), 0);
-  }, [zones]);
-
-  // Handlers
-  const addZone = () => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    const newId = (zones.length + 1).toString() + Date.now();
-    setZones([...zones, { id: newId, name: '', capacity: '', occupied: '' }]);
-  };
-
-  const removeZone = (id) => {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setZones(zones.filter(z => z.id !== id));
-  };
-
-  const updateZone = (id, field, value) => {
-    setZones(zones.map(z => z.id === id ? { ...z, [field]: value } : z));
-  };
-
-  const updateDaySchedule = (updatedDay) => {
-    setSchedule(schedule.map(d => d.day === updatedDay.day ? updatedDay : d));
-  };
-
-  const handleSave = () => {
-    // Simulate API Payload
-    const payload = {
-      name, address, price, about, contactName, email,
-      vehicleType,
-      zones,
-      totalSlots,
-      schedule
+// Updated interface to include all backend fields
+interface ParkingLotFormData {
+    parkingName: string;
+    price: number;
+    about: string;
+    contactNumber: string;
+    email?: string;
+    address: string;
+    spacesList: Record<string, { count: number; price: number }>;
+    generalAvailable: WorkingHours[];
+    is24x7: boolean;
+    gpsLocation: {
+        type: string;
+        coordinates: number[];
     };
-    
-    if(!name || !price) {
-      Alert.alert('Missing Fields', 'Please fill in Name and Price.');
-      return;
+    vehicleType: 'bike' | 'car' | 'both';
+    totalSlot: number;
+}
+
+const RegisterParkingLot = () => {
+    const router = useRouter();
+    const params = useLocalSearchParams();
+    const parkingLotId = params.parkingLotId as string | undefined;
+    const [selectedTab, setSelectedTab] = useState('Parking Lot');
+    const { token, user } = useSelector((state: RootState) => state.auth);
+    const [isLoading, setIsLoading] = useState(false);
+    const [images, setImages] = useState<{ uri: string; name: string; type: string }[]>([]);
+    const [currentLocation, setCurrentLocation] = useState<{ latitude: number, longitude: number } | null>(null);
+
+    // Initialize state with all required fields
+    const [formData, setFormData] = useState<ParkingLotFormData>({
+        parkingName: '',
+        price: 0,
+        about: '',
+        contactNumber: user?.phoneNumber || '',
+        email: user?.email || '',
+        address: '',
+        vehicleType: 'both',
+        totalSlot: 0,
+        spacesList: {
+            'A': { count: 10, price: 10 },
+            'B': { count: 15, price: 10 },
+        },
+        generalAvailable: [
+            { day: 'SUN', isOpen: true, openTime: '09:00', closeTime: '17:00', is24Hours: false },
+            { day: 'MON', isOpen: true, openTime: '09:00', closeTime: '17:00', is24Hours: false },
+            { day: 'TUE', isOpen: true, openTime: '09:00', closeTime: '17:00', is24Hours: false },
+            { day: 'WED', isOpen: true, openTime: '09:00', closeTime: '17:00', is24Hours: false },
+            { day: 'THU', isOpen: true, openTime: '09:00', closeTime: '17:00', is24Hours: false },
+            { day: 'FRI', isOpen: true, openTime: '09:00', closeTime: '17:00', is24Hours: false },
+            { day: 'SAT', isOpen: true, openTime: '09:00', closeTime: '17:00', is24Hours: false },
+        ],
+        is24x7: false,
+        gpsLocation: {
+            type: 'Point',
+            coordinates: [0, 0],
+        },
+    });
+
+    // Effect to fetch details if editing and get location
+    useEffect(() => {
+        if (parkingLotId) {
+            fetchParkingLotDetails();
+        }
+        requestLocationPermissionAndGetLocation();
+    }, [parkingLotId]);
+
+    // Effect to calculate total slots whenever spacesList changes
+    useEffect(() => {
+        const total = Object.values(formData.spacesList).reduce((acc, zone) => acc + (zone.count || 0), 0);
+        setFormData(prev => ({ ...prev, totalSlot: total }));
+    }, [formData.spacesList]);
+
+    // Location Permission and Fetching Logic using Expo Location
+    const requestLocationPermissionAndGetLocation = async () => {
+        try {
+            const { status } = await Location.requestForegroundPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert('Permission Denied', 'Location permission is required.');
+                return;
+            }
+            getCurrentLocation();
+        } catch (err) {
+            console.warn(err);
+            Alert.alert('Error', 'Failed to request location permission.');
+        }
+    };
+
+    const getCurrentLocation = async () => {
+        try {
+            const location = await Location.getCurrentPositionAsync({
+                accuracy: Location.Accuracy.High,
+            });
+            const { latitude, longitude } = location.coords;
+            setCurrentLocation({ latitude, longitude });
+            setFormData(prev => ({
+                ...prev,
+                gpsLocation: {
+                    type: 'Point',
+                    coordinates: [longitude, latitude],
+                },
+            }));
+        } catch (error) {
+            Alert.alert('Location Error', 'Could not get your current location.');
+            console.error(error);
+        }
+    };
+
+    // Fetch existing parking lot details for editing
+    const fetchParkingLotDetails = async () => {
+        setIsLoading(true);
+        try {
+            const response = await axiosInstance.get(`/api/merchants/parkinglot/${parkingLotId}`);
+            const parkingLotData = response.data.data;
+
+            setFormData({
+                parkingName: parkingLotData.parkingName,
+                price: parkingLotData.price,
+                about: parkingLotData.about,
+                contactNumber: parkingLotData.contactNumber,
+                email: parkingLotData.email,
+                address: parkingLotData.address,
+                vehicleType: parkingLotData.vehicleType || 'both',
+                totalSlot: parkingLotData.totalSlot || 0,
+                spacesList: Object.fromEntries(parkingLotData.spacesList),
+                generalAvailable: parkingLotData.generalAvailable,
+                is24x7: parkingLotData.is24x7,
+                gpsLocation: parkingLotData.gpsLocation,
+            });
+
+            if (parkingLotData.images?.length > 0) {
+                setImages(parkingLotData.images.map((uri: string) => ({
+                    uri,
+                    name: uri.split('/').pop() || 'image.jpg',
+                    type: 'image/jpeg',
+                })));
+            }
+        } catch (error) {
+            console.error('Error fetching parking lot details:', error);
+            Alert.alert('Error', 'Failed to fetch parking lot details');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Image handling functions - UPDATED WITH EXPO IMAGE PICKER
+    const handleImageUpload = async () => {
+        try {
+            // Request permissions first
+            const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            
+            if (!permissionResult.granted) {
+                Alert.alert('Permission Required', 'You need to grant permission to access photos.');
+                return;
+            }
+
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                allowsMultipleSelection: true,
+                quality: 0.8,
+                selectionLimit: 5 - images.length,
+            });
+
+            if (result.canceled || !result.assets) return;
+
+            const newImages = result.assets.map(asset => ({
+                uri: asset.uri || '',
+                name: asset.uri.split('/').pop() || `image_${Date.now()}.jpg`,
+                type: 'image/jpeg',
+            }));
+            setImages(prev => [...prev, ...newImages]);
+
+        } catch (error) {
+            console.error('Image picker error:', error);
+            Alert.alert('Error', 'Failed to select images');
+        }
+    };
+
+    const removeImage = (index: number) => {
+        setImages(prev => prev.filter((_, i) => i !== index));
+    };
+
+    // Generic handler for form field changes
+    const handleChange = (field: keyof ParkingLotFormData, value: any) => {
+        setFormData(prev => ({ ...prev, [field]: value }));
+    };
+
+    // Specific handlers for complex fields
+    const handleSpaceChange = (zone: string, field: 'count' | 'price', value: string) => {
+        const numValue = parseInt(value) || 0;
+        setFormData(prev => ({
+            ...prev,
+            spacesList: {
+                ...prev.spacesList,
+                [zone]: { ...prev.spacesList[zone], [field]: numValue },
+            },
+        }));
+    };
+
+    const addZone = () => {
+        const zones = Object.keys(formData.spacesList);
+        const newZone = zones.length > 0 ? String.fromCharCode(zones[zones.length - 1].charCodeAt(0) + 1) : 'A';
+        setFormData(prev => ({
+            ...prev,
+            spacesList: { ...prev.spacesList, [newZone]: { count: 0, price: 0 } },
+        }));
+    };
+
+    const removeZone = (zone: string) => {
+        if (Object.keys(formData.spacesList).length <= 1) {
+            return Alert.alert('Error', 'You must have at least one zone');
+        }
+        const newSpaces = { ...formData.spacesList };
+        delete newSpaces[zone];
+        setFormData(prev => ({ ...prev, spacesList: newSpaces }));
+    };
+
+    const handleWorkingHoursChange = (index: number, field: keyof WorkingHours, value: any) => {
+        const newWorkingHours = [...formData.generalAvailable];
+        newWorkingHours[index] = { ...newWorkingHours[index], [field]: value };
+        setFormData(prev => ({ ...prev, generalAvailable: newWorkingHours }));
+    };
+
+    // Form submission handler
+    const handleSubmit = async () => {
+        if (!formData.parkingName || !formData.address || !formData.contactNumber || formData.price <= 0) {
+            return Alert.alert('Validation Error', 'Please fill all required fields.');
+        }
+
+        setIsLoading(true);
+        try {
+            const data = new FormData();
+
+            data.append('parkingName', formData.parkingName);
+            data.append('about', formData.about);
+            data.append('address', formData.address);
+            data.append('contactNumber', formData.contactNumber);
+            if (formData.email) data.append('email', formData.email);
+            data.append('price', formData.price.toString());
+            data.append('is24x7', formData.is24x7.toString());
+            data.append('vehicleType', formData.vehicleType);
+            data.append('totalSlot', formData.totalSlot.toString());
+            data.append('spacesList', JSON.stringify(Object.fromEntries(Object.entries(formData.spacesList))));
+            data.append('generalAvailable', JSON.stringify(formData.generalAvailable));
+            data.append('gpsLocation', JSON.stringify(formData.gpsLocation));
+
+            images.forEach((image) => {
+                if (!image.uri.startsWith('http')) {
+                    data.append('images', {
+                        uri: image.uri,
+                        name: image.name,
+                        type: image.type,
+                    } as any);
+                }
+            });
+
+            const endpoint = parkingLotId
+                ? `/api/merchants/parkinglot/${parkingLotId}`
+                : 'https://vervoer-backend2.onrender.com/api/merchants/parkinglot/registration';
+
+            const method = parkingLotId ? 'put' : 'post';
+
+            await axiosInstance[method](endpoint, data, {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    'Content-Type': 'multipart/form-data',
+                },
+            });
+
+            Alert.alert('Success', `Parking Lot ${parkingLotId ? 'updated' : 'created'} successfully`);
+            router.back();
+
+        } catch (error: any) {
+            console.error('Error submitting parking lot:', error.response?.data || error.message);
+            Alert.alert('Error', error.response?.data?.message || 'Failed to submit details');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    if (isLoading && !parkingLotId) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={colors.brandColor} />
+            </View>
+        );
     }
 
-    console.log(JSON.stringify(payload, null, 2));
-    Alert.alert('Success', 'Parking Lot Registered Successfully!');
-  };
-
-  return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.iconBtn}>
-          <ArrowLeft color={COLORS.primary} size={24} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Register Parking Lot</Text>
-        <TouchableOpacity onPress={handleSave}>
-          <Text style={styles.saveBtnText}>Save</Text>
-        </TouchableOpacity>
-      </View>
-
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          
-          {/* Progress Tabs */}
-          <View style={styles.tabsContainer}>
-            <View style={styles.tabInactive}><Text style={styles.tabTextInactive}>Location</Text></View>
-            <View style={styles.tabActive}><Text style={styles.tabTextActive}>Parking Info</Text></View>
-            <View style={styles.tabInactive}><Text style={styles.tabTextInactive}>Photos</Text></View>
-          </View>
-
-          {/* Image Picker */}
-          <TouchableOpacity 
-            style={styles.imagePicker} 
-            onPress={() => setImageCount(prev => Math.min(prev + 1, 5))}
-          >
-            <Camera color={COLORS.primary} size={32} />
-            <Text style={styles.imagePickerText}>
-              {imageCount > 0 ? `${imageCount} Images Selected` : 'Tap to Upload Images (0/5)'}
-            </Text>
-          </TouchableOpacity>
-
-          {/* Basic Info */}
-          <FormInput 
-            label="Parking Lot Name*" 
-            placeholder="e.g. City Center Parking" 
-            value={name} 
-            onChangeText={setName} 
-          />
-          <FormInput 
-            label="Address" 
-            placeholder="Search address..." 
-            value={address} 
-            onChangeText={setAddress}
-            icon={<MapPin size={18} color={COLORS.textLight} />}
-          />
-          <FormInput 
-            label="Price / Hour*" 
-            placeholder="0.00" 
-            value={price} 
-            onChangeText={setPrice}
-            keyboardType="numeric"
-            icon={<DollarSign size={18} color={COLORS.textLight} />}
-          />
-
-          {/* Vehicle Type */}
-          <View style={styles.section}>
-            <Text style={styles.inputLabel}>Vehicle Type Accepted*</Text>
-            <View style={styles.vehicleRow}>
-              {['Bike', 'Car', 'Both'].map((type) => (
-                <TouchableOpacity
-                  key={type}
-                  onPress={() => setVehicleType(type)}
-                  style={[
-                    styles.vehicleBtn,
-                    vehicleType === type && styles.vehicleBtnActive
-                  ]}
-                >
-                  <Text style={[
-                    styles.vehicleBtnText,
-                    vehicleType === type && styles.vehicleBtnTextActive
-                  ]}>{type}</Text>
+    return (
+        <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
+            {/* Header */}
+            <View style={styles.header}>
+                <TouchableOpacity onPress={() => router.back()}>
+                    <ArrowLeft size={30} color={colors.brandColor} />
                 </TouchableOpacity>
-              ))}
+                <Text style={styles.headerTitle}>
+                    {parkingLotId ? 'Edit Parking Lot' : 'Register Parking Lot'}
+                </Text>
+                <TouchableOpacity onPress={handleSubmit} disabled={isLoading}>
+                    {isLoading ? (
+                        <ActivityIndicator color={colors.brandColor} />
+                    ) : (
+                        <Text style={styles.submitText}>Save</Text>
+                    )}
+                </TouchableOpacity>
             </View>
-          </View>
 
-          {/* Zones */}
-          <View style={styles.section}>
-            <SectionHeader title="Zones & Spaces" subtitle={`Total Capacity: ${totalSlots}`} />
-            
-            {zones.map((zone, index) => (
-              <View key={zone.id} style={styles.zoneRow}>
-                <View style={styles.zoneInputWrapper}>
-                  <Text style={styles.zoneLabel}>Name</Text>
-                  <TextInput 
-                    style={styles.zoneInput} 
-                    placeholder="Zone A" 
-                    value={zone.name}
-                    onChangeText={(t) => updateZone(zone.id, 'name', t)}
-                  />
-                </View>
-                <View style={[styles.zoneInputWrapper, { width: 80 }]}>
-                  <Text style={styles.zoneLabel}>Capacity</Text>
-                  <TextInput 
-                    style={[styles.zoneInput, { textAlign: 'center' }]} 
-                    placeholder="0" 
-                    keyboardType="numeric"
-                    value={zone.capacity}
-                    onChangeText={(t) => updateZone(zone.id, 'capacity', t)}
-                  />
-                </View>
-                 <View style={[styles.zoneInputWrapper, { width: 80 }]}>
-                  <Text style={styles.zoneLabel}>Occupied</Text>
-                  <TextInput 
-                    style={[styles.zoneInput, { textAlign: 'center' }]} 
-                    placeholder="0" 
-                    keyboardType="numeric"
-                    value={zone.occupied}
-                    onChangeText={(t) => updateZone(zone.id, 'occupied', t)}
-                  />
-                </View>
-                <TouchableOpacity onPress={() => removeZone(zone.id)} style={styles.removeZoneBtn}>
-                  <X color={COLORS.danger} size={20} />
+            {/* Tab Navigation */}
+            <View style={styles.tabContainer}>
+                {/* Residence Tab */}
+                <TouchableOpacity
+                    style={[styles.tabButton, selectedTab === 'Residence' && styles.activeTab]}
+                    onPress={() => {
+                        setSelectedTab('Residence');
+                        router.push('/parkingMerchent/registerResidence');
+                    }}
+                >
+                    <Text style={[styles.tabText, selectedTab === 'Residence' && styles.activeTabText]}>
+                        Residence
+                    </Text>
                 </TouchableOpacity>
-              </View>
-            ))}
 
-            <TouchableOpacity style={styles.addZoneBtn} onPress={addZone}>
-              <Plus color={COLORS.primary} size={20} />
-              <Text style={styles.addZoneText}>Add New Zone</Text>
+                {/* Parking Lot Tab */}
+                <TouchableOpacity
+                    style={[styles.tabButton, selectedTab === 'Parking Lot' && styles.activeTab]}
+                    onPress={() => {
+                        setSelectedTab('Parking Lot');
+                        router.push('/parkingMerchent/registerParkingLot');
+                    }}
+                >
+                    <Text style={[styles.tabText, selectedTab === 'Parking Lot' && styles.activeTabText]}>
+                        Parking Lot
+                    </Text>
+                </TouchableOpacity>
+
+                {/* Garage Tab */}
+                <TouchableOpacity
+                    style={[styles.tabButton, selectedTab === 'Garage' && styles.activeTab]}
+                    onPress={() => {
+                        setSelectedTab('Garage');
+                        router.push('/parkingMerchent/registerGarage');
+                    }}
+                >
+                    <Text style={[styles.tabText, selectedTab === 'Garage' && styles.activeTabText]}>
+                        Garage
+                    </Text>
+                </TouchableOpacity>
+            </View>
+
+            {/* Parking Lot Image Upload */}
+            <View style={styles.imageUploadContainer}>
+                <TouchableOpacity 
+                    style={styles.imageUploadButton} 
+                    onPress={handleImageUpload} 
+                    disabled={images.length >= 5}
+                >
+                    <Camera size={25} color={colors.brandColor} />
+                    <Text style={styles.imageUploadText}>Upload Images ({images.length}/5)</Text>
+                </TouchableOpacity>
+                {images.length > 0 && (
+                    <View style={styles.imagePreviewContainer}>
+                        {images.map((image, index) => (
+                            <View key={index} style={styles.imageWrapper}>
+                                <Image source={{ uri: image.uri }} style={styles.imagePreview} />
+                                <TouchableOpacity 
+                                    style={styles.deleteImageButton} 
+                                    onPress={() => removeImage(index)}
+                                >
+                                    <X size={20} color={colors.error} />
+                                </TouchableOpacity>
+                            </View>
+                        ))}
+                    </View>
+                )}
+            </View>
+
+            {/* Parking Lot Details */}
+            <View style={styles.card}>
+                <View style={styles.inputContainer}>
+                    <Text style={styles.label}>Parking Lot Name*</Text>
+                    <TextInput 
+                        style={styles.input} 
+                        value={formData.parkingName} 
+                        onChangeText={(text) => handleChange('parkingName', text)} 
+                        placeholder="Enter parking lot name" 
+                    />
+                    <Text style={styles.label}>Address*</Text>
+                    <TextInput 
+                        style={styles.input} 
+                        value={formData.address} 
+                        onChangeText={(text) => handleChange('address', text)} 
+                        placeholder="Enter address" 
+                    />
+                    <Text style={styles.label}>Price per Hour*</Text>
+                    <TextInput 
+                        style={styles.input} 
+                        value={formData.price.toString()} 
+                        onChangeText={(text) => handleChange('price', parseFloat(text) || 0)} 
+                        placeholder="Enter base price (e.g., 5.00)" 
+                        keyboardType="decimal-pad" 
+                    />
+                </View>
+            </View>
+
+            {/* Vehicle Type Selection */}
+            <View style={styles.card}>
+                <Text style={styles.sectionTitle}>Vehicle Type Accepted*</Text>
+                <View style={styles.vehicleTypeContainer}>
+                    {(['bike', 'car', 'both'] as const).map(type => (
+                        <TouchableOpacity
+                            key={type}
+                            style={[
+                                styles.vehicleTypeButton, 
+                                formData.vehicleType === type && styles.vehicleTypeButtonActive
+                            ]}
+                            onPress={() => handleChange('vehicleType', type)}
+                        >
+                            <Text style={[
+                                styles.vehicleTypeButtonText, 
+                                formData.vehicleType === type && styles.vehicleTypeButtonTextActive
+                            ]}>
+                                {type.charAt(0).toUpperCase() + type.slice(1)}
+                            </Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            </View>
+
+            {/* Zones/Spaces Form */}
+            <View style={styles.card}>
+                <Text style={styles.sectionTitle}>Zones & Spaces (Total: {formData.totalSlot})</Text>
+                {Object.entries(formData.spacesList).map(([zone, space]) => (
+                    <View key={zone} style={styles.zoneInputContainer}>
+                        <Text style={styles.zoneLabel}>Zone {zone}</Text>
+                        <TextInput 
+                            style={[styles.input, { flex: 1, marginRight: responsiveWidth(2) }]} 
+                            value={space.count.toString()} 
+                            onChangeText={(text) => handleSpaceChange(zone, 'count', text)} 
+                            placeholder="Spaces" 
+                            keyboardType="numeric" 
+                        />
+                        <TextInput 
+                            style={[styles.input, { flex: 1 }]} 
+                            value={space.price.toString()} 
+                            onChangeText={(text) => handleSpaceChange(zone, 'price', text)} 
+                            placeholder="Zone Price" 
+                            keyboardType="decimal-pad" 
+                        />
+                        {Object.keys(formData.spacesList).length > 1 && (
+                            <TouchableOpacity 
+                                style={styles.removeButton} 
+                                onPress={() => removeZone(zone)}
+                            >
+                                <Trash2 size={20} color={colors.error} />
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                ))}
+                <TouchableOpacity style={styles.addButton} onPress={addZone}>
+                    <Plus size={20} color={colors.brandColor} />
+                    <Text style={styles.addButtonText}>Add Zone</Text>
+                </TouchableOpacity>
+            </View>
+
+            {/* About Form */}
+            <View style={styles.card}>
+                <Text style={styles.sectionTitle}>About</Text>
+                <TextInput 
+                    style={[styles.input, { height: responsiveHeight(10), textAlignVertical: 'top' }]} 
+                    value={formData.about} 
+                    onChangeText={(text) => handleChange('about', text)} 
+                    placeholder="Describe your parking lot..." 
+                    multiline 
+                />
+            </View>
+
+            {/* Contact & Availability */}
+            <View style={styles.card}>
+                <Text style={styles.sectionTitle}>Contact Info</Text>
+                <Text style={styles.label}>Contact Number*</Text>
+                <TextInput 
+                    style={styles.input} 
+                    value={formData.contactNumber} 
+                    onChangeText={(text) => handleChange('contactNumber', text)} 
+                    placeholder="Enter contact number" 
+                    keyboardType="phone-pad" 
+                />
+                <Text style={styles.label}>Email</Text>
+                <TextInput 
+                    style={styles.input} 
+                    value={formData.email} 
+                    onChangeText={(text) => handleChange('email', text)} 
+                    placeholder="Enter email" 
+                    keyboardType="email-address" 
+                />
+            </View>
+
+            {/* Working Hours Section */}
+            <View style={styles.card}>
+                <Text style={styles.sectionTitle}>Availability</Text>
+                <View style={styles.switchContainer}>
+                    <Text style={styles.label}>Open 24/7?</Text>
+                    <TouchableOpacity
+                        style={[styles.switchButton, formData.is24x7 && styles.switchButtonActive]}
+                        onPress={() => handleChange('is24x7', !formData.is24x7)}
+                    >
+                        <Text style={[styles.switchText, formData.is24x7 && { color: '#FFF' }]}>
+                            {formData.is24x7 ? 'YES' : 'NO'}
+                        </Text>
+                    </TouchableOpacity>
+                </View>
+
+                {!formData.is24x7 && (
+                    <>
+                        {formData.generalAvailable.map((day, index) => (
+                            <View key={day.day} style={styles.dayContainer}>
+                                <Text style={styles.dayLabel}>{day.day}</Text>
+
+                                <View style={styles.switchContainer}>
+                                    <Text style={styles.label}>Open</Text>
+                                    <TouchableOpacity
+                                        style={[styles.switchButton, day.isOpen && styles.switchButtonActive]}
+                                        onPress={() => handleWorkingHoursChange(index, 'isOpen', !day.isOpen)}
+                                    >
+                                        <Text style={[styles.switchText, day.isOpen && { color: '#FFF' }]}>
+                                            {day.isOpen ? 'YES' : 'NO'}
+                                        </Text>
+                                    </TouchableOpacity>
+                                </View>
+
+                                {day.isOpen && !day.is24Hours && (
+                                    <>
+                                        <Text style={styles.label}>Open Time</Text>
+                                        <TextInput
+                                            style={styles.input}
+                                            value={day.openTime}
+                                            onChangeText={(text) => handleWorkingHoursChange(index, 'openTime', text)}
+                                            placeholder="09:00"
+                                        />
+
+                                        <Text style={styles.label}>Close Time</Text>
+                                        <TextInput
+                                            style={styles.input}
+                                            value={day.closeTime}
+                                            onChangeText={(text) => handleWorkingHoursChange(index, 'closeTime', text)}
+                                            placeholder="17:00"
+                                        />
+                                    </>
+                                )}
+
+                                {day.isOpen && (
+                                    <View style={styles.switchContainer}>
+                                        <Text style={styles.label}>24 Hours for this day?</Text>
+                                        <TouchableOpacity
+                                            style={[styles.switchButton, day.is24Hours && styles.switchButtonActive]}
+                                            onPress={() => handleWorkingHoursChange(index, 'is24Hours', !day.is24Hours)}
+                                        >
+                                            <Text style={[styles.switchText, day.is24Hours && { color: '#FFF' }]}>
+                                                {day.is24Hours ? 'YES' : 'NO'}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                )}
+                            </View>
+                        ))}
+                    </>
+                )}
+            </View>
+
+            {/* Location */}
+            <View style={styles.card}>
+                <Text style={styles.sectionTitle}>Location (GPS)</Text>
+                {currentLocation ? (
+                    <>
+                        <Text style={styles.label}>
+                            Latitude: {currentLocation.latitude.toFixed(6)}
+                        </Text>
+                        <Text style={styles.label}>
+                            Longitude: {currentLocation.longitude.toFixed(6)}
+                        </Text>
+                        <TouchableOpacity 
+                            style={styles.locationButton} 
+                            onPress={requestLocationPermissionAndGetLocation}
+                        >
+                            <Text style={styles.locationButtonText}>Refresh Location</Text>
+                        </TouchableOpacity>
+                    </>
+                ) : (
+                    <ActivityIndicator size="small" color={colors.brandColor} />
+                )}
+            </View>
+
+            {/* Submit Button */}
+            <TouchableOpacity 
+                style={styles.submitButton} 
+                onPress={handleSubmit} 
+                disabled={isLoading}
+            >
+                {isLoading ? (
+                    <ActivityIndicator color="#FFF" />
+                ) : (
+                    <Text style={styles.submitButtonText}>
+                        {parkingLotId ? 'Update Parking Lot' : 'Save Parking Lot'}
+                    </Text>
+                )}
             </TouchableOpacity>
-          </View>
-
-          {/* Contact Info */}
-          <View style={styles.section}>
-            <SectionHeader title="Contact Info" />
-            <FormInput 
-              label="Contact Person" 
-              placeholder="Full Name" 
-              value={contactName}
-              onChangeText={setContactName}
-              icon={<User size={18} color={COLORS.textLight} />}
-            />
-            <FormInput 
-              label="Email" 
-              placeholder="email@example.com" 
-              keyboardType="email-address"
-              value={email}
-              onChangeText={setEmail}
-              icon={<Mail size={18} color={COLORS.textLight} />}
-            />
-            <FormInput 
-              label="About" 
-              placeholder="Describe your parking lot policies..." 
-              multiline={true} 
-              value={about}
-              onChangeText={setAbout}
-            />
-          </View>
-
-          {/* Availability */}
-          <View style={styles.section}>
-            <SectionHeader title="Weekly Availability" />
-            {schedule.map((dayData, index) => (
-              <DaySchedule 
-                key={dayData.day} 
-                dayData={dayData} 
-                onUpdate={updateDaySchedule} 
-              />
-            ))}
-          </View>
-
         </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
-  );
-}
+    );
+};
 
+// RegisterParkingLot
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
-  // Header
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.surface,
-    backgroundColor: COLORS.background,
-    zIndex: 10,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: COLORS.text,
-  },
-  saveBtnText: {
-    color: COLORS.primary,
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  iconBtn: {
-    padding: 4,
-  },
-  scrollContent: {
-    padding: 20,
-    paddingBottom: 50,
-  },
-  // Tabs
-  tabsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 24,
-    backgroundColor: COLORS.surface,
-    padding: 4,
-    borderRadius: 25,
-  },
-  tabInactive: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-  },
-  tabActive: {
-    backgroundColor: COLORS.primary,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    shadowColor: COLORS.primary,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-    elevation: 3,
-  },
-  tabTextInactive: { color: COLORS.textLight, fontWeight: '500', fontSize: 13 },
-  tabTextActive: { color: '#fff', fontWeight: 'bold', fontSize: 13 },
-
-  // Image Picker
-  imagePicker: {
-    borderWidth: 2,
-    borderColor: COLORS.primary,
-    borderStyle: 'dashed',
-    borderRadius: 16,
-    height: 120,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 24,
-    backgroundColor: COLORS.secondary,
-  },
-  imagePickerText: {
-    color: COLORS.primary,
-    marginTop: 8,
-    fontSize: 14,
-    fontWeight: '600',
-  },
-
-  // Inputs
-  inputGroup: { marginBottom: 16 },
-  inputLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: COLORS.text,
-    marginBottom: 6,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  inputContainer: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    height: 48,
-  },
-  textAreaContainer: { height: 100, alignItems: 'flex-start', paddingTop: 12 },
-  inputIconWrapper: { marginRight: 10 },
-  input: { flex: 1, color: COLORS.text, fontSize: 15 },
-  textArea: { textAlignVertical: 'top' },
-
-  // Section Headers
-  section: { marginBottom: 30 },
-  sectionHeaderContainer: { marginBottom: 16 },
-  sectionHeader: { fontSize: 18, fontWeight: '800', color: COLORS.text },
-  sectionSubtitle: { fontSize: 13, color: COLORS.primary, fontWeight: '600', marginTop: 2 },
-
-  // Vehicle Type
-  vehicleRow: { flexDirection: 'row', gap: 12 },
-  vehicleBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 10,
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    alignItems: 'center',
-  },
-  vehicleBtnActive: {
-    backgroundColor: COLORS.secondary,
-    borderColor: COLORS.primary,
-  },
-  vehicleBtnText: { color: COLORS.textLight, fontWeight: '600' },
-  vehicleBtnTextActive: { color: COLORS.primary, fontWeight: '700' },
-
-  // Zones
-  zoneRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-    gap: 8,
-  },
-  zoneInputWrapper: { flex: 1 },
-  zoneLabel: { fontSize: 10, color: COLORS.textLight, marginBottom: 4, fontWeight: '600' },
-  zoneInput: {
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 8,
-    height: 42,
-    paddingHorizontal: 10,
-    color: COLORS.text,
-    fontSize: 14,
-  },
-  removeZoneBtn: {
-    height: 42,
-    width: 42,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FEF2F2',
-    borderRadius: 8,
-  },
-  addZoneBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 14,
-    borderWidth: 1,
-    borderColor: COLORS.primary,
-    borderStyle: 'dashed',
-    borderRadius: 12,
-    marginTop: 8,
-    backgroundColor: COLORS.secondary,
-  },
-  addZoneText: { color: COLORS.primary, fontWeight: '700', marginLeft: 6 },
-
-  // Day Schedule Card
-  dayCard: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-    // Subtle shadow
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  dayHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  dayBody: {
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.surface,
-  },
-  dayTitle: { fontWeight: '800', fontSize: 16, color: COLORS.text },
-  timeRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  subLabel: { fontSize: 11, color: COLORS.textLight, marginBottom: 4, fontWeight: '600' },
-  timeInput: {
-    backgroundColor: COLORS.surface,
-    height: 40,
-    borderRadius: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  disabledInput: { backgroundColor: '#E5E7EB', borderColor: '#E5E7EB' },
-  timeText: { fontWeight: '600', color: COLORS.text },
-  dayFooter: { marginTop: 12, alignItems: 'flex-start' },
-
-  // Custom Toggle
-  toggleWrapper: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  toggleContainer: {
-    width: 64,
-    height: 32,
-    borderRadius: 20,
-    borderWidth: 2,
-    justifyContent: 'center',
-    paddingHorizontal: 4,
-  },
-  toggleInternal: { flexDirection: 'row', width: '100%', justifyContent: 'center' },
-  toggleText: { fontSize: 10, fontWeight: '800' },
-  toggleKnob: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#fff',
-    position: 'absolute',
-    shadowColor: '#000',
-    shadowOpacity: 0.2,
-    shadowRadius: 1,
-    elevation: 2,
-  },
+    container: { flex: 1, backgroundColor: '#FAFAFA' },
+    contentContainer: { paddingBottom: 30 },
+    loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+    header: { 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        justifyContent: 'space-between', 
+        paddingHorizontal: responsiveWidth(5), 
+        paddingVertical: responsiveHeight(2), 
+        backgroundColor: '#FFF', 
+        borderBottomWidth: 1, 
+        borderBottomColor: '#EEE', 
+        marginTop: Platform.OS === 'ios' ? responsiveHeight(6) : responsiveHeight(2) 
+    },
+    headerTitle: { fontSize: responsiveFontSize(2.5), color: colors.black, fontWeight: 'bold' },
+    submitText: { color: colors.brandColor, fontSize: responsiveFontSize(2), fontWeight: 'bold' },
+    tabContainer: { 
+        flexDirection: 'row', 
+        justifyContent: 'center', 
+        marginVertical: responsiveHeight(2),
+        backgroundColor: '#FFF',
+        paddingVertical: responsiveHeight(1),
+    },
+    tabButton: {
+        paddingVertical: responsiveHeight(1.2),
+        paddingHorizontal: responsiveWidth(5),
+        borderRadius: 20,
+        marginHorizontal: responsiveWidth(1),
+        backgroundColor: '#E0E0E0',
+    },
+    activeTab: {
+        backgroundColor: colors.brandColor,
+    },
+    tabText: {
+        fontSize: responsiveFontSize(1.8),
+        color: colors.black,
+        fontWeight: '500',
+    },
+    activeTabText: {
+        color: '#FFF',
+    },
+    imageUploadContainer: { marginHorizontal: responsiveWidth(5), marginVertical: responsiveHeight(2) },
+    imageUploadButton: { 
+        borderWidth: 1, 
+        borderColor: colors.brandColor, 
+        borderRadius: 10, 
+        padding: responsiveWidth(4), 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        flexDirection: 'row', 
+        borderStyle: 'dashed' 
+    },
+    imageUploadText: { color: colors.brandColor, fontSize: responsiveFontSize(1.8), marginLeft: responsiveWidth(2) },
+    imagePreviewContainer: { flexDirection: 'row', flexWrap: 'wrap', marginTop: responsiveHeight(1) },
+    imageWrapper: { position: 'relative', margin: responsiveWidth(1) },
+    imagePreview: { width: responsiveWidth(25), height: responsiveWidth(25), borderRadius: 10 },
+    deleteImageButton: { 
+        position: 'absolute', 
+        top: -5, 
+        right: -5, 
+        backgroundColor: 'white', 
+        borderRadius: 15,
+        padding: 2 
+    },
+    card: { 
+        backgroundColor: '#FFF', 
+        marginHorizontal: responsiveWidth(5), 
+        marginBottom: responsiveHeight(2), 
+        padding: responsiveWidth(4), 
+        borderRadius: 10, 
+        shadowColor: '#000', 
+        shadowOffset: { width: 0, height: 2 }, 
+        shadowOpacity: 0.1, 
+        shadowRadius: 4, 
+        elevation: 3 
+    },
+    inputContainer: { flex: 1 },
+    label: { fontSize: responsiveFontSize(1.8), color: colors.gray, marginBottom: responsiveHeight(0.5) },
+    input: { 
+        backgroundColor: '#F5F5F5', 
+        borderRadius: 8, 
+        borderWidth: 1, 
+        borderColor: colors.lightGray, 
+        paddingVertical: responsiveHeight(1.5), 
+        paddingHorizontal: responsiveWidth(4), 
+        fontSize: responsiveFontSize(1.8), 
+        color: colors.black, 
+        marginBottom: responsiveHeight(1.5) 
+    },
+    sectionTitle: { 
+        fontSize: responsiveFontSize(2.2), 
+        fontWeight: 'bold', 
+        color: colors.black, 
+        marginBottom: responsiveHeight(1.5) 
+    },
+    vehicleTypeContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginBottom: responsiveHeight(2),
+    },
+    vehicleTypeButton: {
+        flex: 1,
+        paddingVertical: responsiveHeight(1.5),
+        borderRadius: 8,
+        borderWidth: 1.5,
+        borderColor: colors.lightGray,
+        alignItems: 'center',
+        marginHorizontal: responsiveWidth(1),
+    },
+    vehicleTypeButtonActive: {
+        borderColor: colors.brandColor,
+        backgroundColor: '#E3F2FD',
+    },
+    vehicleTypeButtonText: {
+        fontSize: responsiveFontSize(1.8),
+        color: colors.gray,
+        fontWeight: '600',
+    },
+    vehicleTypeButtonTextActive: {
+        color: colors.brandColor,
+    },
+    zoneInputContainer: { flexDirection: 'row', alignItems: 'center', marginBottom: responsiveHeight(1) },
+    zoneLabel: { 
+        fontSize: responsiveFontSize(1.8), 
+        fontWeight: 'bold', 
+        color: colors.black, 
+        marginRight: responsiveWidth(2), 
+        minWidth: responsiveWidth(15) 
+    },
+    removeButton: { marginLeft: responsiveWidth(2), padding: responsiveWidth(2) },
+    addButton: { 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        padding: responsiveWidth(3), 
+        borderWidth: 1, 
+        borderColor: colors.brandColor, 
+        borderRadius: 8, 
+        marginTop: responsiveHeight(1), 
+        borderStyle: 'dashed' 
+    },
+    addButtonText: { 
+        color: colors.brandColor, 
+        fontSize: responsiveFontSize(1.8), 
+        marginLeft: responsiveWidth(2), 
+        fontWeight: '600' 
+    },
+    switchContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: responsiveHeight(2),
+        paddingVertical: responsiveHeight(0.5),
+    },
+    switchButton: {
+        paddingVertical: responsiveHeight(0.5),
+        paddingHorizontal: responsiveWidth(4),
+        borderRadius: 15,
+        borderWidth: 1,
+        borderColor: colors.lightGray,
+        backgroundColor: '#F5F5F5',
+    },
+    switchButtonActive: {
+        backgroundColor: colors.brandColor,
+        borderColor: colors.brandColor,
+    },
+    switchText: {
+        fontSize: responsiveFontSize(1.6),
+        color: colors.gray,
+        fontWeight: '600',
+    },
+    dayContainer: {
+        marginBottom: responsiveHeight(2),
+        paddingBottom: responsiveHeight(2),
+        borderBottomWidth: 1,
+        borderBottomColor: '#EEE',
+    },
+    dayLabel: {
+        fontSize: responsiveFontSize(2),
+        fontWeight: 'bold',
+        color: colors.black,
+        marginBottom: responsiveHeight(1),
+    },
+    locationButton: {
+        backgroundColor: colors.brandColor,
+        paddingVertical: responsiveHeight(1.5),
+        paddingHorizontal: responsiveWidth(4),
+        borderRadius: 8,
+        alignItems: 'center',
+        marginTop: responsiveHeight(1),
+    },
+    locationButtonText: {
+        color: '#FFF',
+        fontSize: responsiveFontSize(1.8),
+        fontWeight: '600',
+    },
+    submitButton: {
+        backgroundColor: colors.brandColor,
+        marginHorizontal: responsiveWidth(5),
+        paddingVertical: responsiveHeight(2),
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: responsiveHeight(2),
+    },
+    submitButtonText: {
+        color: '#FFF',
+        fontSize: responsiveFontSize(2.2),
+        fontWeight: 'bold',
+    },
 });
+
+export default RegisterParkingLot;

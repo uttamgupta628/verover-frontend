@@ -114,7 +114,7 @@ export default function MerchantHome() {
           <Image source={images.Cleaning} style={styles.cleaningImage} />
           <Text style={styles.buttonText}>Add Dry Cleaner</Text>
         </TouchableOpacity>
-        <TouchableOpacity
+        {/* <TouchableOpacity
           style={styles.buttonMargin}
           onPress={() => {
             router.push("/dryCleanerMerchant");
@@ -126,7 +126,7 @@ export default function MerchantHome() {
             color={colors.brandColor}
           />
           <Text style={styles.buttonText}>Add Parking</Text>
-        </TouchableOpacity>
+        </TouchableOpacity> */}
         <TouchableOpacity
           style={styles.buttonMargin}
           onPress={() => {
@@ -140,19 +140,21 @@ export default function MerchantHome() {
           />
           <Text style={styles.buttonText}>History</Text>
         </TouchableOpacity>
-      </View>
-
-      {/* Third Row - Exact same spacing */}
-      <View style={styles.thirdRow}>
         <TouchableOpacity
-          style={styles.button}
+          style={[styles.button, { marginLeft: 20 }]}
           onPress={() => {
             router.push("/dryCleanerMerchant/myDryCleaners");
           }}
         >
+          
           <Image source={images.Cleaning} style={styles.myCleaningImage} />
           <Text style={styles.buttonText}>My Dry Cleaners</Text>
         </TouchableOpacity>
+      </View>
+
+      {/* Third Row - Exact same spacing */}
+      <View style={styles.thirdRow}>
+        
         {/* Optional: Add more buttons here if needed */}
         <View style={styles.placeholderButton} />
         <View style={styles.placeholderButton} />

@@ -1,301 +1,420 @@
-import React from "react";
+import React, { useState, useCallback } from 'react';
 import {
-	View,
-	Text,
-	Image,
-	FlatList,
-	StyleSheet,
-	StatusBar,
-	TouchableOpacity,
-} from "react-native";
-import { ArrowLeft, Plus, Phone } from "lucide-react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+    View,
+    Text,
+    Image,
+    TouchableOpacity,
+    StyleSheet,
+    ActivityIndicator,
+    FlatList,
+    Platform,
+} from 'react-native';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { responsiveHeight, responsiveWidth, responsiveFontSize } from 'react-native-responsive-dimensions';
+import colors from '../../assets/color';
+import { images } from '../../assets/images/images';
+import { useSelector } from 'react-redux';
+import { RootState } from '../../components/redux/store';
+import axiosInstance from '../../api/axios';
+import { ArrowLeft, Plus, Phone, Video } from 'lucide-react-native';
 
-// Dummy Data for Residential Parking
-const RESIDENCE_DATA = [
-	{
-		id: "1",
-		title: "Green Valley Apartments",
-		address: "123 Park Avenue, Downtown",
-		price: "50.00",
-		slots: "45",
-		phone: "+9145304943983",
-		status: "24/7 Open",
-		logo: "https://cdn-icons-png.flaticon.com/512/3097/3097170.png",
-		email: "greenvalley@residential.com",
-		latitude: "37.421998",
-		longitude: "-122.084000",
-		zones: [
-			{ id: "z1", name: "Building A", slots: "20", price: "50.00" },
-			{ id: "z2", name: "Building B", slots: "25", price: "50.00" },
-		],
-		description: "Secure residential parking for Green Valley Apartments residents. 24/7 access with electronic gates.",
-		images: [
-			"https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?q=80&w=2070&auto=format&fit=crop",
-		],
-	},
-	{
-		id: "2",
-		title: "Sunset Heights",
-		address: "456 Oak Street, West Side",
-		price: "60.00",
-		slots: "30",
-		phone: "+9145304943984",
-		status: "Limited Hours",
-		logo: "https://cdn-icons-png.flaticon.com/512/3097/3097170.png",
-		email: "sunset@residential.com",
-		latitude: "37.422998",
-		longitude: "-122.085000",
-		zones: [
-			{ id: "z1", name: "Tower 1", slots: "15", price: "60.00" },
-			{ id: "z2", name: "Tower 2", slots: "15", price: "60.00" },
-		],
-		description: "Residential parking with covered spaces. Access hours: 6 AM - 10 PM.",
-		images: [
-			"https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=2070&auto=format&fit=crop",
-		],
-	},
-	{
-		id: "3",
-		title: "Riverside Complex",
-		address: "789 River Road, East End",
-		price: "45.00",
-		slots: "60",
-		phone: "+9145304943985",
-		status: "24/7 Open",
-		logo: "https://cdn-icons-png.flaticon.com/512/3097/3097170.png",
-		email: "riverside@residential.com",
-		latitude: "37.423998",
-		longitude: "-122.086000",
-		zones: [
-			{ id: "z1", name: "Block A", slots: "30", price: "45.00" },
-			{ id: "z2", name: "Block B", slots: "30", price: "45.00" },
-		],
-		description: "Large residential parking facility with ample space for residents and guests.",
-		images: [],
-	},
-];
-
-const Header = ({ router }: any) => (
-	<View style={styles.headerContainer}>
-		<TouchableOpacity onPress={() => router.back()}>
-			<ArrowLeft color="#F59E0B" size={28} />
-		</TouchableOpacity>
-		<Text style={styles.headerTitle}>My Residences</Text>
-		<TouchableOpacity onPress={() => router.push("/parkingMerchent/registerResidence")}>
-			<Plus color="#F59E0B" size={28} />
-		</TouchableOpacity>
-	</View>
-);
-
-const ResidenceCard = ({ item, router }: any) => {
-	const handlePress = () => {
-		router.push({
-			pathname: "/parkingMerchent/merchantResidenceDetails",
-			params: {
-				id: item.id,
-				title: item.title,
-				address: item.address,
-				location: item.address,
-				price: item.price,
-				slots: item.slots,
-				phone: item.phone,
-				status: item.status,
-				logo: item.logo,
-				email: item.email,
-				latitude: item.latitude,
-				longitude: item.longitude,
-				description: item.description,
-				zones: JSON.stringify(item.zones),
-				images: JSON.stringify(item.images.length > 0 ? item.images : [item.logo]),
-			},
-		});
-	};
-
-	const isLimited = item.status === "Limited Hours";
-
-	return (
-		<TouchableOpacity
-			activeOpacity={0.9}
-			onPress={handlePress}
-			style={styles.cardContainer}>
-			{/* Dark Blue Header with Logo */}
-			<View style={styles.cardHeaderBackground}>
-				<View style={styles.logoWrapper}>
-					<Image
-						source={{ uri: item.logo }}
-						style={styles.logoImage}
-						resizeMode="contain"
-					/>
-					<Text style={styles.brandName}>RESIDENTIAL</Text>
-				</View>
-			</View>
-
-			{/* White Info Body */}
-			<View style={styles.cardBody}>
-				<Text style={styles.cardTitle}>{item.title}</Text>
-				<Text style={styles.cardAddress}>{item.address}</Text>
-
-				{/* Price and Slots */}
-				<View style={styles.rowBetween}>
-					<Text style={styles.label}>
-						Price: <Text style={styles.priceText}>${item.price}/month</Text>
-					</Text>
-					<Text style={styles.label}>
-						Total Slots: <Text style={styles.slotsText}>{item.slots}</Text>
-					</Text>
-				</View>
-
-				{/* Phone and Status Button */}
-				<View style={[styles.rowBetween, { marginTop: 15 }]}>
-					<View style={styles.phoneContainer}>
-						<Phone color="#F59E0B" size={18} />
-						<Text style={styles.phoneNumber}>{item.phone}</Text>
-					</View>
-
-					<View
-						style={[
-							styles.statusButton,
-							isLimited ? styles.statusRed : styles.statusGreen,
-						]}>
-						<Text style={styles.statusButtonText}>{item.status}</Text>
-					</View>
-				</View>
-			</View>
-		</TouchableOpacity>
-	);
-};
-
-export default function MyResidencesList() {
-	const router = useRouter();
-	
-	return (
-		<SafeAreaView style={styles.container}>
-			<StatusBar barStyle="dark-content" backgroundColor="#fff" />
-			<Header router={router} />
-			<FlatList
-				data={RESIDENCE_DATA}
-				keyExtractor={(item) => item.id}
-				renderItem={({ item }) => (
-					<ResidenceCard item={item} router={router} />
-				)}
-				contentContainerStyle={styles.listContent}
-				showsVerticalScrollIndicator={false}
-			/>
-		</SafeAreaView>
-	);
+// Interface for the residence data displayed in the list
+interface IResidence {
+    _id: string;
+    residenceName: string;
+    address: string;
+    images: string[];
+    price: number;
+    contactNumber: string;
+    is24x7: boolean;
+    securityCamera: boolean;
 }
 
+const MerchantResidenceList = () => {
+    const router = useRouter();
+    const { token, user } = useSelector((state: RootState) => state.auth);
+    const [residences, setResidences] = useState<IResidence[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [refreshing, setRefreshing] = useState(false);
+
+    // Fetch residences owned by the current merchant
+    const fetchResidences = useCallback(async () => {
+        setRefreshing(true);
+        setError(null);
+        try {
+            const response = await axiosInstance.get('/merchants/residence/search', {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                },
+                params: {
+                    owner: user?._id,
+                },
+            });
+
+            if (response.data && response.data.data) {
+                setResidences(response.data.data);
+            } else {
+                setResidences([]);
+            }
+        } catch (err: any) {
+            console.error('Error fetching residences:', err.response?.data || err.message);
+            setError('Failed to load residences. ' + (err.response?.data?.message || ''));
+        } finally {
+            setIsLoading(false);
+            setRefreshing(false);
+        }
+    }, [token, user?._id]);
+
+    // useFocusEffect ensures data is re-fetched every time the screen is focused
+    useFocusEffect(
+        useCallback(() => {
+            fetchResidences();
+        }, [fetchResidences])
+    );
+
+    const handleRefresh = () => {
+        fetchResidences();
+    };
+
+    const handleAddResidence = () => {
+        router.push("/parkingMerchent/registerResidence");
+    };
+
+    const handleResidencePress = (residence: IResidence) => {
+        router.push({
+            pathname: "/parkingMerchent/merchantResidenceDetails",
+            params: {
+                residenceId: residence._id,
+                residenceData: JSON.stringify(residence),
+            }
+        });
+        console.log('residenceID', residence._id);
+    };
+
+    if (isLoading) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={colors.brandColor} />
+            </View>
+        );
+    }
+
+    const renderHeader = () => (
+        <View style={styles.header}>
+            <TouchableOpacity onPress={() => router.back()}>
+                <ArrowLeft size={30} color={colors.brandColor} />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>My Residences</Text>
+            <TouchableOpacity onPress={handleAddResidence}>
+                <Plus size={30} color={colors.brandColor} />
+            </TouchableOpacity>
+        </View>
+    );
+
+    if (error) {
+        return (
+            <SafeAreaView style={styles.container}>
+                {renderHeader()}
+                <View style={styles.errorContainer}>
+                    <Text style={styles.errorText}>{error}</Text>
+                    <TouchableOpacity style={styles.retryButton} onPress={handleRefresh}>
+                        <Text style={styles.retryButtonText}>Retry</Text>
+                    </TouchableOpacity>
+                </View>
+            </SafeAreaView>
+        );
+    }
+
+    return (
+        <SafeAreaView style={styles.container}>
+            {renderHeader()}
+            {residences.length === 0 ? (
+                <View style={styles.emptyContainer}>
+                    <Image
+                        source={images.emptyParkingLot}
+                        style={styles.emptyImage}
+                        resizeMode="contain"
+                    />
+                    <Text style={styles.emptyText}>You don't have any residences yet</Text>
+                    <TouchableOpacity style={styles.addButton} onPress={handleAddResidence}>
+                        <Text style={styles.addButtonText}>Add Your First Residence</Text>
+                    </TouchableOpacity>
+                </View>
+            ) : (
+                <FlatList
+                    data={residences}
+                    keyExtractor={(item) => item._id}
+                    renderItem={({ item }) => (
+                        <TouchableOpacity
+                            style={styles.card}
+                            onPress={() => handleResidencePress(item)}
+                            activeOpacity={0.8}
+                        >
+                            <View style={styles.imageContainer}>
+                                {item.images?.[0] ? (
+                                    <Image 
+                                        source={{ uri: item.images[0] }} 
+                                        style={styles.residenceImage}
+                                        onError={(e) => console.log('Image load error:', e.nativeEvent.error)}
+                                    />
+                                ) : (
+                                    <View style={styles.placeholderImage}>
+                                        <Text style={styles.placeholderText}>🏠</Text>
+                                    </View>
+                                )}
+                            </View>
+
+                            <View style={styles.infoContainer}>
+                                <Text style={styles.residenceName} numberOfLines={1}>
+                                    {item.residenceName}
+                                </Text>
+                                <Text style={styles.address} numberOfLines={2}>
+                                    {item.address}
+                                </Text>
+
+                                <View style={styles.detailsRow}>
+                                    <View style={styles.priceContainer}>
+                                        <Text style={styles.priceLabel}>From:</Text>
+                                        <Text style={styles.priceValue}>
+                                            ${item.price.toFixed(2)}/night
+                                        </Text>
+                                    </View>
+                                    {item.securityCamera && (
+                                        <View style={styles.featureContainer}>
+                                            <Video size={16} color={colors.brandColor} />
+                                            <Text style={styles.featureText}>CCTV</Text>
+                                        </View>
+                                    )}
+                                </View>
+
+                                <View style={styles.footerRow}>
+                                    <View style={styles.contactContainer}>
+                                        <Phone size={16} color={colors.brandColor} />
+                                        <Text style={styles.contactText} numberOfLines={1}>
+                                            {item.contactNumber}
+                                        </Text>
+                                    </View>
+                                    <View style={[
+                                        styles.statusBadge, 
+                                        item.is24x7 ? styles.openBadge : styles.closedBadge
+                                    ]}>
+                                        <Text style={styles.statusText}>
+                                            {item.is24x7 ? '24/7 Check-in' : 'Standard Hours'}
+                                        </Text>
+                                    </View>
+                                </View>
+                            </View>
+                        </TouchableOpacity>
+                    )}
+                    contentContainerStyle={styles.listContent}
+                    refreshing={refreshing}
+                    onRefresh={handleRefresh}
+                    ListFooterComponent={<View style={{ height: responsiveHeight(5) }} />}
+                />
+            )}
+        </SafeAreaView>
+    );
+};
+
 const styles = StyleSheet.create({
-	container: { 
-		flex: 1, 
-		backgroundColor: "#F8F9FA" 
-	},
-	headerContainer: {
-		flexDirection: "row",
-		alignItems: "center",
-		justifyContent: "space-between",
-		paddingHorizontal: 20,
-		paddingVertical: 15,
-		backgroundColor: "#fff",
-		borderBottomWidth: 1,
-		borderBottomColor: "#eee",
-	},
-	headerTitle: { 
-		fontSize: 20, 
-		fontWeight: "bold", 
-		color: "#000" 
-	},
-	listContent: { 
-		padding: 16 
-	},
-	cardContainer: {
-		borderRadius: 16,
-		marginBottom: 20,
-		overflow: "hidden",
-		backgroundColor: "#fff",
-		elevation: 4,
-		shadowColor: "#000",
-		shadowOffset: { width: 0, height: 2 },
-		shadowOpacity: 0.1,
-		shadowRadius: 4,
-	},
-	cardHeaderBackground: {
-		backgroundColor: "#050B20",
-		height: 140,
-		justifyContent: "center",
-		alignItems: "center",
-	},
-	logoWrapper: { 
-		alignItems: "center" 
-	},
-	logoImage: { 
-		width: 60, 
-		height: 60, 
-		tintColor: "#F59E0B" 
-	},
-	brandName: { 
-		color: "#F59E0B", 
-		fontSize: 14, 
-		marginTop: 5, 
-		letterSpacing: 1 
-	},
-	cardBody: { 
-		padding: 16, 
-		backgroundColor: "#fff" 
-	},
-	cardTitle: {
-		fontSize: 18,
-		fontWeight: "bold",
-		color: "#000",
-		marginBottom: 4,
-	},
-	cardAddress: { 
-		fontSize: 14, 
-		color: "#888", 
-		marginBottom: 12 
-	},
-	rowBetween: {
-		flexDirection: "row",
-		justifyContent: "space-between",
-		alignItems: "center",
-	},
-	label: { 
-		fontSize: 14, 
-		color: "#888" 
-	},
-	priceText: { 
-		color: "#F59E0B", 
-		fontWeight: "bold" 
-	},
-	slotsText: { 
-		color: "#000", 
-		fontWeight: "bold" 
-	},
-	phoneContainer: { 
-		flexDirection: "row", 
-		alignItems: "center", 
-		gap: 6 
-	},
-	phoneNumber: { 
-		color: "#666", 
-		fontSize: 14 
-	},
-	statusButton: { 
-		paddingVertical: 6, 
-		paddingHorizontal: 16, 
-		borderRadius: 20 
-	},
-	statusRed: { 
-		backgroundColor: "#FF4444" 
-	},
-	statusGreen: { 
-		backgroundColor: "#4CAF50" 
-	},
-	statusButtonText: { 
-		color: "#fff", 
-		fontSize: 12, 
-		fontWeight: "600" 
-	},
+    container: {
+        flex: 1,
+        backgroundColor: '#F8F9FA',
+    },
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    header: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: responsiveWidth(5),
+        paddingVertical: responsiveHeight(2),
+        backgroundColor: '#FFF',
+        borderBottomWidth: 1,
+        borderBottomColor: colors.lightGray,
+    },
+    headerTitle: {
+        fontSize: responsiveFontSize(2.5),
+        fontWeight: 'bold',
+        color: colors.black,
+    },
+    listContent: {
+        paddingHorizontal: responsiveWidth(5),
+        paddingTop: responsiveHeight(2),
+    },
+    card: {
+        width: '100%',
+        backgroundColor: '#FFF',
+        borderRadius: 12,
+        marginBottom: responsiveHeight(2.5),
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 5,
+        elevation: 4,
+        overflow: 'hidden',
+    },
+    imageContainer: {
+        height: responsiveHeight(22),
+        width: '100%',
+        backgroundColor: colors.lightGray,
+    },
+    residenceImage: {
+        height: '100%',
+        width: '100%',
+        resizeMode: 'cover',
+    },
+    placeholderImage: {
+        height: '100%',
+        width: '100%',
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#E9ECEF',
+    },
+    placeholderText: {
+        fontSize: 80,
+    },
+    infoContainer: {
+        padding: responsiveWidth(4),
+    },
+    residenceName: {
+        fontSize: responsiveFontSize(2.2),
+        fontWeight: '700',
+        color: colors.black,
+        marginBottom: responsiveHeight(0.5),
+    },
+    address: {
+        fontSize: responsiveFontSize(1.8),
+        color: colors.gray,
+        marginBottom: responsiveHeight(1.5),
+        lineHeight: responsiveHeight(2.2),
+    },
+    detailsRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: responsiveHeight(1.5),
+    },
+    priceContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    priceLabel: {
+        fontSize: responsiveFontSize(1.8),
+        color: colors.gray,
+        marginRight: responsiveWidth(1),
+    },
+    priceValue: {
+        fontSize: responsiveFontSize(2),
+        fontWeight: 'bold',
+        color: colors.brandColor,
+    },
+    featureContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#E8F5E9',
+        paddingHorizontal: responsiveWidth(2),
+        paddingVertical: responsiveHeight(0.5),
+        borderRadius: 8,
+    },
+    featureText: {
+        fontSize: responsiveFontSize(1.6),
+        color: '#2E7D32',
+        marginLeft: responsiveWidth(1.5),
+        fontWeight: '500',
+    },
+    footerRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginTop: responsiveHeight(1),
+        borderTopWidth: 1,
+        borderTopColor: '#EEE',
+        paddingTop: responsiveHeight(1.5),
+    },
+    contactContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+        marginRight: responsiveWidth(2),
+    },
+    contactText: {
+        fontSize: responsiveFontSize(1.7),
+        color: colors.gray,
+        marginLeft: responsiveWidth(1.5),
+    },
+    statusBadge: {
+        paddingHorizontal: responsiveWidth(3),
+        paddingVertical: responsiveHeight(0.8),
+        borderRadius: 12,
+    },
+    openBadge: {
+        backgroundColor: '#4CAF50',
+    },
+    closedBadge: {
+        backgroundColor: '#FF9800',
+    },
+    statusText: {
+        fontSize: responsiveFontSize(1.5),
+        fontWeight: 'bold',
+        color: colors.white,
+    },
+    emptyContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: responsiveWidth(10),
+    },
+    emptyImage: {
+        width: responsiveWidth(50),
+        height: responsiveWidth(50),
+        marginBottom: responsiveHeight(3),
+    },
+    emptyText: {
+        fontSize: responsiveFontSize(2.2),
+        color: colors.gray,
+        textAlign: 'center',
+        marginBottom: responsiveHeight(3),
+    },
+    addButton: {
+        backgroundColor: colors.brandColor,
+        paddingVertical: responsiveHeight(1.8),
+        paddingHorizontal: responsiveWidth(8),
+        borderRadius: 10,
+    },
+    addButtonText: {
+        color: '#FFF',
+        fontSize: responsiveFontSize(2),
+        fontWeight: 'bold',
+    },
+    errorContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: responsiveWidth(10),
+    },
+    errorText: {
+        fontSize: responsiveFontSize(1.8),
+        color: colors.error,
+        textAlign: 'center',
+        marginBottom: responsiveHeight(2),
+    },
+    retryButton: {
+        backgroundColor: colors.brandColor,
+        paddingVertical: responsiveHeight(1.5),
+        paddingHorizontal: responsiveWidth(8),
+        borderRadius: 8,
+    },
+    retryButtonText: {
+        color: '#FFF',
+        fontSize: responsiveFontSize(1.8),
+        fontWeight: 'bold',
+    },
 });
+
+export default MerchantResidenceList;

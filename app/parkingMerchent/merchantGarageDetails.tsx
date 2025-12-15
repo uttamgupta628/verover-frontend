@@ -1,793 +1,1191 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
   Image,
-  StyleSheet,
   TouchableOpacity,
+  StyleSheet,
   ScrollView,
-  Dimensions,
-  FlatList,
-  Alert,
   TextInput,
+  ActivityIndicator,
+  Alert,
+  RefreshControl,
+  Switch,
   Platform,
-  KeyboardAvoidingView,
-  LayoutAnimation,
-  UIManager,
 } from 'react-native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { ArrowLeft, ChevronLeft, ChevronRight, Trash2, Plus, X, Camera } from 'lucide-react-native';
+import { responsiveHeight, responsiveWidth, responsiveFontSize } from 'react-native-responsive-dimensions';
+import colors from '../../assets/color';
+import { images } from '../../assets/images/images';
+import { useSelector } from 'react-redux';
+import { RootState } from '../../components/redux/store';
+import axiosInstance from '../../api/axios';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import * as ImagePicker from 'expo-image-picker';
+import { ArrowLeft, Plus, X, AlertCircle, MapPin, Clock, Phone, Mail, Trash2 } from 'lucide-react-native';
 
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
+interface SpaceInfo {
+  count: number;
+  price: number;
 }
 
-const { width } = Dimensions.get('window');
-
-const COLORS = {
-  primary: '#F59E0B',
-  secondary: '#FFF7ED',
-  surface: '#F8F9FA',
-  text: '#1F2937',
-  textLight: '#6B7280',
-  border: '#E5E7EB',
-  danger: '#EF4444',
-};
-
-interface Zone {
-  id: string;
-  name: string;
-  slots: string;
-  price: string;
+interface WorkingHours {
+  day: 'SUN' | 'MON' | 'TUE' | 'WED' | 'THU' | 'FRI' | 'SAT';
+  isOpen: boolean;
+  openTime?: string;
+  closeTime?: string;
+  is24Hours: boolean;
 }
 
-const CustomToggle = ({ value, onToggle, activeLabel = 'OPEN', inactiveLabel = 'CLOSED' }: any) => (
-  <TouchableOpacity
-    activeOpacity={0.8}
-    onPress={onToggle}
-    style={[
-      styles.toggleContainer,
-      { 
-        backgroundColor: value ? COLORS.primary : COLORS.surface,
-        borderColor: value ? COLORS.primary : COLORS.border 
-      }
-    ]}
-  >
-    <View style={styles.toggleInternal}>
-      <Text style={[styles.toggleText, { color: value ? '#fff' : COLORS.textLight }]}>
-        {value ? activeLabel : inactiveLabel}
-      </Text>
-    </View>
-    <View style={[styles.toggleKnob, value ? { right: 2 } : { left: 2 }]} />
-  </TouchableOpacity>
-);
-
-const DaySchedule = ({ dayData, onUpdate, isEditing }: any) => {
-  const { day, isOpen, openTime, closeTime, is24Hours } = dayData;
-
-  const handleToggleOpen = () => {
-    if (!isEditing) return;
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    onUpdate({ ...dayData, isOpen: !isOpen });
+interface Garage {
+  _id: string;
+  garageName: string;
+  about: string;
+  address: string;
+  contactNumber: string;
+  email?: string;
+  price: number;
+  images: string[];
+  spacesList: Record<string, SpaceInfo>;
+  generalAvailable: WorkingHours[];
+  is24x7: boolean;
+  location: {
+    type: 'Point';
+    coordinates: [number, number];
   };
-
-  const handleToggle24Hr = () => {
-    if (!isEditing) return;
-    onUpdate({ ...dayData, is24Hours: !is24Hours });
+  emergencyContact?: {
+    person: string;
+    number: string;
   };
+  vehicleType: 'bike' | 'car' | 'both';
+}
 
-  return (
-    <View style={styles.dayCard}>
-      <View style={styles.dayHeader}>
-        <Text style={styles.dayTitle}>{day}</Text>
-        <CustomToggle value={isOpen} onToggle={handleToggleOpen} />
-      </View>
-
-      {isOpen && (
-        <View style={styles.dayBody}>
-          <View style={styles.timeRow}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.subLabel}>Open Time</Text>
-              <View style={[styles.timeInput, is24Hours && styles.disabledInput]}>
-                <Text style={styles.timeText}>{is24Hours ? '00:00' : openTime}</Text>
-              </View>
-            </View>
-            <View style={{ width: 15 }} />
-            <View style={{ flex: 1 }}>
-              <Text style={styles.subLabel}>Close Time</Text>
-              <View style={[styles.timeInput, is24Hours && styles.disabledInput]}>
-                <Text style={styles.timeText}>{is24Hours ? '23:59' : closeTime}</Text>
-              </View>
-            </View>
-          </View>
-          
-          <View style={styles.dayFooter}>
-            <Text style={styles.toggleLabel}>24 Hours?</Text>
-            <CustomToggle 
-              value={is24Hours} 
-              onToggle={handleToggle24Hr}
-              activeLabel="YES"
-              inactiveLabel="NO"
-            />
-          </View>
-        </View>
-      )}
-    </View>
-  );
-};
-
-export default function MerchantGarageDetails() {
+const MerchantGarageDetails = () => {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const { garageId, garageData: garageDataParam } = params;
   
-  const parseZones = (): Zone[] => {
-    try {
-      if (params.zones && typeof params.zones === 'string') {
-        return JSON.parse(params.zones);
-      }
-    } catch (e) {
-      console.error('Error parsing zones:', e);
-    }
-    return [{ id: '1', name: 'Zone A', slots: '10', price: '100.00' }];
-  };
-
-  const parseImages = (): string[] => {
-    try {
-      if (params.images && typeof params.images === 'string') {
-        const parsed = JSON.parse(params.images);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
-      }
-    } catch (e) {
-      console.error('Error parsing images:', e);
-    }
-    
-    if (params.logo && typeof params.logo === 'string') {
-      return [params.logo];
-    }
-    
-    return ['https://images.unsplash.com/photo-1590674899505-1c5c41951f89?q=80&w=2070&auto=format&fit=crop'];
-  };
+  const initialGarageData = garageDataParam ? JSON.parse(garageDataParam as string) : null;
   
+  const { token } = useSelector((state: RootState) => state.auth);
   const [isEditing, setIsEditing] = useState(false);
-  const [imageCount, setImageCount] = useState(parseImages().length);
+  const [isLoading, setIsLoading] = useState(!initialGarageData);
+  const [refreshing, setRefreshing] = useState(false);
+  const [garageDetails, setGarageDetails] = useState<Garage | null>(initialGarageData);
+  const [error, setError] = useState<string | null>(null);
+  const [formData, setFormData] = useState<Partial<Garage>>(initialGarageData || {});
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState<{ day: string; field: 'open' | 'close' } | null>(null);
+  const [localImages, setLocalImages] = useState<{ uri: string; name: string; type: string }[]>(
+    initialGarageData?.images?.map((uri: string) => ({
+      uri,
+      name: uri.split('/').pop() || 'image.jpg',
+      type: 'image/jpeg',
+    })) || []
+  );
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
-  const [formData, setFormData] = useState({
-    title: (params.title as string) || 'Garage Name',
-    location: (params.location as string) || (params.address as string) || 'Location not provided',
-    price: (params.price as string) || '100.00',
-    description: (params.description as string) || "No description provided.",
-    contactNumber: (params.phone as string) || 'Not provided',
-    email: (params.email as string) || 'Not provided',
-    latitude: (params.latitude as string) || '0.0',
-    longitude: (params.longitude as string) || '0.0',
-    slots: (params.slots as string) || '0',
-    status: (params.status as string) || '24/7 Open',
-    zones: parseZones()
-  });
-
-  const initialSchedule = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map(day => ({
-    day,
-    isOpen: day !== 'SAT' && day !== 'SUN',
-    openTime: '09:00',
-    closeTime: '21:00',
-    is24Hours: false,
-  }));
-  const [schedule, setSchedule] = useState(initialSchedule);
-
-  const images = parseImages();
-  const [activeIndex, setActiveIndex] = useState(0);
-  const flatListRef = useRef<FlatList>(null);
-
-  const handleToggleEdit = () => {
-    if (isEditing) {
-      Alert.alert("Saved", "Your changes have been updated successfully.");
+  const fetchGarageDetails = useCallback(async (showLoader = true) => {
+    if (!garageId) {
+      setError('No garage ID provided');
+      return;
     }
-    setIsEditing(!isEditing);
-  };
 
-  const handleDelete = () => {
+    try {
+      if (showLoader) setIsLoading(true);
+      setError(null);
+
+      const response = await axiosInstance.get(`/merchants/garage/${garageId}`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (response.data && response.data.data && response.data.data.garage) {
+        const garageData = response.data.data.garage;
+        setGarageDetails(garageData);
+        setFormData(garageData);
+        setLocalImages(garageData.images.map((uri: string) => ({
+          uri,
+          name: uri.split('/').pop() || 'image.jpg',
+          type: 'image/jpeg',
+        })));
+      } else {
+        throw new Error('Invalid response structure or garage not found.');
+      }
+    } catch (err: any) {
+      const errorMessage = err.response?.data?.message || err.message || 'Failed to load garage details';
+      console.error('Error fetching garage:', err);
+      setError(errorMessage);
+    } finally {
+      setIsLoading(false);
+      setRefreshing(false);
+    }
+  }, [garageId, token]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (garageId && !initialGarageData) {
+        fetchGarageDetails();
+      }
+      setIsEditing(false);
+    }, [garageId, initialGarageData, fetchGarageDetails])
+  );
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    await fetchGarageDetails(false);
+  }, [fetchGarageDetails]);
+
+  const handleDeleteGarage = async () => {
+    if (!garageId) {
+      Alert.alert('Error', 'Garage ID not found. Cannot delete.');
+      return;
+    }
+
     Alert.alert(
-      "Delete Garage",
-      "Are you sure you want to delete this garage? This action cannot be undone.",
+      'Confirm Delete',
+      'Are you sure you want to delete this garage? This action cannot be undone.',
       [
-        { text: "Cancel", style: "cancel" },
-        { 
-          text: "Delete", 
-          style: "destructive",
-          onPress: () => router.back()
-        }
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          onPress: async () => {
+            setIsLoading(true);
+            try {
+              await axiosInstance.delete(`/merchants/garage/delete/${garageId}`, {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                },
+              });
+
+              Alert.alert('Success', 'Garage has been deleted successfully.');
+              router.back();
+            } catch (err: any) {
+              const errorMessage = err.response?.data?.message || err.message || 'An unexpected error occurred.';
+              console.error('Deletion Error:', err.response?.data || err);
+              Alert.alert('Deletion Failed', errorMessage);
+            } finally {
+              setIsLoading(false);
+            }
+          },
+          style: 'destructive',
+        },
       ]
     );
   };
 
-  const addZone = () => {
-    if (!isEditing) return;
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    const newId = (formData.zones.length + 1).toString() + Date.now();
-    setFormData({
-      ...formData,
-      zones: [...formData.zones, { id: newId, name: '', slots: '', price: '' }]
-    });
-  };
-
-  const removeZone = (id: string) => {
-    if (!isEditing) return;
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-    setFormData({
-      ...formData,
-      zones: formData.zones.filter(z => z.id !== id)
-    });
-  };
-
-  const updateZone = (id: string, field: keyof Zone, value: string) => {
-    if (!isEditing) return;
-    const updatedZones = formData.zones.map(z => 
-      z.id === id ? { ...z, [field]: value } : z
+  const handleNextImage = () => {
+    setCurrentImageIndex(prevIndex =>
+      prevIndex === localImages.length - 1 ? 0 : prevIndex + 1
     );
-    setFormData({ ...formData, zones: updatedZones });
   };
 
-  const updateDaySchedule = (updatedDay: any) => {
-    if (!isEditing) return;
-    setSchedule(schedule.map(d => d.day === updatedDay.day ? updatedDay : d));
+  const handlePrevImage = () => {
+    setCurrentImageIndex(prevIndex =>
+      prevIndex === 0 ? localImages.length - 1 : prevIndex - 1
+    );
   };
 
-  const scrollToIndex = (index: number) => {
-    if (index >= 0 && index < images.length) {
-      flatListRef.current?.scrollToIndex({ index, animated: true });
-      setActiveIndex(index);
+  const handleInputChange = (field: keyof Garage, value: any) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const handleDayChange = (index: number, field: string, value: any) => {
+    const updatedDays = [...(formData.generalAvailable || [])];
+    updatedDays[index] = {
+      ...updatedDays[index],
+      [field]: value,
+    };
+    handleInputChange('generalAvailable', updatedDays);
+  };
+
+  const handleTimeChange = (event: any, selectedTime?: Date) => {
+    if (selectedTime && showTimePicker) {
+      const timeString = `${selectedTime.getHours().toString().padStart(2, '0')}:${selectedTime.getMinutes().toString().padStart(2, '0')}`;
+      const dayIndex = formData.generalAvailable?.findIndex(d => d.day === showTimePicker.day) || -1;
+
+      if (dayIndex !== -1 && formData.generalAvailable) {
+        const newGeneralAvailable = [...formData.generalAvailable];
+        if (showTimePicker.field === 'open') {
+          newGeneralAvailable[dayIndex].openTime = timeString;
+        } else {
+          newGeneralAvailable[dayIndex].closeTime = timeString;
+        }
+        handleInputChange('generalAvailable', newGeneralAvailable);
+      }
+    }
+    setShowTimePicker(null);
+  };
+
+  const handleSpaceChange = (zone: string, field: keyof SpaceInfo, value: string) => {
+    const numValue = parseInt(value) || 0;
+    setFormData(prev => ({
+      ...prev,
+      spacesList: {
+        ...prev.spacesList,
+        [zone]: {
+          ...(prev.spacesList?.[zone] || { count: 0, price: 0 }),
+          [field]: numValue,
+        },
+      },
+    }));
+  };
+
+  const handleImagePickerForEdit = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: true,
+        quality: 0.8,
+        selectionLimit: 5 - localImages.length,
+      });
+
+      if (result.canceled) {
+        return;
+      }
+
+      if (result.assets && result.assets.length > 0) {
+        const newImages = result.assets.map(asset => ({
+          uri: asset.uri,
+          name: asset.uri.split('/').pop() || `image_${Date.now()}.jpg`,
+          type: 'image/jpeg',
+        }));
+        setLocalImages(prev => [...prev, ...newImages]);
+      }
+    } catch (error) {
+      console.error('Image picker error:', error);
+      Alert.alert('Error', 'Failed to select images');
     }
   };
 
-  const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
-    if (viewableItems.length > 0) setActiveIndex(viewableItems[0].index);
-  }).current;
+  const removeLocalImage = (index: number) => {
+    const newImages = [...localImages];
+    newImages.splice(index, 1);
+    setLocalImages(newImages);
 
-  const EditableText = ({ 
-    value, 
-    onChangeText, 
-    style, 
-    placeholder, 
-    multiline = false,
-    keyboardType = 'default' 
-  }: any) => {
-    if (isEditing) {
-      return (
-        <TextInput
-          value={value}
-          onChangeText={onChangeText}
-          style={[style, styles.editableInput]}
-          placeholder={placeholder}
-          multiline={multiline}
-          keyboardType={keyboardType}
-        />
+    if (currentImageIndex >= newImages.length && newImages.length > 0) {
+      setCurrentImageIndex(newImages.length - 1);
+    }
+  };
+
+  const handleUpdateGarage = async () => {
+    if (!garageId || !formData) return;
+
+    try {
+      setIsUpdating(true);
+      setError(null);
+
+      const data = new FormData();
+
+      data.append('garageName', formData.garageName || '');
+      data.append('about', formData.about || '');
+      data.append('address', formData.address || '');
+      data.append('contactNumber', formData.contactNumber || '');
+      data.append('email', formData.email || '');
+      data.append('is24x7', (formData.is24x7 || false).toString());
+      data.append('price', (formData.price || 0).toString());
+      data.append('vehicleType', formData.vehicleType || 'both');
+
+      data.append('generalAvailable', JSON.stringify(formData.generalAvailable || []));
+      data.append('spacesList', JSON.stringify(formData.spacesList || {}));
+      data.append('location', JSON.stringify(formData.location || { type: 'Point', coordinates: [0, 0] }));
+
+      if (formData.emergencyContact?.person && formData.emergencyContact?.number) {
+        data.append('emergencyContact', JSON.stringify(formData.emergencyContact));
+      }
+
+      const existingCloudinaryUrls = localImages.filter(img => img.uri.startsWith('http')).map(img => img.uri);
+      const newLocalFiles = localImages.filter(img => !img.uri.startsWith('http'));
+
+      newLocalFiles.forEach((image) => {
+        data.append('images', {
+          uri: image.uri,
+          name: image.name,
+          type: image.type,
+        } as any);
+      });
+
+      data.append('existingImages', JSON.stringify(existingCloudinaryUrls));
+
+      const response = await axiosInstance.put(
+        `/merchants/garage/update/${garageId}`,
+        data,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'multipart/form-data',
+          },
+        }
       );
+
+      if (response.data?.success) {
+        Alert.alert('Success', 'Garage updated successfully');
+        setIsEditing(false);
+        await fetchGarageDetails(false);
+      } else {
+        throw new Error(response.data?.message || 'Update failed');
+      }
+    } catch (err: any) {
+      console.error('Error updating garage:', err.response?.data || err.message);
+      let errorMessage = 'Failed to update garage';
+      if (err.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      } else if (err.response?.data?.errors && err.response.data.errors.length > 0) {
+        errorMessage = 'Validation Errors:\n' + err.response.data.errors.map((e: any) => e.message).join('\n');
+      } else if (err.message) {
+        errorMessage = err.message;
+      }
+      setError(errorMessage);
+      Alert.alert('Error', errorMessage);
+    } finally {
+      setIsUpdating(false);
     }
-    return <Text style={style}>{value}</Text>;
   };
 
-  const totalSlots = formData.zones.reduce((acc, zone) => acc + (parseInt(zone.slots) || 0), 0);
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setFormData(garageDetails || {});
+    setLocalImages(garageDetails?.images.map(uri => ({
+      uri,
+      name: uri.split('/').pop() || 'image.jpg',
+      type: 'image/jpeg',
+    })) || []);
+    setError(null);
+  };
+
+  if (isLoading && !garageDetails) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.brandColor} />
+        <Text style={styles.loadingText}>Loading garage details...</Text>
+      </View>
+    );
+  }
+
+  if (error && !garageDetails) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()}>
+            <ArrowLeft size={30} color={colors.brandColor} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Garage Details</Text>
+          <View style={{ width: 30 }} />
+        </View>
+        <View style={styles.errorContainer}>
+          <AlertCircle size={60} color={colors.error} />
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => fetchGarageDetails()}
+          >
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!garageDetails) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()}>
+            <ArrowLeft size={30} color={colors.brandColor} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Garage Details</Text>
+          <View style={{ width: 30 }} />
+        </View>
+        <View style={styles.noGarageContainer}>
+          <Text style={styles.noGarageText}>No garage information available</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={{ flex: 1 }}
+      <ScrollView
+        style={styles.scrollView}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />
+        }
       >
+        {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.iconButton}>
-            <ArrowLeft color={COLORS.primary} size={28} />
+          <TouchableOpacity onPress={() => router.back()}>
+            <ArrowLeft size={30} color={colors.brandColor} />
           </TouchableOpacity>
-          
-          <Text style={styles.headerTitle}>Garage Details</Text>
-          
-          <View style={styles.headerRight}>
-            <TouchableOpacity onPress={handleToggleEdit}>
-              <Text style={styles.editText}>{isEditing ? 'Save' : 'Edit'}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleDelete} style={{ marginLeft: 15 }}>
-              <Trash2 color="#FF3B30" size={24} />
-            </TouchableOpacity>
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            {garageDetails.garageName}
+          </Text>
+          <View style={styles.headerActions}>
+            {isEditing ? (
+              <>
+                <TouchableOpacity onPress={handleCancelEdit}>
+                  <Text style={styles.cancelText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleUpdateGarage}
+                  disabled={isUpdating}
+                  style={[styles.saveButton, isUpdating && styles.saveButtonDisabled]}
+                >
+                  <Text style={styles.saveText}>
+                    {isUpdating ? 'Saving...' : 'Save'}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <TouchableOpacity onPress={() => setIsEditing(true)}>
+                  <Text style={styles.editText}>Edit</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleDeleteGarage}>
+                  <Trash2 size={24} color={colors.error} />
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         </View>
 
-        <ScrollView showsVerticalScrollIndicator={false}>
-          
-          {isEditing ? (
-            <TouchableOpacity 
-              style={styles.imagePicker} 
-              onPress={() => setImageCount(prev => Math.min(prev + 1, 5))}
-            >
-              <Camera color={COLORS.primary} size={32} />
-              <Text style={styles.imagePickerText}>
-                {imageCount > 0 ? `${imageCount} Images Selected` : 'Tap to Upload Images (0/5)'}
-              </Text>
+        {/* Error Banner */}
+        {error && (
+          <View style={styles.errorBanner}>
+            <AlertCircle size={20} color={colors.error} />
+            <Text style={styles.errorBannerText}>{error}</Text>
+            <TouchableOpacity onPress={() => setError(null)}>
+              <X size={20} color={colors.error} />
             </TouchableOpacity>
-          ) : (
-            <View style={styles.sliderContainer}>
-              <FlatList
-                ref={flatListRef}
-                data={images}
-                horizontal
-                pagingEnabled
-                showsHorizontalScrollIndicator={false}
-                keyExtractor={(_, index) => index.toString()}
-                onViewableItemsChanged={onViewableItemsChanged}
-                renderItem={({ item }) => (
-                  <Image source={{ uri: item }} style={styles.sliderImage} resizeMode="cover" />
-                )}
+          </View>
+        )}
+
+        {/* Main Image & Image Gallery with Carousel */}
+        <View style={styles.imageGalleryContainer}>
+          {localImages.length > 0 ? (
+            <View style={styles.imageWrapper}>
+              <Image
+                source={{ uri: localImages[currentImageIndex].uri }}
+                style={styles.galleryImage}
+                resizeMode="cover"
               />
-              {images.length > 1 && (
-                <>
-                  <View style={styles.sliderControls}>
-                    <TouchableOpacity onPress={() => scrollToIndex(activeIndex - 1)} style={styles.arrowButton}>
-                      <ChevronLeft color="#fff" size={24} />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={() => scrollToIndex(activeIndex + 1)} style={styles.arrowButton}>
-                      <ChevronRight color="#fff" size={24} />
-                    </TouchableOpacity>
-                  </View>
-                  <View style={styles.imageCounter}>
-                    <Text style={styles.imageCounterText}>{activeIndex + 1} / {images.length}</Text>
-                  </View>
-                </>
+              {isEditing && (
+                <TouchableOpacity
+                  style={styles.deleteGalleryImageButton}
+                  onPress={() => removeLocalImage(currentImageIndex)}
+                >
+                  <X size={20} color={colors.error} />
+                </TouchableOpacity>
               )}
             </View>
+          ) : (
+            <Image
+              source={images.defaultGarage}
+              style={styles.mainImagePlaceholder}
+              resizeMode="cover"
+            />
           )}
 
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <View style={styles.logoContainer}>
-                <Text style={styles.logoText}>G</Text>
+          {/* Carousel Arrow Buttons */}
+          {localImages.length > 1 && (
+            <>
+              <TouchableOpacity
+                style={[styles.arrowButton, styles.leftArrow]}
+                onPress={handlePrevImage}
+              >
+                <Text style={styles.arrowText}>‹</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.arrowButton, styles.rightArrow]}
+                onPress={handleNextImage}
+              >
+                <Text style={styles.arrowText}>›</Text>
+              </TouchableOpacity>
+              <View style={styles.imageCounter}>
+                <Text style={styles.imageCounterText}>
+                  {currentImageIndex + 1} / {localImages.length}
+                </Text>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.labelSmall}>Garage Name</Text>
-                <EditableText 
-                  value={formData.title} 
-                  onChangeText={(t: string) => setFormData({...formData, title: t})}
-                  style={styles.lotName} 
-                />
-              </View>
+            </>
+          )}
+
+          {isEditing && (
+            <TouchableOpacity
+              style={styles.addImagesButton}
+              onPress={handleImagePickerForEdit}
+            >
+              <Text style={styles.addImagesText}>Add/Replace Images</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Basic Info Card */}
+        <View style={styles.card}>
+          <Text style={styles.label}>Garage Name</Text>
+          {isEditing ? (
+            <TextInput
+              style={styles.input}
+              value={formData.garageName || ''}
+              onChangeText={(text) => handleInputChange('garageName', text)}
+              placeholder="Enter garage name"
+            />
+          ) : (
+            <Text style={styles.garageName}>{garageDetails.garageName}</Text>
+          )}
+
+          <Text style={styles.label}>Address</Text>
+          {isEditing ? (
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              value={formData.address || ''}
+              onChangeText={(text) => handleInputChange('address', text)}
+              placeholder="Enter address"
+              multiline
+            />
+          ) : (
+            <Text style={styles.address}>{garageDetails.address}</Text>
+          )}
+
+          <Text style={styles.label}>Base Price per Hour</Text>
+          {isEditing ? (
+            <TextInput
+              style={styles.input}
+              value={formData.price?.toString() || ''}
+              onChangeText={(text) => handleInputChange('price', parseFloat(text) || 0)}
+              keyboardType="numeric"
+              placeholder="Enter base price"
+            />
+          ) : (
+            <Text style={styles.price}>${garageDetails.price?.toFixed(2) || '0.00'}/hr</Text>
+          )}
+
+          <Text style={styles.label}>Vehicle Type</Text>
+          {isEditing ? (
+            <View style={styles.vehicleTypeContainer}>
+              {(['bike', 'car', 'both'] as const).map(type => (
+                <TouchableOpacity
+                  key={type}
+                  style={[
+                    styles.vehicleTypeButton,
+                    formData.vehicleType === type && styles.vehicleTypeButtonActive,
+                  ]}
+                  onPress={() => handleInputChange('vehicleType', type)}
+                >
+                  <Text style={[
+                    styles.vehicleTypeText,
+                    formData.vehicleType === type && styles.vehicleTypeTextActive,
+                  ]}>
+                    {type.charAt(0).toUpperCase() + type.slice(1)}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
+          ) : (
+            <Text style={styles.vehicleTypeDisplay}>
+              {garageDetails.vehicleType?.charAt(0).toUpperCase() + garageDetails.vehicleType?.slice(1) || 'Both'}
+            </Text>
+          )}
 
-            <View style={styles.divider} />
-
-            <View style={styles.infoBlock}>
-              <Text style={styles.labelSmall}>Address</Text>
-              <EditableText 
-                value={formData.location}
-                onChangeText={(t: string) => setFormData({...formData, location: t})}
-                style={styles.valueText}
+          <View style={styles.switchContainer}>
+            <Text style={styles.label}>24/7 Open</Text>
+            {isEditing ? (
+              <Switch
+                value={formData.is24x7 || false}
+                onValueChange={(value) => handleInputChange('is24x7', value)}
+                trackColor={{ false: '#767577', true: colors.brandColor }}
+                thumbColor={formData.is24x7 ? '#f5dd4b' : '#f4f3f4'}
               />
-            </View>
+            ) : (
+              <Text style={styles.switchText}>
+                {garageDetails.is24x7 ? 'Yes' : 'No'}
+              </Text>
+            )}
+          </View>
+        </View>
 
-            <View style={styles.infoBlock}>
-              <Text style={styles.labelSmall}>Base Price per Hour</Text>
-              <View style={{flexDirection:'row', alignItems:'center'}}>
-                <Text style={[styles.priceText, {marginRight: 2}]}>$</Text>
-                <EditableText 
-                  value={formData.price.replace('$','')} 
-                  onChangeText={(t: string) => setFormData({...formData, price: t})}
-                  style={styles.priceText}
-                  keyboardType="numeric"
-                />
-                <Text style={styles.priceText}>/hr</Text>
-              </View>
-            </View>
+        {/* About Section */}
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>About</Text>
+          {isEditing ? (
+            <TextInput
+              style={[styles.input, styles.aboutInput]}
+              value={formData.about || ''}
+              onChangeText={(text) => handleInputChange('about', text)}
+              multiline
+              placeholder="Describe your garage"
+            />
+          ) : (
+            <Text style={styles.aboutText}>{garageDetails.about || 'No description provided'}</Text>
+          )}
+        </View>
 
-            <View style={styles.infoBlock}>
-              <Text style={styles.labelSmall}>Status</Text>
+        {/* Contact Info */}
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Contact Information</Text>
+
+          <Text style={styles.label}>Contact Number</Text>
+          {isEditing ? (
+            <TextInput
+              style={styles.input}
+              value={formData.contactNumber || ''}
+              onChangeText={(text) => handleInputChange('contactNumber', text)}
+              placeholder="Contact number"
+              keyboardType="phone-pad"
+            />
+          ) : (
+            <Text style={styles.contactText}>{garageDetails.contactNumber}</Text>
+          )}
+
+          <Text style={styles.label}>Email</Text>
+          {isEditing ? (
+            <TextInput
+              style={styles.input}
+              value={formData.email || ''}
+              onChangeText={(text) => handleInputChange('email', text)}
+              placeholder="Email"
+              keyboardType="email-address"
+            />
+          ) : (
+            <Text style={styles.contactText}>{garageDetails.email || 'Not provided'}</Text>
+          )}
+        </View>
+
+        {/* Parking Zones */}
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Parking Zones</Text>
+
+          {Object.entries(formData.spacesList || garageDetails.spacesList || {}).map(([zone, spaceInfo]) => (
+            <View key={zone} style={styles.zoneContainer}>
+              <Text style={styles.zoneLabel}>Zone {zone}</Text>
+
               {isEditing ? (
-                <View style={styles.statusToggleRow}>
-                  {['24/7 Open', 'Limited Hours'].map((status) => (
-                    <TouchableOpacity
-                      key={status}
-                      onPress={() => setFormData({...formData, status})}
-                      style={[
-                        styles.statusToggleBtn,
-                        formData.status === status && styles.statusToggleBtnActive
-                      ]}
-                    >
-                      <Text style={[
-                        styles.statusToggleText,
-                        formData.status === status && styles.statusToggleTextActive
-                      ]}>{status}</Text>
-                    </TouchableOpacity>
-                  ))}
+                <View style={styles.spaceInputRow}>
+                  <View style={styles.spaceInputGroup}>
+                    <Text style={styles.label}>Number of Slots</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={spaceInfo?.count?.toString() || '0'}
+                      onChangeText={(text) => handleSpaceChange(zone, 'count', text)}
+                      keyboardType="numeric"
+                      placeholder="Number of slots"
+                    />
+                  </View>
+
+                  <View style={styles.spaceInputGroup}>
+                    <Text style={styles.label}>Price per Hour</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={spaceInfo?.price?.toString() || '0'}
+                      onChangeText={(text) => handleSpaceChange(zone, 'price', text)}
+                      keyboardType="numeric"
+                      placeholder="Price"
+                    />
+                  </View>
                 </View>
               ) : (
-                <View style={[
-                  styles.statusBadge,
-                  formData.status === '24/7 Open' ? styles.statusGreen : styles.statusRed
-                ]}>
-                  <Text style={styles.statusText}>{formData.status}</Text>
+                <View style={styles.spaceInfoRow}>
+                  <View style={styles.spaceInfoItem}>
+                    <Text style={styles.spaceInfoLabel}>Slots:</Text>
+                    <Text style={styles.spaceInfoValue}>{spaceInfo?.count || 0}</Text>
+                  </View>
+                  <View style={styles.spaceInfoItem}>
+                    <Text style={styles.spaceInfoLabel}>Price:</Text>
+                    <Text style={styles.spaceInfoValue}>${spaceInfo?.price?.toFixed(2) || '0.00'}/hr</Text>
+                  </View>
                 </View>
               )}
             </View>
-          </View>
+          ))}
+        </View>
 
+        {/* Working Hours */}
+        {(!formData.is24x7 && !garageDetails.is24x7) && (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>About Garage</Text>
-            <EditableText 
-              value={formData.description}
-              onChangeText={(t: string) => setFormData({...formData, description: t})}
-              style={styles.aboutText}
-              multiline={true}
-            />
-          </View>
+            <Text style={styles.sectionTitle}>Working Hours</Text>
+            {(formData.generalAvailable || garageDetails.generalAvailable)?.map((day, index) => (
+              <View key={day.day} style={styles.dayContainer}>
+                <Text style={styles.dayLabel}>{day.day}</Text>
 
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Contact Information</Text>
-            
-            <View style={styles.infoBlock}>
-              <Text style={styles.labelSmall}>Contact Number</Text>
-              <EditableText 
-                value={formData.contactNumber}
-                onChangeText={(t: string) => setFormData({...formData, contactNumber: t})}
-                style={styles.valueText}
-                keyboardType="phone-pad"
-              />
-            </View>
+                <View style={styles.switchContainer}>
+                  <Text style={styles.label}>Open</Text>
+                  {isEditing ? (
+                    <Switch
+                      value={day.isOpen}
+                      onValueChange={(value) => handleDayChange(index, 'isOpen', value)}
+                      trackColor={{ false: '#767577', true: colors.brandColor }}
+                      thumbColor={day.isOpen ? '#f5dd4b' : '#f4f3f4'}
+                    />
+                  ) : (
+                    <Text style={styles.switchText}>
+                      {day.isOpen ? 'Yes' : 'No'}
+                    </Text>
+                  )}
+                </View>
 
-            <View style={styles.infoBlock}>
-              <Text style={styles.labelSmall}>Email</Text>
-              <EditableText 
-                value={formData.email}
-                onChangeText={(t: string) => setFormData({...formData, email: t})}
-                style={styles.valueText}
-                keyboardType="email-address"
-              />
-            </View>
-          </View>
-
-          <View style={styles.card}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.cardTitle}>Parking Zones & Spaces</Text>
-              <Text style={styles.totalCapacity}>Total: {totalSlots} slots</Text>
-            </View>
-            
-            {formData.zones.map((zone, index) => (
-              <View key={zone.id}>
-                {index > 0 && <View style={[styles.divider, { marginVertical: 12 }]} />}
-                
-                {isEditing ? (
-                  <View style={styles.zoneRow}>
-                    <View style={styles.zoneInputWrapper}>
-                      <Text style={styles.zoneLabel}>Zone Name</Text>
-                      <TextInput
-                        style={styles.zoneInput}
-                        placeholder="Zone A"
-                        value={zone.name}
-                        onChangeText={(t) => updateZone(zone.id, 'name', t)}
-                      />
-                    </View>
-                    <View style={[styles.zoneInputWrapper, { width: 70 }]}>
-                      <Text style={styles.zoneLabel}>Slots</Text>
-                      <TextInput
-                        style={[styles.zoneInput, { textAlign: 'center' }]}
-                        placeholder="0"
-                        keyboardType="numeric"
-                        value={zone.slots}
-                        onChangeText={(t) => updateZone(zone.id, 'slots', t)}
-                      />
-                    </View>
-                    <View style={[styles.zoneInputWrapper, { width: 70 }]}>
-                      <Text style={styles.zoneLabel}>Price</Text>
-                      <TextInput
-                        style={[styles.zoneInput, { textAlign: 'center' }]}
-                        placeholder="0"
-                        keyboardType="numeric"
-                        value={zone.price}
-                        onChangeText={(t) => updateZone(zone.id, 'price', t)}
-                      />
-                    </View>
-                    <TouchableOpacity onPress={() => removeZone(zone.id)} style={styles.removeZoneBtn}>
-                      <X color={COLORS.danger} size={20} />
-                    </TouchableOpacity>
-                  </View>
-                ) : (
+                {day.isOpen && !day.is24Hours && (
                   <>
-                    <Text style={styles.zoneName}>{zone.name}</Text>
-                    <View style={styles.zoneDisplayRow}>
-                      <View style={styles.zoneItem}>
-                        <Text style={styles.zoneDisplayLabel}>Slots: </Text>
-                        <Text style={styles.zoneValue}>{zone.slots}</Text>
-                      </View>
-                      <View style={styles.zoneItem}>
-                        <Text style={styles.zoneDisplayLabel}>Price: </Text>
-                        <Text style={styles.zoneValue}>${zone.price}/hr</Text>
-                      </View>
-                    </View>
+                    <Text style={styles.label}>Open Time</Text>
+                    {isEditing ? (
+                      <TouchableOpacity
+                        style={styles.input}
+                        onPress={() => setShowTimePicker({ day: day.day, field: 'open' })}
+                      >
+                        <Text>{day.openTime || 'Select time'}</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={styles.timeText}>{day.openTime || 'Not set'}</Text>
+                    )}
+
+                    <Text style={styles.label}>Close Time</Text>
+                    {isEditing ? (
+                      <TouchableOpacity
+                        style={styles.input}
+                        onPress={() => setShowTimePicker({ day: day.day, field: 'close' })}
+                      >
+                        <Text>{day.closeTime || 'Select time'}</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={styles.timeText}>{day.closeTime || 'Not set'}</Text>
+                    )}
                   </>
                 )}
+
+                <View style={styles.switchContainer}>
+                  <Text style={styles.label}>24 Hours</Text>
+                  {isEditing ? (
+                    <Switch
+                      value={day.is24Hours}
+                      onValueChange={(value) => handleDayChange(index, 'is24Hours', value)}
+                      trackColor={{ false: '#767577', true: colors.brandColor }}
+                      thumbColor={day.is24Hours ? '#f5dd4b' : '#f4f3f4'}
+                    />
+                  ) : (
+                    <Text style={styles.switchText}>
+                      {day.is24Hours ? 'Yes' : 'No'}
+                    </Text>
+                  )}
+                </View>
               </View>
             ))}
+          </View>
+        )}
 
-            {isEditing && (
-              <TouchableOpacity style={styles.addZoneBtn} onPress={addZone}>
-                <Plus color={COLORS.primary} size={20} />
-                <Text style={styles.addZoneText}>Add New Zone</Text>
-              </TouchableOpacity>
+        {/* Location */}
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Location</Text>
+          {garageDetails.location?.coordinates ? (
+            <>
+              <Text style={styles.label}>Latitude: {garageDetails.location.coordinates[1].toFixed(6)}</Text>
+              <Text style={styles.label}>Longitude: {garageDetails.location.coordinates[0].toFixed(6)}</Text>
+            </>
+          ) : (
+            <Text style={styles.label}>Location not available</Text>
+          )}
+        </View>
+
+        {/* Submit Button */}
+        {isEditing && (
+          <TouchableOpacity
+            style={styles.submitButton}
+            onPress={handleUpdateGarage}
+            disabled={isUpdating}
+          >
+            {isUpdating ? (
+              <ActivityIndicator color="#FFF" />
+            ) : (
+              <Text style={styles.submitButtonText}>Update Garage</Text>
             )}
-          </View>
+          </TouchableOpacity>
+        )}
 
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Location Coordinates</Text>
-            
-            <View style={styles.infoBlock}>
-              <Text style={styles.labelSmall}>Latitude</Text>
-              <EditableText 
-                value={formData.latitude}
-                onChangeText={(t: string) => setFormData({...formData, latitude: t})}
-                style={styles.valueText}
-                keyboardType="numeric"
-              />
-            </View>
-
-            <View style={styles.infoBlock}>
-              <Text style={styles.labelSmall}>Longitude</Text>
-              <EditableText 
-                value={formData.longitude}
-                onChangeText={(t: string) => setFormData({...formData, longitude: t})}
-                style={styles.valueText}
-                keyboardType="numeric"
-              />
-            </View>
-          </View>
-
-          <View style={[styles.card, {marginBottom: 50}]}>
-            <Text style={styles.cardTitle}>Weekly Availability</Text>
-            {schedule.map((dayData) => (
-              <DaySchedule 
-                key={dayData.day} 
-                dayData={dayData} 
-                onUpdate={updateDaySchedule}
-                isEditing={isEditing}
-              />
-            ))}
-          </View>
-
-        </ScrollView>
-      </KeyboardAvoidingView>
+        {/* Time Picker */}
+        {showTimePicker && (
+          <DateTimePicker
+            value={new Date()}
+            mode="time"
+            display="default"
+            onChange={handleTimeChange}
+          />
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F8F9FA' },
-  editableInput: {
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.primary,
-    backgroundColor: COLORS.secondary,
-    paddingVertical: 2,
-    paddingHorizontal: 4,
-    borderRadius: 4,
+  container: {
+    flex: 1,
+    backgroundColor: '#FAFAFA',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: responsiveFontSize(1.8),
+    color: colors.gray,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#fff',
+    padding: responsiveWidth(5),
+    backgroundColor: '#FFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: colors.lightGray,
   },
-  headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#000' },
-  headerRight: { flexDirection: 'row', alignItems: 'center' },
-  iconButton: { padding: 4 },
-  editText: { color: COLORS.primary, fontWeight: 'bold', fontSize: 16 },
-  
-  imagePicker: {
-    borderWidth: 2,
-    borderColor: COLORS.primary,
-    borderStyle: 'dashed',
-    borderRadius: 16,
-    height: 200,
+  headerTitle: {
+    fontSize: responsiveFontSize(2.2),
+    fontWeight: 'bold',
+    color: colors.black,
+    flex: 1,
+    textAlign: 'center',
+    marginHorizontal: responsiveWidth(2),
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 15,
+  },
+  editText: {
+    color: colors.brandColor,
+    fontSize: responsiveFontSize(1.8),
+    fontWeight: 'bold',
+  },
+  cancelText: {
+    color: colors.error,
+    fontSize: responsiveFontSize(1.8),
+    fontWeight: 'bold',
+    marginRight: 10,
+  },
+  saveButton: {
+    padding: 5,
+  },
+  saveButtonDisabled: {
+    opacity: 0.5,
+  },
+  saveText: {
+    color: colors.success || '#4CAF50',
+    fontSize: responsiveFontSize(1.8),
+    fontWeight: 'bold',
+  },
+  errorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fee',
+    padding: 10,
+    marginHorizontal: responsiveWidth(5),
+    borderRadius: 5,
+    marginTop: 5,
+  },
+  errorBannerText: {
+    flex: 1,
+    color: colors.error,
+    fontSize: responsiveFontSize(1.6),
+    marginLeft: 5,
+  },
+  imageGalleryContainer: {
+    height: responsiveHeight(30),
+    width: '90%',
+    backgroundColor: colors.lightGray,
     justifyContent: 'center',
     alignItems: 'center',
-    marginHorizontal: 16,
-    marginVertical: 20,
-    backgroundColor: COLORS.secondary,
-  },
-  imagePickerText: { color: COLORS.primary, marginTop: 8, fontSize: 14, fontWeight: '600' },
-  
-  sliderContainer: {
-    height: 250,
-    width: width - 32,
+    position: 'relative',
     alignSelf: 'center',
-    marginVertical: 20,
-    borderRadius: 20,
-    overflow: 'hidden',
+    borderRadius: 50,
+    marginTop: responsiveHeight(2),
   },
-  sliderImage: { width: width - 32, height: 250 },
-  sliderControls: {
+  imageWrapper: {
+    width: '100%',
+    height: '100%',
+    position: 'relative',
+    borderRadius: 50,
+  },
+  galleryImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 50,
+  },
+  deleteGalleryImageButton: {
     position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 10,
+    top: 10,
+    right: 10,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+    borderRadius: 20,
+    padding: 5,
   },
-  arrowButton: { backgroundColor: 'rgba(0,0,0,0.4)', borderRadius: 25, padding: 8 },
-  imageCounter: {
+  mainImagePlaceholder: {
+    width: '100%',
+    height: '100%',
+  },
+  addImagesButton: {
     position: 'absolute',
     bottom: 10,
     right: 10,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingVertical: 8,
+    paddingHorizontal: 15,
+    borderRadius: 5,
   },
-  imageCounterText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
-
+  addImagesText: {
+    color: 'white',
+    fontSize: responsiveFontSize(1.6),
+  },
+  arrowButton: {
+    position: 'absolute',
+    top: '50%',
+    marginTop: -22,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderRadius: 22,
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1,
+  },
+  leftArrow: {
+    left: -10,
+  },
+  rightArrow: {
+    right: -10,
+  },
+  arrowText: {
+    color: '#FFF',
+    fontSize: 30,
+    fontWeight: 'bold',
+  },
+  imageCounter: {
+    position: 'absolute',
+    bottom: 10,
+    left: '50%',
+    transform: [{ translateX: -30 }],
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 15,
+  },
+  imageCounterText: {
+    color: '#FFF',
+    fontSize: responsiveFontSize(1.4),
+  },
   card: {
-    backgroundColor: '#fff',
-    marginHorizontal: 16,
-    borderRadius: 16,
-    padding: 20,
-    elevation: 2,
+    backgroundColor: '#FFF',
+    borderRadius: 10,
+    padding: responsiveWidth(4),
+    margin: responsiveWidth(3),
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    marginBottom: 20,
+    elevation: 2,
   },
-  cardTitle: { fontSize: 18, fontWeight: 'bold', color: '#000', marginBottom: 12 },
-  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  totalCapacity: { fontSize: 14, color: COLORS.primary, fontWeight: '600' },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 15 },
-  logoContainer: {
-    width: 50, height: 50,
+  garageName: {
+    fontSize: responsiveFontSize(2.2),
+    fontWeight: 'bold',
+    color: colors.black,
+    marginBottom: responsiveHeight(1),
+  },
+  label: {
+    fontSize: responsiveFontSize(1.8),
+    color: colors.gray,
+    marginBottom: responsiveHeight(0.5),
+    marginTop: responsiveHeight(0.5),
+  },
+  address: {
+    fontSize: responsiveFontSize(1.8),
+    color: colors.black,
+    marginBottom: responsiveHeight(1),
+    lineHeight: responsiveHeight(2),
+  },
+  price: {
+    fontSize: responsiveFontSize(2),
+    color: colors.brandColor,
+    fontWeight: 'bold',
+    marginBottom: responsiveHeight(1),
+  },
+  input: {
+    backgroundColor: '#F5F5F5',
     borderRadius: 8,
-    backgroundColor: COLORS.secondary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 15,
-  },
-  logoText: { fontSize: 28, fontWeight: '900', color: COLORS.primary },
-  lotName: { fontSize: 18, fontWeight: '600', color: '#000' },
-  divider: { height: 1, backgroundColor: '#F0F0F0', marginBottom: 15 },
-  infoBlock: { marginBottom: 15 },
-  labelSmall: { fontSize: 13, color: '#999', marginBottom: 4 },
-  valueText: { fontSize: 16, color: '#333', fontWeight: '500' },
-  priceText: { fontSize: 18, color: COLORS.primary, fontWeight: 'bold' },
-  aboutText: { fontSize: 14, color: '#444', lineHeight: 22 },
-  
-  statusToggleRow: { flexDirection: 'row', gap: 12, marginTop: 8 },
-  statusToggleBtn: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
-    backgroundColor: COLORS.surface,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    alignItems: 'center',
+    borderColor: colors.lightGray,
+    padding: responsiveWidth(3),
+    fontSize: responsiveFontSize(1.8),
+    color: colors.black,
+    marginBottom: responsiveHeight(1),
   },
-  statusToggleBtnActive: { backgroundColor: COLORS.secondary, borderColor: COLORS.primary },
-  statusToggleText: { color: COLORS.textLight, fontWeight: '600', fontSize: 13 },
-  statusToggleTextActive: { color: COLORS.primary, fontWeight: '700' },
-  
-  statusBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    marginTop: 4,
+  textArea: {
+    minHeight: responsiveHeight(8),
+    textAlignVertical: 'top',
   },
-  statusGreen: { backgroundColor: '#4CAF50' },
-  statusRed: { backgroundColor: '#FF4444' },
-  statusText: { color: '#fff', fontSize: 14, fontWeight: '600' },
-
-  zoneName: { fontSize: 16, fontWeight: 'bold', color: '#000', marginBottom: 8 },
-  zoneDisplayRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  zoneItem: { flexDirection: 'row', alignItems: 'center' },
-  zoneDisplayLabel: { fontSize: 14, color: '#888' },
-  zoneValue: { fontSize: 16, fontWeight: 'bold', color: '#000' },
-  
-  zoneRow: {
+  sectionTitle: {
+    fontSize: responsiveFontSize(2),
+    fontWeight: 'bold',
+    color: colors.black,
+    marginBottom: responsiveHeight(1.5),
+  },
+  zoneContainer: {
+    marginBottom: responsiveHeight(2),
+    borderBottomWidth: 1,
+    borderBottomColor: colors.lightGray,
+    paddingBottom: responsiveHeight(1),
+  },
+  zoneLabel: {
+    fontSize: responsiveFontSize(1.8),
+    fontWeight: 'bold',
+    color: colors.black,
+    marginBottom: responsiveHeight(1),
+  },
+  spaceInputRow: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
     justifyContent: 'space-between',
-    marginBottom: 12,
-    gap: 8,
   },
-  zoneInputWrapper: { flex: 1 },
-  zoneLabel: { fontSize: 10, color: COLORS.textLight, marginBottom: 4, fontWeight: '600' },
-  zoneInput: {
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 8,
-    height: 42,
-    paddingHorizontal: 10,
-    color: COLORS.text,
-    fontSize: 14,
+  spaceInputGroup: {
+    width: '48%',
   },
-  removeZoneBtn: {
-    height: 42,
-    width: 42,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FEF2F2',
-    borderRadius: 8,
+  spaceInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: responsiveHeight(1),
   },
-  addZoneBtn: {
+  spaceInfoItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    padding: 14,
-    borderWidth: 1,
-    borderColor: COLORS.primary,
-    borderStyle: 'dashed',
-    borderRadius: 12,
-    marginTop: 16,
-    backgroundColor: COLORS.secondary,
   },
-  addZoneText: { color: COLORS.primary, fontWeight: '700', marginLeft: 6 },
-
-  dayCard: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+  spaceInfoLabel: {
+    fontSize: responsiveFontSize(1.8),
+    color: colors.gray,
+    marginRight: responsiveWidth(2),
   },
-  dayHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  dayBody: { marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: COLORS.surface },
-  dayTitle: { fontWeight: '800', fontSize: 16, color: COLORS.text },
-  timeRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  subLabel: { fontSize: 11, color: COLORS.textLight, marginBottom: 4, fontWeight: '600' },
-  timeInput: {
-    backgroundColor: COLORS.surface,
-    height: 40,
-    borderRadius: 8,
-    justifyContent: 'center',
+  spaceInfoValue: {
+    fontSize: responsiveFontSize(1.8),
+    color: colors.black,
+    fontWeight: 'bold',
+  },
+  aboutInput: {
+    minHeight: responsiveHeight(10),
+    textAlignVertical: 'top',
+  },
+  aboutText: {
+    fontSize: responsiveFontSize(1.8),
+    color: colors.black,
+    lineHeight: responsiveHeight(2.5),
+  },
+  contactText: {
+    fontSize: responsiveFontSize(1.8),
+    color: colors.black,
+    marginBottom: responsiveHeight(1),
+  },
+  dayContainer: {
+    marginBottom: responsiveHeight(2),
+  },
+  dayLabel: {
+    fontSize: responsiveFontSize(1.8),
+    fontWeight: 'bold',
+    color: colors.black,
+    marginBottom: responsiveHeight(1),
+  },
+  switchContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: responsiveHeight(1),
+  },
+  switchText: {
+    fontSize: responsiveFontSize(1.8),
+    color: colors.black,
+  },
+  timeText: {
+    fontSize: responsiveFontSize(1.8),
+    color: colors.black,
+    marginBottom: responsiveHeight(1),
+  },
+  vehicleTypeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: responsiveHeight(1),
+  },
+  vehicleTypeButton: {
+    paddingVertical: responsiveHeight(0.5),
+    paddingHorizontal: responsiveWidth(3),
+    borderRadius: 15,
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: colors.brandColor,
   },
-  disabledInput: { backgroundColor: '#E5E7EB', borderColor: '#E5E7EB' },
-  timeText: { fontWeight: '600', color: COLORS.text },
-  dayFooter: { marginTop: 12, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  toggleLabel: { fontSize: 13, fontWeight: '600', color: COLORS.text },
-  toggleContainer: {
-    width: 64,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 2,
+  vehicleTypeButtonActive: {
+    backgroundColor: colors.brandColor,
+  },
+  vehicleTypeText: {
+    fontSize: responsiveFontSize(1.6),
+    color: colors.black,
+  },
+  vehicleTypeTextActive: {
+    color: '#FFF',
+  },
+  vehicleTypeDisplay: {
+    fontSize: responsiveFontSize(1.6),
+    color: colors.black,
+    marginBottom: responsiveHeight(1),
+  },
+  submitButton: {
+    backgroundColor: colors.brandColor,
+    borderRadius: 10,
+    padding: responsiveWidth(4),
+    marginHorizontal: responsiveWidth(5),
+    marginBottom: responsiveHeight(5),
+    alignItems: 'center',
     justifyContent: 'center',
-    position: 'relative',
   },
-  toggleInternal: {
+  submitButtonText: {
+    color: '#FFF',
+    fontSize: responsiveFontSize(2),
+    fontWeight: 'bold',
+  },
+  errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    padding: responsiveWidth(5),
   },
-  toggleText: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.5,
+  errorText: {
+    fontSize: responsiveFontSize(1.8),
+    color: colors.error,
+    textAlign: 'center',
+    marginBottom: responsiveHeight(2),
   },
-  toggleKnob: {
-    position: 'absolute',
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#fff',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 3,
+  retryButton: {
+    backgroundColor: colors.brandColor,
+    borderRadius: 8,
+    padding: responsiveWidth(4),
+  },
+  retryButtonText: {
+    color: '#FFF',
+    fontSize: responsiveFontSize(1.8),
+    fontWeight: 'bold',
+  },
+  noGarageContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: responsiveWidth(5),
+  },
+  noGarageText: {
+    fontSize: responsiveFontSize(2),
+    color: colors.gray,
+    textAlign: 'center',
+    marginBottom: responsiveHeight(2),
   },
 });
+
+export default MerchantGarageDetails;
