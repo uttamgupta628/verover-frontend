@@ -1,57 +1,95 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  Modal,
-  Animated,
   Alert,
-} from 'react-native';
-import colors from '../assets/color';
-import { useAppDispatch, useAppSelector } from '../components/redux/hooks';
-import { logout } from '../components/redux/authSlice';
-import { clearProfile } from '../components/redux/profileSlice';
+  Animated,
+  Modal,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import colors from "../assets/color";
+import { logout } from "../components/redux/authSlice";
+import { useAppDispatch, useAppSelector } from "../components/redux/hooks";
+import { clearProfile } from "../components/redux/profileSlice";
 
 // EXPO-SPECIFIC IMPORTS
-import * as Haptics from 'expo-haptics';
-import { BlurView } from 'expo-blur';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Feather } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import { Image } from 'expo-image';
+import { Feather } from "@expo/vector-icons";
+import { BlurView } from "expo-blur";
+import * as Haptics from "expo-haptics";
+import { Image } from "expo-image";
+import { useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 interface ProfileDrawerProps {
   visible: boolean;
   onClose: () => void;
 }
 
-const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
-  visible,
-  onClose,
-}) => {
-  const slideAnim = useRef(new Animated.Value(300)).current;
+const ProfileDrawer: React.FC<ProfileDrawerProps> = ({ visible, onClose }) => {
+  const slideAnim = useRef(new Animated.Value(-300)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(0.95)).current;
   const dispatch = useAppDispatch();
   const insets = useSafeAreaInsets();
   const router = useRouter();
 
-  const { user: authUser, isAuthenticated } = useAppSelector(state => state.auth);
-  const { firstName, lastName, profileImage } = useAppSelector(state => state.profile);
+  const { user: authUser, isAuthenticated } = useAppSelector(
+    (state) => state.auth
+  );
+  const { firstName, lastName, profileImage } = useAppSelector(
+    (state) => state.profile
+  );
 
   useEffect(() => {
-    Animated.spring(slideAnim, {
-      toValue: visible ? 0 : 300,
-      tension: 50,
-      friction: 7,
-      useNativeDriver: true,
-    }).start();
+    if (visible) {
+      // Opening animation - smooth and polished
+      Animated.parallel([
+        Animated.spring(slideAnim, {
+          toValue: 0,
+          tension: 65,
+          friction: 9,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          tension: 80,
+          friction: 10,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      // Closing animation - quick and responsive
+      Animated.parallel([
+        Animated.timing(slideAnim, {
+          toValue: -300,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(scaleAnim, {
+          toValue: 0.95,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
   }, [visible]);
 
   useEffect(() => {
     if (!isAuthenticated) {
-      console.log('User is logged out, navigating to Login...');
-      router.replace('/login');
+      console.log("User is logged out, navigating to Login...");
+      router.replace("/login");
     }
   }, [isAuthenticated, router]);
 
@@ -61,14 +99,14 @@ const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
   };
 
   const menuItems = [
-    { icon: 'home', label: 'Home', route: '/userHome' },
-    { icon: 'user', label: 'My Profile', route: '/MyProfile' },
-    { icon: 'credit-card', label: 'Fare Card', route: '/fareCard' },
-    { icon: 'file-text', label: 'Payment Methods', route: '/payment-methods' },
-    { icon: 'message-circle', label: 'Tips and Info', route: '/faq' },
-    { icon: 'settings', label: 'Settings', route: '/settings' },
-    { icon: 'phone', label: 'Contact Us', route: '/contact' },
-    { icon: 'lock', label: 'Reset Password', route: '/reset-password' },
+    { icon: "home", label: "Home", route: "/userHome" },
+    { icon: "user", label: "My Profile", route: "/MyProfile" },
+    { icon: "credit-card", label: "Fare Card", route: "/drawer/fareCard" },
+    // { icon: "file-text", label: "Payment Methods", route: "/payment-methods" },
+    { icon: "message-circle", label: "Tips and Info", route: "/drawer/faq" },
+    { icon: "settings", label: "Settings", route: "/drawer/settings" },
+    { icon: "phone", label: "Contact Us", route: "/drawer/contact" },
+    { icon: "lock", label: "Reset Password", route: "/drawer/resetPassword" },
   ];
 
   const handleNavigation = async (route: string) => {
@@ -79,23 +117,25 @@ const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
 
   const handleLogout = () => {
     Alert.alert(
-      'Logout',
-      'Are you sure you want to logout?',
+      "Logout",
+      "Are you sure you want to logout?",
       [
         {
-          text: 'Cancel',
-          style: 'cancel',
-          onPress: () => Haptics.selectionAsync()
+          text: "Cancel",
+          style: "cancel",
+          onPress: () => Haptics.selectionAsync(),
         },
         {
-          text: 'Logout',
-          style: 'destructive',
+          text: "Logout",
+          style: "destructive",
           onPress: async () => {
-            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-            console.log('Logging out...');
+            await Haptics.notificationAsync(
+              Haptics.NotificationFeedbackType.Warning
+            );
+            console.log("Logging out...");
             dispatch(logout());
             dispatch(clearProfile());
-            router.replace('/login');
+            router.replace("/login");
           },
         },
       ],
@@ -113,9 +153,10 @@ const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
     return null;
   };
 
-  const displayName = firstName && lastName 
-    ? `${firstName} ${lastName}` 
-    : authUser?.name || 'John Doe';
+  const displayName =
+    firstName && lastName
+      ? `${firstName} ${lastName}`
+      : authUser?.name || "John Doe";
 
   return (
     <Modal
@@ -126,23 +167,15 @@ const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
       statusBarTranslucent
     >
       <View style={styles.modalOverlay}>
-        {/* Blur overlay - clickable to close */}
-        <TouchableOpacity
-          style={styles.blurOverlay}
-          activeOpacity={1}
-          onPress={handleCloseWithHaptic}
-        >
-          <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
-        </TouchableOpacity>
-
-        {/* Drawer */}
+        {/* Drawer - now on the left */}
         <Animated.View
           style={[
             styles.drawer,
             {
-              transform: [{ translateX: slideAnim }],
+              transform: [{ translateX: slideAnim }, { scale: scaleAnim }],
+              opacity: fadeAnim,
               paddingTop: insets.top,
-            }
+            },
           ]}
         >
           {/* Header Section */}
@@ -193,13 +226,15 @@ const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
                   <Feather
                     name={item.icon as any}
                     size={20}
-                    color={item.label === 'Home' ? colors.primary : '#666666'}
+                    color={item.label === "Home" ? colors.primary : "#666666"}
                   />
                 </View>
-                <Text style={[
-                  styles.menuText,
-                  item.label === 'Home' && styles.activeMenuText
-                ]}>
+                <Text
+                  style={[
+                    styles.menuText,
+                    item.label === "Home" && styles.activeMenuText,
+                  ]}
+                >
                   {item.label}
                 </Text>
               </TouchableOpacity>
@@ -220,6 +255,21 @@ const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
             </TouchableOpacity>
           </View>
         </Animated.View>
+
+        {/* Blur overlay - clickable to close - now after drawer */}
+        <TouchableOpacity
+          style={styles.blurOverlay}
+          activeOpacity={1}
+          onPress={handleCloseWithHaptic}
+        >
+          <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
+            <BlurView
+              intensity={20}
+              tint="dark"
+              style={StyleSheet.absoluteFill}
+            />
+          </Animated.View>
+        </TouchableOpacity>
       </View>
     </Modal>
   );
@@ -228,34 +278,34 @@ const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
+    flexDirection: "row",
+    justifyContent: "flex-start", // Changed from "flex-end" to "flex-start"
   },
   blurOverlay: {
     flex: 1,
   },
   drawer: {
     width: 280,
-    backgroundColor: '#FFFFFF',
-    height: '100%',
-    shadowColor: '#000',
-    shadowOffset: { width: -4, height: 0 },
+    backgroundColor: "#FFFFFF",
+    height: "100%",
+    shadowColor: "#000",
+    shadowOffset: { width: 4, height: 0 }, // Changed from -4 to 4 for left-side shadow
     shadowOpacity: 0.25,
     shadowRadius: 12,
     elevation: 16,
   },
   headerSection: {
-    backgroundColor: '#FF8C00',
+    backgroundColor: "#FF8C00",
     paddingVertical: 30,
     paddingHorizontal: 20,
     borderBottomLeftRadius: 0,
     borderBottomRightRadius: 0,
   },
   profileSection: {
-    alignItems: 'center',
+    alignItems: "center",
   },
   profileImageContainer: {
-    position: 'relative',
+    position: "relative",
     marginBottom: 12,
   },
   profileImage: {
@@ -263,90 +313,90 @@ const styles = StyleSheet.create({
     height: 80,
     borderRadius: 40,
     borderWidth: 3,
-    borderColor: '#FFFFFF',
+    borderColor: "#FFFFFF",
   },
   profileImagePlaceholder: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    justifyContent: "center",
+    alignItems: "center",
     borderWidth: 3,
-    borderColor: '#FFFFFF',
+    borderColor: "#FFFFFF",
   },
   profileInitials: {
     fontSize: 32,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    fontWeight: "700",
+    color: "#FFFFFF",
   },
   editBadge: {
-    position: 'absolute',
+    position: "absolute",
     bottom: 0,
     right: 0,
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#FF8C00',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: "#FF8C00",
+    justifyContent: "center",
+    alignItems: "center",
     borderWidth: 2,
-    borderColor: '#FFFFFF',
+    borderColor: "#FFFFFF",
   },
   profileName: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    textAlign: 'center',
-    maxWidth: '100%',
+    fontWeight: "600",
+    color: "#FFFFFF",
+    textAlign: "center",
+    maxWidth: "100%",
   },
   menuContainer: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
   },
   menuContent: {
     paddingVertical: 8,
   },
   menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingVertical: 14,
     paddingHorizontal: 20,
     borderBottomWidth: 0.5,
-    borderBottomColor: '#F0F0F0',
+    borderBottomColor: "#F0F0F0",
   },
   menuIconContainer: {
     width: 32,
-    alignItems: 'center',
+    alignItems: "center",
     marginRight: 16,
   },
   menuText: {
     flex: 1,
     fontSize: 15,
-    color: '#333333',
-    fontWeight: '400',
+    color: "#333333",
+    fontWeight: "400",
   },
   activeMenuText: {
     color: colors.primary,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   logoutContainer: {
     borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
-    backgroundColor: '#FAFAFA',
+    borderTopColor: "#F0F0F0",
+    backgroundColor: "#FAFAFA",
     paddingBottom: 20,
   },
   logoutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingVertical: 16,
     paddingHorizontal: 20,
   },
   logoutText: {
     flex: 1,
     fontSize: 15,
-    color: '#FF6B6B',
-    fontWeight: '600',
+    color: "#FF6B6B",
+    fontWeight: "600",
   },
 });
 
