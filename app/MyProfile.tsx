@@ -1,35 +1,35 @@
-import React, { useState, useEffect } from "react";
+import { Feather } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
+import { Image } from "expo-image";
+import * as ImagePicker from "expo-image-picker";
+import { useRouter } from "expo-router";
+import React, { useEffect, useState } from "react";
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  ScrollView,
-  StatusBar,
   Alert,
   KeyboardTypeOptions,
   Platform,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { Feather } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import * as ImagePicker from "expo-image-picker";
-import { Image } from "expo-image";
-import * as Haptics from "expo-haptics";
 import {
+  responsiveFontSize,
   responsiveHeight,
   responsiveWidth,
-  responsiveFontSize,
 } from "react-native-responsive-dimensions";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useDispatch, useSelector } from "react-redux";
 import colors from "../assets/color";
 import { images } from "../assets/images/images";
-import { useSelector, useDispatch } from "react-redux";
-import { RootState } from "../components/redux/store";
 import {
   setProfileImage as setGlobalProfileImage,
   setProfileName,
 } from "../components/redux/profileSlice";
+import { RootState } from "../components/redux/store";
 // import AppButton from '../AppButton';
 
 type InputProps = {
@@ -66,7 +66,7 @@ const Input = ({
 const MyProfile = () => {
   const router = useRouter();
   const dispatch = useDispatch();
-  const baseUrl = "http://192.168.29.162:5000/api";
+  const baseUrl = "https://vervoer-backend2.onrender.com/api";
 
   const { token, user: currentUser } = useSelector(
     (state: RootState) => state.auth

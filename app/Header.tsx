@@ -1,25 +1,21 @@
-import React, { useState, useCallback } from "react";
-import { View, TouchableOpacity, StyleSheet } from "react-native";
-import { IconButton, Badge } from "react-native-paper";
+import React, { useCallback, useState } from "react";
+import { StyleSheet, TouchableOpacity, View } from "react-native";
+import { Badge, IconButton } from "react-native-paper";
+import { useDispatch, useSelector } from "react-redux";
 import colors from "../assets/color";
 import { images } from "../assets/images/images";
-import ProfileDrawer from "./ProfileDrawer";
-import NotificationView from "./NotifivationView";
-import WalletView from "./WalletView";
-import SearchView from "./SearchView";
-import {
-  responsiveHeight,
-  responsiveWidth,
-} from "react-native-responsive-dimensions";
-import { useSelector, useDispatch } from "react-redux";
-import { RootState } from "../components/redux/store";
 import { setProfileImage } from "../components/redux/profileSlice";
+import { RootState } from "../components/redux/store";
+import NotificationView from "./NotifivationView";
+import ProfileDrawer from "./ProfileDrawer";
+import SearchView from "./SearchView";
+import WalletView from "./WalletView";
 
 // EXPO-SPECIFIC IMPORTS
-import { useRouter, useSegments, useFocusEffect } from "expo-router";
 import * as Haptics from "expo-haptics";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Image } from "expo-image";
+import { useFocusEffect, useRouter, useSegments } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 interface HeaderProps {
   notificationCount?: number;
@@ -35,7 +31,7 @@ const Header: React.FC<HeaderProps> = ({
   const dispatch = useDispatch();
   const insets = useSafeAreaInsets();
 
-  const baseUrl = "http://192.168.29.162:5000/api";
+  const baseUrl = "https://vervoer-backend2.onrender.com/api";
 
   // Get auth data from Redux state
   const { token, user } = useSelector((state: RootState) => state.auth);
