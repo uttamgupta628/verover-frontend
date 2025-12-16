@@ -334,7 +334,7 @@ const MerchantResidenceForm = () => {
 
       const endpoint = residenceId
         ? `/api/merchants/residence/update/${residenceId}`
-        : "http://192.168.29.162:5000/api/merchants/residence/registration";
+        : "https://vervoer-backend2.onrender.com/api/merchants/residence/registration";
       const method = residenceId ? "put" : "post";
 
       await axiosInstance[method](endpoint, data, {

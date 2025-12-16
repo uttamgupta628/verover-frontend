@@ -240,7 +240,7 @@ const AvailableServicesScreen: React.FC = () => {
           return;
         }
 
-        const apiUrl = `http://192.168.29.162:5000/api/users/dry-cleaners/${cleaner._id}/services`;
+        const apiUrl = `https://vervoer-backend2.onrender.com/api/users/dry-cleaners/${cleaner._id}/services`;
 
         console.log("Fetching from URL:", apiUrl);
 

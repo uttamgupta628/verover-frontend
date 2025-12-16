@@ -1,6 +1,7 @@
 import * as MediaLibrary from "expo-media-library";
 import * as Sharing from "expo-sharing";
 import React, { useRef, useState } from "react";
+import { router } from "expo-router";
 import {
   ActivityIndicator,
   Alert,
@@ -371,30 +372,16 @@ const BookingReceipt: React.FC<ReceiptProps> = ({
 
           {/* Action Buttons */}
           <View style={styles.actionButtons}>
+            
             <TouchableOpacity
-              style={[
-                styles.downloadButton,
-                isDownloading && styles.downloadButtonDisabled,
-              ]}
-              onPress={handleDownload}
-              disabled={isDownloading}
-            >
-              {isDownloading ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <Icon source="download" size={20} color="#FFFFFF" />
-              )}
-              <Text style={styles.downloadButtonText}>
-                {isDownloading ? "Saving..." : "Download Receipt"}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.doneButton}
-              onPress={onClose}
-              disabled={isDownloading}
-            >
-              <Text style={styles.doneButtonText}>Done</Text>
-            </TouchableOpacity>
+  style={styles.doneButton}
+  disabled={isDownloading}
+  onPress={() => {
+    router.push("/userHome"); 
+  }}
+>
+  <Text style={styles.doneButtonText}>Done</Text>
+</TouchableOpacity>
           </View>
         </View>
       </View>
@@ -639,10 +626,10 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   doneButton: {
-    paddingHorizontal: 24,
+    paddingHorizontal: 180,
     paddingVertical: 14,
     borderRadius: 12,
-    backgroundColor: "#F5F5F5",
+    backgroundColor: "#F99026",
     justifyContent: "center",
     alignItems: "center",
   },

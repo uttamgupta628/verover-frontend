@@ -138,7 +138,7 @@ export default function MerchantHome() {
             size={30}
             color={colors.brandColor}
           />
-          <Text style={styles.buttonText}>History</Text>
+          <Text style={styles.buttonText}>DryCleaner History</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.button, { marginLeft: 20 }]}
@@ -154,7 +154,19 @@ export default function MerchantHome() {
 
       {/* Third Row - Exact same spacing */}
       <View style={styles.thirdRow}>
-        
+        <TouchableOpacity
+          style={[styles.button, { marginLeft: 0 }]}
+          onPress={() => {
+            router.push("/parkingMerchent/order");
+          }}
+        >
+          <MaterialCommunityIcons
+            name="book-outline"
+            size={30}
+            color={colors.brandColor}
+          />
+          <Text style={styles.buttonText}>Parking History</Text>
+        </TouchableOpacity>
         {/* Optional: Add more buttons here if needed */}
         <View style={styles.placeholderButton} />
         <View style={styles.placeholderButton} />

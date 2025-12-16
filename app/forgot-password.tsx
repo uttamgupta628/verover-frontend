@@ -66,7 +66,7 @@ export default function ForgotPassword() {
 
     try {
       const response = await axios.post(
-        "http://192.168.29.162:5000/api/users/forgot-password",
+        "https://vervoer-backend2.onrender.com/api/users/forgot-password",
         {
           email: data.email,
           userType: selectedUserType,

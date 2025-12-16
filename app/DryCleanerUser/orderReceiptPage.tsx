@@ -17,7 +17,7 @@ import axiosInstance from '../../api/axios';
 import QRCode from 'react-native-qrcode-svg';
 import ViewShot from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
-import * as MediaLibrary from 'expo-media-library';
+// import * as MediaLibrary from 'expo-media-library';
 
 export default function OrderReceiptPage() {
   const router = useRouter();
@@ -126,49 +126,49 @@ export default function OrderReceiptPage() {
     }
   };
 
- const handleDownloadReceipt = async () => {
-  try {
-    setDownloading(true);
+//  const handleDownloadReceipt = async () => {
+//   try {
+//     setDownloading(true);
 
-    if (!viewShotRef.current) {
-      Alert.alert('Error', 'Unable to capture receipt');
-      return;
-    }
-    const permission = await MediaLibrary.requestPermissionsAsync();
+//     if (!viewShotRef.current) {
+//       Alert.alert('Error', 'Unable to capture receipt');
+//       return;
+//     }
+//     const permission = await MediaLibrary.requestPermissionsAsync();
 
-    if (permission.status !== 'granted') {
-      Alert.alert(
-        'Permission Required',
-        'Please allow photo access to save the receipt'
-      );
-      return;
-    }
+//     if (permission.status !== 'granted') {
+//       Alert.alert(
+//         'Permission Required',
+//         'Please allow photo access to save the receipt'
+//       );
+//       return;
+//     }
 
-    const uri = await viewShotRef.current.capture({
-      format: 'png',
-      quality: 0.9,
-    });
+//     const uri = await viewShotRef.current.capture({
+//       format: 'png',
+//       quality: 0.9,
+//     });
 
-    const asset = await MediaLibrary.createAssetAsync(uri);
+//     const asset = await MediaLibrary.createAssetAsync(uri);
 
-    try {
-      const album = await MediaLibrary.getAlbumAsync('Vervoer Receipts');
-      if (!album) {
-        await MediaLibrary.createAlbumAsync('Vervoer Receipts', asset, false);
-      } else {
-        await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
-      }
-    } catch {
-    }
+//     try {
+//       const album = await MediaLibrary.getAlbumAsync('Vervoer Receipts');
+//       if (!album) {
+//         await MediaLibrary.createAlbumAsync('Vervoer Receipts', asset, false);
+//       } else {
+//         await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+//       }
+//     } catch {
+//     }
 
-    Alert.alert('Success', 'Receipt saved to gallery successfully!');
-  } catch (error: any) {
-    console.error('Error downloading receipt:', error);
-    Alert.alert('Error', error.message || 'Failed to save receipt');
-  } finally {
-    setDownloading(false);
-  }
-};
+//     Alert.alert('Success', 'Receipt saved to gallery successfully!');
+//   } catch (error: any) {
+//     console.error('Error downloading receipt:', error);
+//     Alert.alert('Error', error.message || 'Failed to save receipt');
+//   } finally {
+//     setDownloading(false);
+//   }
+// };
 
 
 
@@ -396,7 +396,7 @@ export default function OrderReceiptPage() {
 
         {/* Action Buttons */}
         <View style={styles.actionButtonsContainer}>
-          <TouchableOpacity 
+          {/* <TouchableOpacity 
             style={[styles.actionButton, downloading && styles.actionButtonDisabled]}
             onPress={handleDownloadReceipt}
             disabled={downloading}
@@ -409,7 +409,7 @@ export default function OrderReceiptPage() {
                 <Text style={styles.actionButtonText}>Download</Text>
               </>
             )}
-          </TouchableOpacity>
+          </TouchableOpacity> */}
 
           <TouchableOpacity 
             style={styles.actionButton}
