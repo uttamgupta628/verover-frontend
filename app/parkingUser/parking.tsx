@@ -49,7 +49,7 @@ const styles = StyleSheet.create({
   },
   mainContent: {
     paddingHorizontal: 16,
-    marginTop: -20,
+    marginTop: -80,
     paddingTop: 36,
   },
 });

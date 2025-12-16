@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -10,18 +10,22 @@ import {
   Alert,
   ActivityIndicator,
   Platform,
-} from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { responsiveHeight, responsiveWidth, responsiveFontSize } from 'react-native-responsive-dimensions';
-import { ArrowLeft, Camera, Trash2, Plus, MapPin } from 'lucide-react-native';
-import { useSelector } from 'react-redux';
-import { RootState } from '../../components/redux/store';
-import axiosInstance from '../../api/axios';
-import * as ImagePicker from 'expo-image-picker';
-import * as Location from 'expo-location';
-import { Picker } from '@react-native-picker/picker';
-import colors from '../../assets/color';
+} from "react-native";
+import { useRouter, useLocalSearchParams } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  responsiveHeight,
+  responsiveWidth,
+  responsiveFontSize,
+} from "react-native-responsive-dimensions";
+import { ArrowLeft, Camera, Trash2, Plus, MapPin } from "lucide-react-native";
+import { useSelector } from "react-redux";
+import { RootState } from "../../components/redux/store";
+import axiosInstance from "../../api/axios";
+import * as ImagePicker from "expo-image-picker";
+import * as Location from "expo-location";
+import { Picker } from "@react-native-picker/picker";
+import colors from "../../assets/color";
 
 interface WorkingHours {
   day: string;
@@ -40,7 +44,7 @@ interface GarageFormData {
   price: number;
   workingHours: WorkingHours[];
   is24x7: boolean;
-  vehicleType: 'bike' | 'car' | 'both';
+  vehicleType: "bike" | "car" | "both";
   spacesList: Record<string, { count: number; price: number }>;
   location: {
     type: string;
@@ -57,37 +61,84 @@ const MerchantGarageForm = () => {
   const params = useLocalSearchParams();
   const { token, user } = useSelector((state: RootState) => state.auth);
   const garageId = params.garageId as string | undefined;
-  
-  const [selectedTab, setSelectedTab] = useState('Garage');
+
+  const [selectedTab, setSelectedTab] = useState("Garage");
   const [isLoading, setIsLoading] = useState(false);
   const [uploadingImages, setUploadingImages] = useState(false);
-  const [images, setImages] = useState<{ uri: string; name: string; type: string }[]>([]);
-  const [currentLocation, setCurrentLocation] = useState<{ latitude: number, longitude: number } | null>(null);
+  const [images, setImages] = useState<
+    { uri: string; name: string; type: string }[]
+  >([]);
+  const [currentLocation, setCurrentLocation] = useState<{
+    latitude: number;
+    longitude: number;
+  } | null>(null);
 
   const [formData, setFormData] = useState<GarageFormData>({
-    garageName: '',
-    about: '',
-    address: '',
-    contactNumber: user?.phoneNumber || '',
-    email: user?.email || '',
+    garageName: "",
+    about: "",
+    address: "",
+    contactNumber: user?.phoneNumber || "",
+    email: user?.email || "",
     price: 100,
     workingHours: [
-      { day: 'SUN', isOpen: true, openTime: '09:00', closeTime: '17:00', is24Hours: false },
-      { day: 'MON', isOpen: true, openTime: '09:00', closeTime: '17:00', is24Hours: false },
-      { day: 'TUE', isOpen: true, openTime: '09:00', closeTime: '17:00', is24Hours: false },
-      { day: 'WED', isOpen: true, openTime: '09:00', closeTime: '17:00', is24Hours: false },
-      { day: 'THU', isOpen: true, openTime: '09:00', closeTime: '17:00', is24Hours: false },
-      { day: 'FRI', isOpen: true, openTime: '09:00', closeTime: '17:00', is24Hours: false },
-      { day: 'SAT', isOpen: true, openTime: '09:00', closeTime: '17:00', is24Hours: false },
+      {
+        day: "SUN",
+        isOpen: true,
+        openTime: "09:00",
+        closeTime: "17:00",
+        is24Hours: false,
+      },
+      {
+        day: "MON",
+        isOpen: true,
+        openTime: "09:00",
+        closeTime: "17:00",
+        is24Hours: false,
+      },
+      {
+        day: "TUE",
+        isOpen: true,
+        openTime: "09:00",
+        closeTime: "17:00",
+        is24Hours: false,
+      },
+      {
+        day: "WED",
+        isOpen: true,
+        openTime: "09:00",
+        closeTime: "17:00",
+        is24Hours: false,
+      },
+      {
+        day: "THU",
+        isOpen: true,
+        openTime: "09:00",
+        closeTime: "17:00",
+        is24Hours: false,
+      },
+      {
+        day: "FRI",
+        isOpen: true,
+        openTime: "09:00",
+        closeTime: "17:00",
+        is24Hours: false,
+      },
+      {
+        day: "SAT",
+        isOpen: true,
+        openTime: "09:00",
+        closeTime: "17:00",
+        is24Hours: false,
+      },
     ],
     is24x7: false,
-    vehicleType: 'both',
+    vehicleType: "both",
     spacesList: {
-      'A': { count: 10, price: 100 },
-      'B': { count: 5, price: 150 },
+      A: { count: 10, price: 100 },
+      B: { count: 5, price: 150 },
     },
     location: {
-      type: 'Point',
+      type: "Point",
       coordinates: [0, 0],
     },
   });
@@ -102,8 +153,8 @@ const MerchantGarageForm = () => {
   const getCurrentLocation = async () => {
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'Location permission is required');
+      if (status !== "granted") {
+        Alert.alert("Permission Denied", "Location permission is required");
         return;
       }
 
@@ -116,27 +167,30 @@ const MerchantGarageForm = () => {
         longitude: location.coords.longitude,
       });
 
-      setFormData(prev => ({
+      setFormData((prev) => ({
         ...prev,
         location: {
-          type: 'Point',
+          type: "Point",
           coordinates: [location.coords.longitude, location.coords.latitude],
         },
       }));
     } catch (error) {
-      console.error('Error getting location:', error);
-      Alert.alert('Location Error', 'Could not get your current location');
+      console.error("Error getting location:", error);
+      Alert.alert("Location Error", "Could not get your current location");
     }
   };
 
   const fetchGarageDetails = async () => {
     try {
       setIsLoading(true);
-      const response = await axiosInstance.get(`/api/merchants/garage/${garageId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const response = await axiosInstance.get(
+        `/api/merchants/garage/${garageId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
 
       const garageData = response.data.data;
       setFormData({
@@ -155,15 +209,17 @@ const MerchantGarageForm = () => {
       });
 
       if (garageData.images && garageData.images.length > 0) {
-        setImages(garageData.images.map((uri: string) => ({
-          uri,
-          name: uri.split('/').pop() || 'image.jpg',
-          type: 'image/jpeg',
-        })));
+        setImages(
+          garageData.images.map((uri: string) => ({
+            uri,
+            name: uri.split("/").pop() || "image.jpg",
+            type: "image/jpeg",
+          }))
+        );
       }
     } catch (error) {
-      console.error('Error fetching garage details:', error);
-      Alert.alert('Error', 'Failed to fetch garage details');
+      console.error("Error fetching garage details:", error);
+      Alert.alert("Error", "Failed to fetch garage details");
     } finally {
       setIsLoading(false);
     }
@@ -171,9 +227,10 @@ const MerchantGarageForm = () => {
 
   const handleImageUpload = async () => {
     try {
-      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'Camera roll permission is required');
+      const { status } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission Denied", "Camera roll permission is required");
         return;
       }
 
@@ -189,42 +246,50 @@ const MerchantGarageForm = () => {
       }
 
       if (result.assets && result.assets.length > 0) {
-        const newImages = result.assets.map(asset => ({
+        const newImages = result.assets.map((asset) => ({
           uri: asset.uri,
-          name: asset.uri.split('/').pop() || `image_${Date.now()}.jpg`,
-          type: 'image/jpeg',
+          name: asset.uri.split("/").pop() || `image_${Date.now()}.jpg`,
+          type: "image/jpeg",
         }));
-        setImages(prev => [...prev, ...newImages]);
+        setImages((prev) => [...prev, ...newImages]);
       }
     } catch (error) {
-      console.error('Image picker error:', error);
-      Alert.alert('Error', 'Failed to select images');
+      console.error("Image picker error:", error);
+      Alert.alert("Error", "Failed to select images");
     }
   };
 
   const handleChange = (field: keyof GarageFormData, value: any) => {
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       [field]: value,
     }));
   };
 
-  const handleWorkingHoursChange = (index: number, field: keyof WorkingHours, value: any) => {
+  const handleWorkingHoursChange = (
+    index: number,
+    field: keyof WorkingHours,
+    value: any
+  ) => {
     const newWorkingHours = [...formData.workingHours];
     newWorkingHours[index] = {
       ...newWorkingHours[index],
       [field]: value,
     };
 
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       workingHours: newWorkingHours,
     }));
   };
 
-  const handleSpaceChange = (zone: string, field: 'count' | 'price', value: string) => {
+  const handleSpaceChange = (
+    zone: string,
+    field: "count" | "price",
+    value: string
+  ) => {
     const numValue = parseInt(value) || 0;
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       spacesList: {
         ...prev.spacesList,
@@ -238,13 +303,13 @@ const MerchantGarageForm = () => {
 
   const addZone = () => {
     const zones = Object.keys(formData.spacesList);
-    let newZone = 'A';
+    let newZone = "A";
     if (zones.length > 0) {
       const lastZone = zones[zones.length - 1];
       newZone = String.fromCharCode(lastZone.charCodeAt(0) + 1);
     }
 
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       spacesList: {
         ...prev.spacesList,
@@ -255,14 +320,14 @@ const MerchantGarageForm = () => {
 
   const removeZone = (zone: string) => {
     if (Object.keys(formData.spacesList).length <= 1) {
-      Alert.alert('Error', 'You must have at least one zone');
+      Alert.alert("Error", "You must have at least one zone");
       return;
     }
 
     const newSpaces = { ...formData.spacesList };
     delete newSpaces[zone];
 
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       spacesList: newSpaces,
     }));
@@ -270,7 +335,7 @@ const MerchantGarageForm = () => {
 
   const handleSubmit = async () => {
     if (!formData.garageName || !formData.address || !formData.contactNumber) {
-      Alert.alert('Validation Error', 'Please fill all required fields');
+      Alert.alert("Validation Error", "Please fill all required fields");
       return;
     }
 
@@ -279,21 +344,21 @@ const MerchantGarageForm = () => {
 
       const data = new FormData();
 
-      data.append('garageName', formData.garageName);
-      data.append('about', formData.about);
-      data.append('address', formData.address);
-      data.append('contactNumber', formData.contactNumber);
-      data.append('email', formData.email);
-      data.append('is24x7', formData.is24x7.toString());
-      data.append('price', formData.price.toString());
-      data.append('vehicleType', formData.vehicleType);
-      data.append('generalAvailable', JSON.stringify(formData.workingHours));
-      data.append('spacesList', JSON.stringify(formData.spacesList));
-      data.append('location', JSON.stringify(formData.location));
+      data.append("garageName", formData.garageName);
+      data.append("about", formData.about);
+      data.append("address", formData.address);
+      data.append("contactNumber", formData.contactNumber);
+      data.append("email", formData.email);
+      data.append("is24x7", formData.is24x7.toString());
+      data.append("price", formData.price.toString());
+      data.append("vehicleType", formData.vehicleType);
+      data.append("generalAvailable", JSON.stringify(formData.workingHours));
+      data.append("spacesList", JSON.stringify(formData.spacesList));
+      data.append("location", JSON.stringify(formData.location));
 
       images.forEach((image, index) => {
-        if (image.uri.startsWith('file://') || !image.uri.startsWith('http')) {
-          data.append('images', {
+        if (image.uri.startsWith("file://") || !image.uri.startsWith("http")) {
+          data.append("images", {
             uri: image.uri,
             name: image.name,
             type: image.type,
@@ -302,38 +367,51 @@ const MerchantGarageForm = () => {
       });
 
       if (garageId) {
-        const existingImageUrls = images.filter(img => img.uri.startsWith('http')).map(img => img.uri);
+        const existingImageUrls = images
+          .filter((img) => img.uri.startsWith("http"))
+          .map((img) => img.uri);
         if (existingImageUrls.length > 0) {
-          data.append('existingImages', JSON.stringify(existingImageUrls));
+          data.append("existingImages", JSON.stringify(existingImageUrls));
         }
       }
 
       const endpoint = garageId
         ? `/api/merchants/garage/update/${garageId}`
-        : 'https://vervoer-backend2.onrender.com/api/merchants/garage/registration';
+        : "http://192.168.29.162:5000/api/merchants/garage/registration";
 
-      const method = garageId ? 'put' : 'post';
+      const method = garageId ? "put" : "post";
 
       const response = await axiosInstance[method](endpoint, data, {
         headers: {
           Authorization: `Bearer ${token}`,
-          'Content-Type': 'multipart/form-data',
+          "Content-Type": "multipart/form-data",
         },
       });
 
-      Alert.alert('Success', garageId ? 'Garage updated successfully' : 'Garage created successfully');
+      Alert.alert(
+        "Success",
+        garageId ? "Garage updated successfully" : "Garage created successfully"
+      );
       router.back();
     } catch (error: any) {
-      console.error('Error submitting garage:', error.response?.data || error.message);
-      let errorMessage = 'Failed to submit garage details';
+      console.error(
+        "Error submitting garage:",
+        error.response?.data || error.message
+      );
+      let errorMessage = "Failed to submit garage details";
       if (error.response?.data?.message) {
         errorMessage = error.response.data.message;
-      } else if (error.response?.data?.errors && error.response.data.errors.length > 0) {
-        errorMessage = 'Validation Errors:\n' + error.response.data.errors.map((e: any) => e.message).join('\n');
+      } else if (
+        error.response?.data?.errors &&
+        error.response.data.errors.length > 0
+      ) {
+        errorMessage =
+          "Validation Errors:\n" +
+          error.response.data.errors.map((e: any) => e.message).join("\n");
       } else if (error.message) {
         errorMessage = error.message;
       }
-      Alert.alert('Error', errorMessage);
+      Alert.alert("Error", errorMessage);
     } finally {
       setIsLoading(false);
     }
@@ -361,7 +439,9 @@ const MerchantGarageForm = () => {
           <TouchableOpacity onPress={() => router.back()}>
             <ArrowLeft size={30} color={colors.brandColor} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>{garageId ? 'Edit Garage' : 'Add Garage'}</Text>
+          <Text style={styles.headerTitle}>
+            {garageId ? "Edit Garage" : "Add Garage"}
+          </Text>
           <TouchableOpacity onPress={handleSubmit} disabled={isLoading}>
             <Text style={styles.submitText}>Save</Text>
           </TouchableOpacity>
@@ -370,34 +450,58 @@ const MerchantGarageForm = () => {
         {/* Tab Container */}
         <View style={styles.tabContainer}>
           <TouchableOpacity
-            style={[styles.tabButton, selectedTab === 'Residence' && styles.activeTab]}
+            style={[
+              styles.tabButton,
+              selectedTab === "Residence" && styles.activeTab,
+            ]}
             onPress={() => {
-              setSelectedTab('Residence');
-              router.push('/merchant/residence-form');
+              setSelectedTab("Residence");
+              router.push("/merchant/residence-form");
             }}
           >
-            <Text style={[styles.tabText, selectedTab === 'Residence' && styles.activeTabText]}>
+            <Text
+              style={[
+                styles.tabText,
+                selectedTab === "Residence" && styles.activeTabText,
+              ]}
+            >
               Residence
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabButton, selectedTab === 'Parking Lot' && styles.activeTab]}
+            style={[
+              styles.tabButton,
+              selectedTab === "Parking Lot" && styles.activeTab,
+            ]}
             onPress={() => {
-              setSelectedTab('Parking Lot');
-              router.push('/merchant/parking-form');
+              setSelectedTab("Parking Lot");
+              router.push("/merchant/parking-form");
             }}
           >
-            <Text style={[styles.tabText, selectedTab === 'Parking Lot' && styles.activeTabText]}>
+            <Text
+              style={[
+                styles.tabText,
+                selectedTab === "Parking Lot" && styles.activeTabText,
+              ]}
+            >
               Parking Lot
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.tabButton, selectedTab === 'Garage' && styles.activeTab]}
-            onPress={() => setSelectedTab('Garage')}
+            style={[
+              styles.tabButton,
+              selectedTab === "Garage" && styles.activeTab,
+            ]}
+            onPress={() => setSelectedTab("Garage")}
           >
-            <Text style={[styles.tabText, selectedTab === 'Garage' && styles.activeTabText]}>
+            <Text
+              style={[
+                styles.tabText,
+                selectedTab === "Garage" && styles.activeTabText,
+              ]}
+            >
               Garage
             </Text>
           </TouchableOpacity>
@@ -411,13 +515,18 @@ const MerchantGarageForm = () => {
             disabled={images.length >= 5}
           >
             <Camera size={25} color={colors.brandColor} />
-            <Text style={styles.imageUploadText}>Upload Garage Images ({images.length}/5)</Text>
+            <Text style={styles.imageUploadText}>
+              Upload Garage Images ({images.length}/5)
+            </Text>
           </TouchableOpacity>
           {images.length > 0 && (
             <View style={styles.imagePreviewContainer}>
               {images.map((image, index) => (
                 <View key={index} style={styles.imageWrapper}>
-                  <Image source={{ uri: image.uri }} style={styles.imagePreview} />
+                  <Image
+                    source={{ uri: image.uri }}
+                    style={styles.imagePreview}
+                  />
                   <TouchableOpacity
                     style={styles.deleteImageButton}
                     onPress={() => removeImage(index)}
@@ -437,7 +546,7 @@ const MerchantGarageForm = () => {
             <TextInput
               style={styles.input}
               value={formData.garageName}
-              onChangeText={(text) => handleChange('garageName', text)}
+              onChangeText={(text) => handleChange("garageName", text)}
               placeholder="Enter garage name"
             />
 
@@ -445,7 +554,7 @@ const MerchantGarageForm = () => {
             <TextInput
               style={[styles.input, styles.textArea]}
               value={formData.about}
-              onChangeText={(text) => handleChange('about', text)}
+              onChangeText={(text) => handleChange("about", text)}
               placeholder="Describe your garage (facilities, features, etc.)"
               multiline
               numberOfLines={4}
@@ -455,7 +564,7 @@ const MerchantGarageForm = () => {
             <TextInput
               style={styles.input}
               value={formData.address}
-              onChangeText={(text) => handleChange('address', text)}
+              onChangeText={(text) => handleChange("address", text)}
               placeholder="Enter address"
             />
 
@@ -463,7 +572,7 @@ const MerchantGarageForm = () => {
             <TextInput
               style={styles.input}
               value={formData.contactNumber}
-              onChangeText={(text) => handleChange('contactNumber', text)}
+              onChangeText={(text) => handleChange("contactNumber", text)}
               placeholder="Enter contact number"
               keyboardType="phone-pad"
             />
@@ -472,7 +581,7 @@ const MerchantGarageForm = () => {
             <TextInput
               style={styles.input}
               value={formData.email}
-              onChangeText={(text) => handleChange('email', text)}
+              onChangeText={(text) => handleChange("email", text)}
               placeholder="Enter email"
               keyboardType="email-address"
             />
@@ -481,7 +590,9 @@ const MerchantGarageForm = () => {
             <TextInput
               style={styles.input}
               value={formData.price.toString()}
-              onChangeText={(text) => handleChange('price', parseInt(text) || 0)}
+              onChangeText={(text) =>
+                handleChange("price", parseInt(text) || 0)
+              }
               placeholder="Enter average price"
               keyboardType="numeric"
             />
@@ -490,7 +601,7 @@ const MerchantGarageForm = () => {
             <View style={styles.pickerContainer}>
               <Picker
                 selectedValue={formData.vehicleType}
-                onValueChange={(value) => handleChange('vehicleType', value)}
+                onValueChange={(value) => handleChange("vehicleType", value)}
                 style={styles.picker}
               >
                 <Picker.Item label="Both Cars and Bikes" value="both" />
@@ -502,11 +613,19 @@ const MerchantGarageForm = () => {
             <View style={styles.switchContainer}>
               <Text style={styles.label}>24/7 Open</Text>
               <TouchableOpacity
-                style={[styles.switchButton, formData.is24x7 && styles.switchButtonActive]}
-                onPress={() => handleChange('is24x7', !formData.is24x7)}
+                style={[
+                  styles.switchButton,
+                  formData.is24x7 && styles.switchButtonActive,
+                ]}
+                onPress={() => handleChange("is24x7", !formData.is24x7)}
               >
-                <Text style={[styles.switchText, formData.is24x7 && styles.switchTextActive]}>
-                  {formData.is24x7 ? 'YES' : 'NO'}
+                <Text
+                  style={[
+                    styles.switchText,
+                    formData.is24x7 && styles.switchTextActive,
+                  ]}
+                >
+                  {formData.is24x7 ? "YES" : "NO"}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -524,11 +643,21 @@ const MerchantGarageForm = () => {
                 <View style={styles.switchContainer}>
                   <Text style={styles.label}>Open</Text>
                   <TouchableOpacity
-                    style={[styles.switchButton, day.isOpen && styles.switchButtonActive]}
-                    onPress={() => handleWorkingHoursChange(index, 'isOpen', !day.isOpen)}
+                    style={[
+                      styles.switchButton,
+                      day.isOpen && styles.switchButtonActive,
+                    ]}
+                    onPress={() =>
+                      handleWorkingHoursChange(index, "isOpen", !day.isOpen)
+                    }
                   >
-                    <Text style={[styles.switchText, day.isOpen && styles.switchTextActive]}>
-                      {day.isOpen ? 'YES' : 'NO'}
+                    <Text
+                      style={[
+                        styles.switchText,
+                        day.isOpen && styles.switchTextActive,
+                      ]}
+                    >
+                      {day.isOpen ? "YES" : "NO"}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -539,7 +668,9 @@ const MerchantGarageForm = () => {
                     <TextInput
                       style={styles.input}
                       value={day.openTime}
-                      onChangeText={(text) => handleWorkingHoursChange(index, 'openTime', text)}
+                      onChangeText={(text) =>
+                        handleWorkingHoursChange(index, "openTime", text)
+                      }
                       placeholder="09:00"
                     />
 
@@ -547,7 +678,9 @@ const MerchantGarageForm = () => {
                     <TextInput
                       style={styles.input}
                       value={day.closeTime}
-                      onChangeText={(text) => handleWorkingHoursChange(index, 'closeTime', text)}
+                      onChangeText={(text) =>
+                        handleWorkingHoursChange(index, "closeTime", text)
+                      }
                       placeholder="17:00"
                     />
                   </>
@@ -556,11 +689,25 @@ const MerchantGarageForm = () => {
                 <View style={styles.switchContainer}>
                   <Text style={styles.label}>24 Hours</Text>
                   <TouchableOpacity
-                    style={[styles.switchButton, day.is24Hours && styles.switchButtonActive]}
-                    onPress={() => handleWorkingHoursChange(index, 'is24Hours', !day.is24Hours)}
+                    style={[
+                      styles.switchButton,
+                      day.is24Hours && styles.switchButtonActive,
+                    ]}
+                    onPress={() =>
+                      handleWorkingHoursChange(
+                        index,
+                        "is24Hours",
+                        !day.is24Hours
+                      )
+                    }
                   >
-                    <Text style={[styles.switchText, day.is24Hours && styles.switchTextActive]}>
-                      {day.is24Hours ? 'YES' : 'NO'}
+                    <Text
+                      style={[
+                        styles.switchText,
+                        day.is24Hours && styles.switchTextActive,
+                      ]}
+                    >
+                      {day.is24Hours ? "YES" : "NO"}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -582,7 +729,9 @@ const MerchantGarageForm = () => {
                   <TextInput
                     style={styles.input}
                     value={space.count.toString()}
-                    onChangeText={(text) => handleSpaceChange(zone, 'count', text)}
+                    onChangeText={(text) =>
+                      handleSpaceChange(zone, "count", text)
+                    }
                     placeholder="Number of slots"
                     keyboardType="numeric"
                   />
@@ -593,7 +742,9 @@ const MerchantGarageForm = () => {
                   <TextInput
                     style={styles.input}
                     value={space.price.toString()}
-                    onChangeText={(text) => handleSpaceChange(zone, 'price', text)}
+                    onChangeText={(text) =>
+                      handleSpaceChange(zone, "price", text)
+                    }
                     placeholder="Price per hour"
                     keyboardType="numeric"
                   />
@@ -622,8 +773,12 @@ const MerchantGarageForm = () => {
           <Text style={styles.sectionTitle}>Location</Text>
           {currentLocation ? (
             <>
-              <Text style={styles.label}>Latitude: {currentLocation.latitude.toFixed(6)}</Text>
-              <Text style={styles.label}>Longitude: {currentLocation.longitude.toFixed(6)}</Text>
+              <Text style={styles.label}>
+                Latitude: {currentLocation.latitude.toFixed(6)}
+              </Text>
+              <Text style={styles.label}>
+                Longitude: {currentLocation.longitude.toFixed(6)}
+              </Text>
               <TouchableOpacity
                 style={styles.locationButton}
                 onPress={getCurrentLocation}
@@ -646,7 +801,9 @@ const MerchantGarageForm = () => {
           {isLoading ? (
             <ActivityIndicator color="#FFF" />
           ) : (
-            <Text style={styles.submitButtonText}>{garageId ? 'Update Garage' : 'Save Garage'}</Text>
+            <Text style={styles.submitButtonText}>
+              {garageId ? "Update Garage" : "Save Garage"}
+            </Text>
           )}
         </TouchableOpacity>
       </ScrollView>
@@ -657,20 +814,20 @@ const MerchantGarageForm = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FAFAFA',
+    backgroundColor: "#FAFAFA",
   },
   contentContainer: {
     paddingBottom: 30,
   },
   loadingContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#FAFAFA',
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#FAFAFA",
   },
   tabContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
+    flexDirection: "row",
+    justifyContent: "center",
     marginVertical: responsiveHeight(2),
   },
   tabButton: {
@@ -678,7 +835,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: responsiveWidth(5),
     borderRadius: 20,
     marginHorizontal: responsiveWidth(1),
-    backgroundColor: '#D3D3D3',
+    backgroundColor: "#D3D3D3",
   },
   activeTab: {
     backgroundColor: colors.brandColor,
@@ -688,27 +845,27 @@ const styles = StyleSheet.create({
     color: colors.black,
   },
   activeTabText: {
-    color: '#FFF',
+    color: "#FFF",
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingVertical: 15,
-    backgroundColor: '#FFF',
+    backgroundColor: "#FFF",
     borderBottomWidth: 1,
-    borderBottomColor: '#EEE',
+    borderBottomColor: "#EEE",
   },
   headerTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: colors.black,
   },
   submitText: {
     color: colors.brandColor,
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   imageUploadContainer: {
     paddingHorizontal: 20,
@@ -719,9 +876,9 @@ const styles = StyleSheet.create({
     borderColor: colors.brandColor,
     borderRadius: 10,
     padding: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexDirection: 'row',
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
   },
   imageUploadText: {
     color: colors.brandColor,
@@ -729,12 +886,12 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
   imagePreviewContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     marginTop: 10,
   },
   imageWrapper: {
-    position: 'relative',
+    position: "relative",
     margin: 5,
   },
   imagePreview: {
@@ -743,20 +900,20 @@ const styles = StyleSheet.create({
     borderRadius: 5,
   },
   deleteImageButton: {
-    position: 'absolute',
+    position: "absolute",
     top: 5,
     right: 5,
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: "rgba(255,255,255,0.9)",
     borderRadius: 15,
     padding: 5,
   },
   card: {
-    backgroundColor: '#FFF',
+    backgroundColor: "#FFF",
     marginHorizontal: 15,
     marginBottom: 15,
     padding: 15,
     borderRadius: 10,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -771,7 +928,7 @@ const styles = StyleSheet.create({
     marginBottom: 5,
   },
   input: {
-    backgroundColor: '#F5F5F5',
+    backgroundColor: "#F5F5F5",
     borderRadius: 8,
     borderWidth: 1,
     borderColor: colors.lightGray,
@@ -783,10 +940,10 @@ const styles = StyleSheet.create({
   },
   textArea: {
     minHeight: 80,
-    textAlignVertical: 'top',
+    textAlignVertical: "top",
   },
   pickerContainer: {
-    backgroundColor: '#F5F5F5',
+    backgroundColor: "#F5F5F5",
     borderRadius: 8,
     borderWidth: 1,
     borderColor: colors.lightGray,
@@ -797,7 +954,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: colors.black,
     marginBottom: 15,
   },
@@ -805,8 +962,8 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   spaceInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
   },
   spaceInputContainer: {
     flex: 1,
@@ -814,7 +971,7 @@ const styles = StyleSheet.create({
   },
   zoneLabel: {
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: colors.black,
     marginBottom: 10,
   },
@@ -822,9 +979,9 @@ const styles = StyleSheet.create({
     padding: 10,
   },
   addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
     padding: 10,
     borderWidth: 1,
     borderColor: colors.brandColor,
@@ -841,30 +998,30 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 15,
     marginHorizontal: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   submitButtonText: {
-    color: '#FFF',
+    color: "#FFF",
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   dayContainer: {
     marginBottom: 15,
     paddingBottom: 15,
     borderBottomWidth: 1,
-    borderBottomColor: '#EEE',
+    borderBottomColor: "#EEE",
   },
   dayLabel: {
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: "bold",
     color: colors.black,
     marginBottom: 10,
   },
   switchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     marginBottom: 15,
   },
   switchButton: {
@@ -882,19 +1039,19 @@ const styles = StyleSheet.create({
     color: colors.black,
   },
   switchTextActive: {
-    color: '#FFF',
+    color: "#FFF",
   },
   locationButton: {
     backgroundColor: colors.brandColor,
     borderRadius: 8,
     padding: 10,
-    alignItems: 'center',
+    alignItems: "center",
     marginTop: 10,
-    flexDirection: 'row',
-    justifyContent: 'center',
+    flexDirection: "row",
+    justifyContent: "center",
   },
   locationButtonText: {
-    color: '#FFF',
+    color: "#FFF",
     fontSize: 16,
     marginLeft: 8,
   },

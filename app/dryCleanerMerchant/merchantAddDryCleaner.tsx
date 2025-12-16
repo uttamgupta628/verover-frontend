@@ -520,7 +520,7 @@ const DryClean: React.FC = () => {
 
       // Make API call - Update with your actual backend URL
       const response = await fetch(
-        "https://vervoer-backend2.onrender.com/api/users/dry-cleaner",
+        "http://192.168.29.162:5000/api/users/dry-cleaner",
         {
           method: "POST",
           headers: {

@@ -1,8 +1,8 @@
 import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-// 'https://vervoer-backend2.onrender.com/api'
+// 'http://192.168.29.162:5000/api'
 const axiosInstance = axios.create({
-  baseURL: "https://vervoer-backend2.onrender.com/api",
+  baseURL: "http://192.168.29.162:5000/api",
   timeout: 10000,
   headers: {
     "Content-Type": "application/json",

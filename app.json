@@ -4,12 +4,14 @@
     "name": "verover",
     "slug": "verover",
     "version": "1.0.0",
+
     "extra": {
       "GOOGLE_MAPS_API_KEY": "AIzaSyBn5c5hk6ko6gEwZ3IyWK6AkU4_U_tp_4g",
       "eas": {
         "projectId": "18dc5699-c25d-497d-91be-e4d48b0769b4"
       }
     },
+
     "ios": {
       "supportsTablet": true,
       "config": {
@@ -20,10 +22,13 @@
         "NSLocationAlwaysAndWhenInUseUsageDescription": "This app needs access to your location to find nearby parking spots and dry cleaners.",
         "NSCameraUsageDescription": "This app needs access to your camera to take photos of your shop and contact person.",
         "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to select images for your shop.",
+        "NSPhotoLibraryAddUsageDescription": "This app needs access to save receipts to your photo library.",
         "NSMicrophoneUsageDescription": "This app needs access to your microphone for video capture."
       }
     },
+
     "android": {
+      "package": "com.arnab_007.verover",
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyBn5c5hk6ko6gEwZ3IyWK6AkU4_U_tp_4g"
@@ -31,9 +36,24 @@
       },
       "permissions": [
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
-      ],
-      "package": "com.arnab_007.verover"
-    }
+        "ACCESS_COARSE_LOCATION",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES",
+        "RECORD_AUDIO"
+      ]
+    },
+
+    "plugins": [
+      "expo-barcode-scanner",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow Vervoer to access your photos to save receipts.",
+          "savePhotosPermission": "Allow Vervoer to save receipts to your gallery.",
+          "granularPermissions": ["photo", "audio"]
+        }
+      ]
+    ]
   }
 }

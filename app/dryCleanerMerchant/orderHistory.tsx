@@ -11,130 +11,249 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSelector } from 'react-redux';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import colors from '../../assets/color';
 import axiosInstance from '../../api/axios';
 
 const { width, height } = Dimensions.get('window');
 
-const MerchantOrderHistory = () => {
+type BookingType = 'drycleaner' | 'garage' | 'parkinglot' | 'residence';
+
+interface UnifiedBooking {
+    _id: string;
+    type: BookingType;
+    bookingNumber: string;
+    status: string;
+    createdAt: string;
+    totalAmount: number;
+    customerName: string;
+    customerPhone?: string;
+    // Parking specific
+    vehicleNumber?: string;
+    bookedSlot?: string;
+    garageName?: string;
+    parkingName?: string;
+    residenceName?: string;
+    bookingPeriod?: {
+        from?: string;
+        to?: string;
+        startTime?: string;
+        endTime?: string;
+    };
+    // Dry cleaner specific
+    items?: any[];
+    pickupAddress?: string;
+    deliveryAddress?: string;
+    pickupTime?: string;
+    deliveryTime?: string;
+}
+
+const MerchantAllBookings = () => {
     const router = useRouter();
     const { user, token, isAuthenticated } = useSelector((state: any) => state.auth);
     
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
-    const [orders, setOrders] = useState([]);
-    const [filteredOrders, setFilteredOrders] = useState([]);
+    const [allBookings, setAllBookings] = useState<UnifiedBooking[]>([]);
+    const [filteredBookings, setFilteredBookings] = useState<UnifiedBooking[]>([]);
     const [activeFilter, setActiveFilter] = useState('all');
+    const [activeTypeFilter, setActiveTypeFilter] = useState<BookingType | 'all'>('all');
     const [filterApplied, setFilterApplied] = useState(false);
 
     useEffect(() => {
         if (isAuthenticated && token) {
-            fetchOrders();
+            fetchAllBookings();
         }
     }, [isAuthenticated, token]);
 
     useEffect(() => {
-        filterOrders();
-    }, [orders, activeFilter]);
+        filterBookings();
+    }, [allBookings, activeFilter, activeTypeFilter]);
 
-    const fetchOrders = async () => {
-        try {
-            setLoading(true);
+
+
+const fetchAllBookings = async () => {
+    try {
+        setLoading(true);
+        
+        const [garageRes, lotRes, residenceRes, dryCleanerRes] = await Promise.allSettled([
+            axiosInstance.get('/merchants/garage/booking', {
+                headers: { 'Authorization': token }
+            }),
+            axiosInstance.get('/merchants/parkinglot/booking', {
+                headers: { 'Authorization': token }
+            }),
+            axiosInstance.get('/merchants/residence/booking', {
+                headers: { 'Authorization': token }
+            }),
+            axiosInstance.get('/users/merchants/bookings', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            })
+        ]);
+
+        const unified: UnifiedBooking[] = [];
+
+        const safeArray = (data: any): any[] => {
+            if (!data) return [];
+            if (Array.isArray(data)) return data;
+            if (Array.isArray(data.data)) return data.data;
+            if (Array.isArray(data.bookings)) return data.bookings;
+            return [];
+        };
+
+        if (garageRes.status === 'fulfilled' && garageRes.value.data?.success) {
+            const garageBookings = safeArray(garageRes.value.data.data);
+            console.log('Garage bookings count:', garageBookings.length);
             
-            // Use the correct API endpoint for merchants
-            // If your axiosInstance baseURL is '/api', use '/merchants/bookings'
-            // If your axiosInstance baseURL is '/api/users', you need to override it
-            const response = await axiosInstance.get('/users/merchants/bookings', {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                },
-                params: {
-                    page: 1,
-                    limit: 100,
-                }
-            });
-
-            console.log('Merchant API Response:', response.data);
-
-            if (response.data.success) {
-                const bookings = response.data.data?.bookings || response.data.data || [];
-                
-                // Transform backend data to match frontend structure
-                const transformedOrders = bookings.map((booking: any) => ({
+            garageBookings.forEach((booking: any) => {
+                unified.push({
                     _id: booking._id,
-                    orderNumber: booking.bookingNumber || `#DRYCL${booking._id.slice(-6)}`,
+                    type: 'garage',
+                    bookingNumber: `#GRG${booking._id.slice(-6)}`,
+                    status: booking.paymentDetails?.status || 'pending',
+                    createdAt: booking.createdAt,
+                    totalAmount: booking.totalAmount || 0,
+                    customerName: `${booking.customerId?.firstName || ''} ${booking.customerId?.lastName || ''}`.trim() || 'N/A',
+                    customerPhone: booking.customerId?.phoneNumber,
+                    vehicleNumber: booking.vehicleNumber,
+                    bookedSlot: `Zone ${booking.bookedSlot?.zone || 'A'} - Slot ${booking.bookedSlot?.slot || '1'}`,
+                    garageName: booking.garageId?.garageName || 'N/A',
+                    bookingPeriod: {
+                        from: booking.bookingPeriod?.startTime,
+                        to: booking.bookingPeriod?.endTime,
+                    }
+                });
+            });
+        } else if (garageRes.status === 'rejected') {
+            console.warn('Garage bookings fetch failed:', garageRes.reason);
+        }
+
+        if (lotRes.status === 'fulfilled' && lotRes.value.data?.success) {
+            const lotBookings = safeArray(lotRes.value.data.data);
+            console.log('Parking lot bookings count:', lotBookings.length);
+            
+            lotBookings.forEach((booking: any) => {
+                unified.push({
+                    _id: booking._id,
+                    type: 'parkinglot',
+                    bookingNumber: `#LOT${booking._id.slice(-6)}`,
+                    status: booking.paymentDetails?.status || 'pending',
+                    createdAt: booking.createdAt,
+                    totalAmount: booking.totalAmount || 0,
+                    customerName: `${booking.customerId?.firstName || ''} ${booking.customerId?.lastName || ''}`.trim() || 'N/A',
+                    customerPhone: booking.customerId?.phoneNumber,
+                    vehicleNumber: booking.vehicleNumber,
+                    bookedSlot: `Zone ${booking.bookedSlot?.zone || 'A'} - Slot ${booking.bookedSlot?.slot || '1'}`,
+                    parkingName: booking.lotId?.parkingName || 'N/A',
+                    bookingPeriod: {
+                        from: booking.bookingPeriod?.startTime,
+                        to: booking.bookingPeriod?.endTime,
+                    }
+                });
+            });
+        } else if (lotRes.status === 'rejected') {
+            console.warn('Parking lot bookings fetch failed:', lotRes.reason);
+        }
+
+        if (residenceRes.status === 'fulfilled' && residenceRes.value.data?.success) {
+            const residenceBookings = safeArray(residenceRes.value.data.data);
+            console.log('Residence bookings count:', residenceBookings.length);
+            
+            residenceBookings.forEach((booking: any) => {
+                unified.push({
+                    _id: booking._id,
+                    type: 'residence',
+                    bookingNumber: `#RES${booking._id.slice(-6)}`,
+                    status: booking.paymentDetails?.status || 'pending',
+                    createdAt: booking.createdAt,
+                    totalAmount: booking.totalAmount || 0,
+                    customerName: `${booking.customerId?.firstName || ''} ${booking.customerId?.lastName || ''}`.trim() || 'N/A',
+                    customerPhone: booking.customerId?.phoneNumber,
+                    vehicleNumber: booking.vehicleNumber,
+                    residenceName: booking.residenceId?.residenceName || 'N/A',
+                    bookingPeriod: {
+                        from: booking.bookingPeriod?.startTime,
+                        to: booking.bookingPeriod?.endTime,
+                    }
+                });
+            });
+        } else if (residenceRes.status === 'rejected') {
+            console.warn('Residence bookings fetch failed:', residenceRes.reason);
+        }
+
+        if (dryCleanerRes.status === 'fulfilled' && dryCleanerRes.value.data?.success) {
+            const dryCleanerBookings = safeArray(dryCleanerRes.value.data.data);
+            console.log('Dry cleaner bookings count:', dryCleanerBookings.length);
+            
+            dryCleanerBookings.forEach((booking: any) => {
+                unified.push({
+                    _id: booking._id,
+                    type: 'drycleaner',
+                    bookingNumber: booking.bookingNumber || `#DRY${booking._id.slice(-6)}`,
                     status: booking.status,
                     createdAt: booking.createdAt,
-                    items: booking.items || [],
                     totalAmount: booking.totalPrice || booking.totalAmount || 0,
+                    customerName: booking.user ? `${booking.user.firstName || ''} ${booking.user.lastName || ''}`.trim() : 'N/A',
+                    customerPhone: booking.user?.phoneNumber,
+                    items: booking.items || [],
                     pickupAddress: booking.pickupLocation?.address || 'N/A',
                     deliveryAddress: booking.deliveryLocation?.address || 'N/A',
                     pickupTime: booking.pickupTimeSlot || 'N/A',
                     deliveryTime: booking.deliveryTimeSlot || 'N/A',
-                    user: booking.user,
-                    driver: booking.driver,
-                    acceptedAt: booking.acceptedAt,
-                    inProgressAt: booking.inProgressAt,
-                    completedAt: booking.completedAt,
-                    deliveredAt: booking.deliveredAt,
-                    paymentMethod: booking.paymentMethod,
-                    paymentStatus: booking.paymentStatus,
-                    specialInstructions: booking.specialInstructions
-                }));
-
-                setOrders(transformedOrders);
-                console.log('Fetched merchant orders:', transformedOrders.length);
-            } else {
-                console.warn('No orders found in response');
-                setOrders([]);
-            }
-        } catch (error: any) {
-            console.error('Error fetching orders:', error);
-            console.error('Error response:', error.response?.data);
-            console.error('Request URL:', error.config?.url);
-            console.error('Base URL:', error.config?.baseURL);
-            
-            if (error.response?.status === 404) {
-                console.log('Merchant bookings endpoint not found - check backend routes');
-            } else if (error.response?.status === 403) {
-                console.log('Authorization error - ensure you are logged in as merchant');
-            }
-            
-            setOrders([]);
-        } finally {
-            setLoading(false);
-            setRefreshing(false);
+                });
+            });
+        } else if (dryCleanerRes.status === 'rejected') {
+            console.warn('Dry cleaner bookings fetch failed:', dryCleanerRes.reason);
         }
-    };
+
+        // Sort by date (newest first)
+        unified.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+        setAllBookings(unified);
+        console.log('✅ Total unified bookings:', unified.length);
+    } catch (error: any) {
+        console.error('❌ Error fetching bookings:', error);
+        setAllBookings([]);
+    } finally {
+        setLoading(false);
+        setRefreshing(false);
+    }
+};
 
     const onRefresh = () => {
         setRefreshing(true);
-        fetchOrders();
+        fetchAllBookings();
     };
 
-    const filterOrders = () => {
-        let filtered = orders;
+    const filterBookings = () => {
+        let filtered = allBookings;
         
+        // Filter by type
+        if (activeTypeFilter !== 'all') {
+            filtered = filtered.filter(booking => booking.type === activeTypeFilter);
+        }
+
+        // Filter by status
         switch (activeFilter) {
             case 'active':
-                filtered = orders.filter(order => 
-                    order.status === 'pending' || 
-                    order.status === 'accepted' || 
-                    order.status === 'in_progress'
+                filtered = filtered.filter(booking => 
+                    booking.status === 'pending' || 
+                    booking.status === 'accepted' || 
+                    booking.status === 'in_progress' ||
+                    booking.status === 'confirmed'
                 );
                 break;
             case 'completed':
-                filtered = orders.filter(order => 
-                    order.status === 'completed' || 
-                    order.status === 'delivered'
+                filtered = filtered.filter(booking => 
+                    booking.status === 'completed' || 
+                    booking.status === 'delivered'
                 );
                 break;
             default:
                 break;
         }
         
-        setFilteredOrders(filtered);
+        setFilteredBookings(filtered);
     };
 
     const getStatusColor = (status: string) => {
@@ -142,6 +261,7 @@ const MerchantOrderHistory = () => {
             case 'pending':
                 return '#FFA500';
             case 'accepted':
+            case 'confirmed':
                 return '#4CAF50';
             case 'in_progress':
                 return '#2196F3';
@@ -162,6 +282,8 @@ const MerchantOrderHistory = () => {
                 return 'Pending';
             case 'accepted':
                 return 'Accepted';
+            case 'confirmed':
+                return 'Confirmed';
             case 'in_progress':
                 return 'In Progress';
             case 'completed':
@@ -172,6 +294,51 @@ const MerchantOrderHistory = () => {
                 return 'Cancelled';
             default:
                 return status;
+        }
+    };
+
+    const getTypeIcon = (type: BookingType) => {
+        switch (type) {
+            case 'garage':
+                return 'car-sport';
+            case 'parkinglot':
+                return 'car';
+            case 'residence':
+                return 'home';
+            case 'drycleaner':
+                return 'shirt';
+            default:
+                return 'receipt';
+        }
+    };
+
+    const getTypeLabel = (type: BookingType) => {
+        switch (type) {
+            case 'garage':
+                return 'Garage';
+            case 'parkinglot':
+                return 'Parking Lot';
+            case 'residence':
+                return 'Residence';
+            case 'drycleaner':
+                return 'Dry Cleaner';
+            default:
+                return type;
+        }
+    };
+
+    const getTypeColor = (type: BookingType) => {
+        switch (type) {
+            case 'garage':
+                return '#2196F3';
+            case 'parkinglot':
+                return '#4CAF50';
+            case 'residence':
+                return '#9C27B0';
+            case 'drycleaner':
+                return '#FF9800';
+            default:
+                return colors.gray;
         }
     };
 
@@ -197,30 +364,43 @@ const MerchantOrderHistory = () => {
         return items.reduce((total, item) => total + (item.quantity || 0), 0);
     };
 
-    const handleOrderPress = (order: any) => {
-        router.push({
-            pathname: '/dryCleanerMerchant/orderDetail',
-            params: {
-                orderId: order._id,
-                orderData: JSON.stringify(order)
-            }
-        });
+    const handleBookingPress = (booking: UnifiedBooking) => {
+        if (booking.type === 'drycleaner') {
+            router.push({
+                pathname: '/dryCleanerMerchant/orderDetail',
+                params: {
+                    orderId: booking._id,
+                    orderData: JSON.stringify(booking)
+                }
+            });
+        } else {
+            // Navigate to parking booking details
+            router.push({
+                pathname: '/bookingDetails',
+                params: {
+                    bookingData: JSON.stringify(booking)
+                }
+            });
+        }
     };
 
     const handleFilterPress = () => {
         setFilterApplied(!filterApplied);
     };
 
-    const applyFilter = (filter: string) => {
+    const applyStatusFilter = (filter: string) => {
         setActiveFilter(filter);
-        setFilterApplied(false);
+    };
+
+    const applyTypeFilter = (type: BookingType | 'all') => {
+        setActiveTypeFilter(type);
     };
 
     if (loading) {
         return (
             <View style={styles.loadingContainer}>
                 <ActivityIndicator size="large" color={colors.brandColor} />
-                <Text style={styles.loadingText}>Loading orders...</Text>
+                <Text style={styles.loadingText}>Loading bookings...</Text>
             </View>
         );
     }
@@ -235,7 +415,7 @@ const MerchantOrderHistory = () => {
                 >
                     <Ionicons name="arrow-back" size={35} color={colors.brandColor} />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>Order History</Text>
+                <Text style={styles.headerTitle}>All Bookings</Text>
                 <TouchableOpacity 
                     style={[styles.filterButton, filterApplied && styles.filterButtonActive]} 
                     onPress={handleFilterPress}
@@ -247,35 +427,90 @@ const MerchantOrderHistory = () => {
 
             {/* Filter Options */}
             {filterApplied && (
-                <View style={styles.filterOptions}>
-                    <TouchableOpacity 
-                        style={[styles.filterOption, activeFilter === 'all' && styles.filterOptionActive]}
-                        onPress={() => applyFilter('all')}
+                <View style={styles.filterContainer}>
+                    {/* Type Filter */}
+                    <ScrollView 
+                        horizontal 
+                        showsHorizontalScrollIndicator={false}
+                        style={styles.filterScrollView}
                     >
-                        <Text style={[styles.filterOptionText, activeFilter === 'all' && styles.filterOptionTextActive]}>
-                            All Orders
-                        </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                        style={[styles.filterOption, activeFilter === 'active' && styles.filterOptionActive]}
-                        onPress={() => applyFilter('active')}
-                    >
-                        <Text style={[styles.filterOptionText, activeFilter === 'active' && styles.filterOptionTextActive]}>
-                            Active Orders
-                        </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                        style={[styles.filterOption, activeFilter === 'completed' && styles.filterOptionActive]}
-                        onPress={() => applyFilter('completed')}
-                    >
-                        <Text style={[styles.filterOptionText, activeFilter === 'completed' && styles.filterOptionTextActive]}>
-                            Completed
-                        </Text>
-                    </TouchableOpacity>
+                        <TouchableOpacity 
+                            style={[styles.filterChip, activeTypeFilter === 'all' && styles.filterChipActive]}
+                            onPress={() => applyTypeFilter('all')}
+                        >
+                            <Text style={[styles.filterChipText, activeTypeFilter === 'all' && styles.filterChipTextActive]}>
+                                All Types
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                            style={[styles.filterChip, activeTypeFilter === 'garage' && styles.filterChipActive]}
+                            onPress={() => applyTypeFilter('garage')}
+                        >
+                            <Ionicons name="car-sport" size={16} color={activeTypeFilter === 'garage' ? '#FFF' : colors.gray} />
+                            <Text style={[styles.filterChipText, activeTypeFilter === 'garage' && styles.filterChipTextActive]}>
+                                Garage
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                            style={[styles.filterChip, activeTypeFilter === 'parkinglot' && styles.filterChipActive]}
+                            onPress={() => applyTypeFilter('parkinglot')}
+                        >
+                            <Ionicons name="car" size={16} color={activeTypeFilter === 'parkinglot' ? '#FFF' : colors.gray} />
+                            <Text style={[styles.filterChipText, activeTypeFilter === 'parkinglot' && styles.filterChipTextActive]}>
+                                Parking Lot
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                            style={[styles.filterChip, activeTypeFilter === 'residence' && styles.filterChipActive]}
+                            onPress={() => applyTypeFilter('residence')}
+                        >
+                            <Ionicons name="home" size={16} color={activeTypeFilter === 'residence' ? '#FFF' : colors.gray} />
+                            <Text style={[styles.filterChipText, activeTypeFilter === 'residence' && styles.filterChipTextActive]}>
+                                Residence
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                            style={[styles.filterChip, activeTypeFilter === 'drycleaner' && styles.filterChipActive]}
+                            onPress={() => applyTypeFilter('drycleaner')}
+                        >
+                            <Ionicons name="shirt" size={16} color={activeTypeFilter === 'drycleaner' ? '#FFF' : colors.gray} />
+                            <Text style={[styles.filterChipText, activeTypeFilter === 'drycleaner' && styles.filterChipTextActive]}>
+                                Dry Cleaner
+                            </Text>
+                        </TouchableOpacity>
+                    </ScrollView>
+
+                    {/* Status Filter */}
+                    <View style={styles.statusFilterRow}>
+                        <TouchableOpacity 
+                            style={[styles.statusFilterChip, activeFilter === 'all' && styles.statusFilterChipActive]}
+                            onPress={() => applyStatusFilter('all')}
+                        >
+                            <Text style={[styles.statusFilterText, activeFilter === 'all' && styles.statusFilterTextActive]}>
+                                All
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                            style={[styles.statusFilterChip, activeFilter === 'active' && styles.statusFilterChipActive]}
+                            onPress={() => applyStatusFilter('active')}
+                        >
+                            <Text style={[styles.statusFilterText, activeFilter === 'active' && styles.statusFilterTextActive]}>
+                                Active
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                            style={[styles.statusFilterChip, activeFilter === 'completed' && styles.statusFilterChipActive]}
+                            onPress={() => applyStatusFilter('completed')}
+                        >
+                            <Text style={[styles.statusFilterText, activeFilter === 'completed' && styles.statusFilterTextActive]}>
+                                Completed
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
                 </View>
             )}
 
-            {/* Order List */}
+            {/* Booking List */}
             <ScrollView 
                 style={styles.scrollView}
                 contentContainerStyle={styles.scrollContent}
@@ -288,83 +523,110 @@ const MerchantOrderHistory = () => {
                     />
                 }
             >
-                {/* Order Count */}
-                <View style={styles.orderCountContainer}>
-                    <Text style={styles.orderCountText}>
-                        {filteredOrders.length} {filteredOrders.length === 1 ? 'order' : 'orders'} found
+                {/* Booking Count */}
+                <View style={styles.bookingCountContainer}>
+                    <Text style={styles.bookingCountText}>
+                        {filteredBookings.length} {filteredBookings.length === 1 ? 'booking' : 'bookings'} found
                     </Text>
                 </View>
 
-                {/* Order Cards */}
-                {filteredOrders.length === 0 ? (
+                {/* Booking Cards */}
+                {filteredBookings.length === 0 ? (
                     <View style={styles.emptyContainer}>
                         <Ionicons name="receipt-outline" size={80} color={colors.gray} />
-                        <Text style={styles.emptyText}>No orders found</Text>
+                        <Text style={styles.emptyText}>No bookings found</Text>
                         <Text style={styles.emptySubText}>
-                            {activeFilter === 'all' 
-                                ? 'No orders have been placed yet' 
-                                : `No ${activeFilter} orders found`}
+                            {activeTypeFilter !== 'all' 
+                                ? `No ${getTypeLabel(activeTypeFilter as BookingType)} bookings found`
+                                : 'No bookings have been made yet'}
                         </Text>
                     </View>
                 ) : (
-                    filteredOrders.map((order) => (
+                    filteredBookings.map((booking) => (
                         <TouchableOpacity 
-                            key={order._id} 
-                            style={styles.orderCard}
-                            onPress={() => handleOrderPress(order)}
+                            key={booking._id} 
+                            style={styles.bookingCard}
+                            onPress={() => handleBookingPress(booking)}
                             activeOpacity={0.7}
                         >
-                            <View style={styles.orderCardHeader}>
+                            {/* Type Badge */}
+                            <View style={[styles.typeBadge, { backgroundColor: getTypeColor(booking.type) }]}>
+                                <Ionicons name={getTypeIcon(booking.type)} size={16} color="#FFF" />
+                                <Text style={styles.typeBadgeText}>{getTypeLabel(booking.type)}</Text>
+                            </View>
+
+                            <View style={styles.bookingCardHeader}>
                                 <View>
-                                    <Text style={styles.orderLabel}>Order Number</Text>
-                                    <Text style={styles.orderNumber}>{order.orderNumber}</Text>
+                                    <Text style={styles.bookingLabel}>Booking Number</Text>
+                                    <Text style={styles.bookingNumber}>{booking.bookingNumber}</Text>
                                 </View>
                                 <View style={styles.statusContainer}>
-                                    <View style={[styles.statusDot, { backgroundColor: getStatusColor(order.status) }]} />
-                                    <Text style={[styles.orderStatus, { color: getStatusColor(order.status) }]}>
-                                        {getStatusText(order.status)}
+                                    <View style={[styles.statusDot, { backgroundColor: getStatusColor(booking.status) }]} />
+                                    <Text style={[styles.bookingStatus, { color: getStatusColor(booking.status) }]}>
+                                        {getStatusText(booking.status)}
                                     </Text>
                                 </View>
                             </View>
 
-                            <View style={styles.orderDetails}>
+                            <View style={styles.bookingDetails}>
+                                {/* Common Details */}
+                                <View style={styles.detailRow}>
+                                    <Ionicons name="person-outline" size={16} color={colors.gray} />
+                                    <Text style={styles.detailText}>{booking.customerName}</Text>
+                                </View>
                                 <View style={styles.detailRow}>
                                     <Ionicons name="calendar-outline" size={16} color={colors.gray} />
-                                    <Text style={styles.detailText}>
-                                        {formatDate(order.createdAt)}
-                                    </Text>
+                                    <Text style={styles.detailText}>{formatDate(booking.createdAt)}</Text>
                                 </View>
                                 <View style={styles.detailRow}>
                                     <Ionicons name="time-outline" size={16} color={colors.gray} />
-                                    <Text style={styles.detailText}>
-                                        {formatTime(order.createdAt)}
-                                    </Text>
+                                    <Text style={styles.detailText}>{formatTime(booking.createdAt)}</Text>
                                 </View>
-                                <View style={styles.detailRow}>
-                                    <Ionicons name="shirt-outline" size={16} color={colors.gray} />
-                                    <Text style={styles.detailText}>
-                                        {calculateTotalItems(order.items)} items
-                                    </Text>
-                                </View>
+
+                                {/* Parking Specific */}
+                                {(booking.type === 'garage' || booking.type === 'parkinglot' || booking.type === 'residence') && (
+                                    <>
+                                        {booking.vehicleNumber && (
+                                            <View style={styles.detailRow}>
+                                                <MaterialCommunityIcons name="car-info" size={16} color={colors.gray} />
+                                                <Text style={styles.detailText}>{booking.vehicleNumber}</Text>
+                                            </View>
+                                        )}
+                                        {booking.bookedSlot && (
+                                            <View style={styles.detailRow}>
+                                                <MaterialCommunityIcons name="parking" size={16} color={colors.gray} />
+                                                <Text style={styles.detailText}>{booking.bookedSlot}</Text>
+                                            </View>
+                                        )}
+                                        {(booking.garageName || booking.parkingName || booking.residenceName) && (
+                                            <View style={styles.detailRow}>
+                                                <Ionicons name="location-outline" size={16} color={colors.gray} />
+                                                <Text style={styles.detailText}>
+                                                    {booking.garageName || booking.parkingName || booking.residenceName}
+                                                </Text>
+                                            </View>
+                                        )}
+                                    </>
+                                )}
+
+                                {/* Dry Cleaner Specific */}
+                                {booking.type === 'drycleaner' && (
+                                    <View style={styles.detailRow}>
+                                        <Ionicons name="shirt-outline" size={16} color={colors.gray} />
+                                        <Text style={styles.detailText}>
+                                            {calculateTotalItems(booking.items || [])} items
+                                        </Text>
+                                    </View>
+                                )}
+
+                                {/* Amount */}
                                 <View style={styles.detailRow}>
                                     <Ionicons name="cash-outline" size={16} color={colors.gray} />
-                                    <Text style={styles.detailText}>
-                                        ₹{order.totalAmount}
-                                    </Text>
+                                    <Text style={styles.detailText}>₹{booking.totalAmount}</Text>
                                 </View>
                             </View>
 
-                            {/* Customer Info for Merchant */}
-                            {order.user && (
-                                <View style={styles.customerInfo}>
-                                    <Ionicons name="person-outline" size={16} color={colors.gray} />
-                                    <Text style={styles.customerText}>
-                                        {order.user.firstName} {order.user.lastName}
-                                    </Text>
-                                </View>
-                            )}
-
-                            <View style={styles.orderCardFooter}>
+                            <View style={styles.bookingCardFooter}>
                                 <Text style={styles.viewDetailsText}>View Details</Text>
                                 <Ionicons name="chevron-forward" size={20} color={colors.gray} />
                             </View>
@@ -376,15 +638,21 @@ const MerchantOrderHistory = () => {
             {/* Stats Summary */}
             <View style={styles.statsContainer}>
                 <View style={styles.statBox}>
-                    <Text style={styles.statNumber}>{orders.filter(o => o.status === 'pending').length}</Text>
+                    <Text style={styles.statNumber}>
+                        {allBookings.filter(b => b.status === 'pending' || b.status === 'confirmed').length}
+                    </Text>
                     <Text style={styles.statLabel}>Pending</Text>
                 </View>
                 <View style={styles.statBox}>
-                    <Text style={styles.statNumber}>{orders.filter(o => o.status === 'in_progress').length}</Text>
-                    <Text style={styles.statLabel}>In Progress</Text>
+                    <Text style={styles.statNumber}>
+                        {allBookings.filter(b => b.status === 'in_progress' || b.status === 'accepted').length}
+                    </Text>
+                    <Text style={styles.statLabel}>Active</Text>
                 </View>
                 <View style={styles.statBox}>
-                    <Text style={styles.statNumber}>{orders.filter(o => o.status === 'completed').length}</Text>
+                    <Text style={styles.statNumber}>
+                        {allBookings.filter(b => b.status === 'completed' || b.status === 'delivered').length}
+                    </Text>
                     <Text style={styles.statLabel}>Completed</Text>
                 </View>
             </View>
@@ -413,7 +681,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
         paddingHorizontal: 20,
-        paddingTop: 10,
+        paddingTop: 60,
         paddingBottom: 15,
         backgroundColor: '#FFFFFF',
         borderBottomWidth: 1,
@@ -457,35 +725,60 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         marginLeft: 5,
     },
-    filterOptions: {
-        flexDirection: 'row',
+    filterContainer: {
         backgroundColor: '#FFFFFF',
-        paddingHorizontal: 20,
         paddingVertical: 15,
         borderBottomWidth: 1,
         borderBottomColor: '#F0F0F0',
         elevation: 1,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 2,
     },
-    filterOption: {
+    filterScrollView: {
         paddingHorizontal: 20,
+        marginBottom: 10,
+    },
+    filterChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
         paddingVertical: 8,
         borderRadius: 20,
         backgroundColor: '#F8F8F8',
         marginRight: 10,
+        gap: 5,
     },
-    filterOptionActive: {
+    filterChipActive: {
         backgroundColor: colors.brandColor,
     },
-    filterOptionText: {
+    filterChipText: {
         fontSize: 14,
         color: colors.gray,
         fontWeight: '500',
     },
-    filterOptionTextActive: {
+    filterChipTextActive: {
+        color: '#FFFFFF',
+        fontWeight: '600',
+    },
+    statusFilterRow: {
+        flexDirection: 'row',
+        paddingHorizontal: 20,
+        gap: 10,
+    },
+    statusFilterChip: {
+        flex: 1,
+        paddingVertical: 8,
+        borderRadius: 10,
+        backgroundColor: '#F8F8F8',
+        alignItems: 'center',
+    },
+    statusFilterChipActive: {
+        backgroundColor: colors.brandColor,
+    },
+    statusFilterText: {
+        fontSize: 14,
+        color: colors.gray,
+        fontWeight: '500',
+    },
+    statusFilterTextActive: {
         color: '#FFFFFF',
         fontWeight: '600',
     },
@@ -497,93 +790,94 @@ const styles = StyleSheet.create({
         paddingTop: 10,
         paddingBottom: 100,
     },
-    orderCountContainer: {
+    bookingCountContainer: {
         paddingVertical: 15,
         borderBottomWidth: 1,
         borderBottomColor: '#F0F0F0',
         marginBottom: 10,
     },
-    orderCountText: {
+    bookingCountText: {
         fontSize: 14,
         color: colors.gray,
         fontWeight: '500',
     },
-    orderCard: {
+    bookingCard: {
         backgroundColor: '#FFFFFF',
         borderRadius: 12,
-        padding: 20,
-        marginVertical: 8,
+        padding: 15,
+        marginBottom: 15,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
+        shadowOpacity: 0.1,
         shadowRadius: 4,
         elevation: 3,
         borderWidth: 1,
         borderColor: '#F0F0F0',
     },
-    orderCardHeader: {
+    typeBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        alignSelf: 'flex-start',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 20,
+        marginBottom: 12,
+        gap: 5,
+    },
+    typeBadgeText: {
+        fontSize: 12,
+        color: '#FFF',
+        fontWeight: '600',
+    },
+    bookingCardHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'flex-start',
-        marginBottom: 15,
+        marginBottom: 12,
     },
-    orderLabel: {
+    bookingLabel: {
         fontSize: 12,
         color: colors.gray,
-        marginBottom: 2,
+        marginBottom: 4,
     },
-    orderNumber: {
-        fontSize: 18,
-        fontWeight: 'bold',
+    bookingNumber: {
+        fontSize: 16,
         color: colors.black,
-        marginBottom: 5,
+        fontWeight: 'bold',
     },
     statusContainer: {
         flexDirection: 'row',
         alignItems: 'center',
+        gap: 6,
     },
     statusDot: {
         width: 8,
         height: 8,
         borderRadius: 4,
-        marginRight: 5,
     },
-    orderStatus: {
-        fontSize: 14,
+    bookingStatus: {
+        fontSize: 12,
         fontWeight: '600',
     },
-    orderDetails: {
-        marginBottom: 10,
+    bookingDetails: {
+        marginBottom: 15,
     },
     detailRow: {
         flexDirection: 'row',
         alignItems: 'center',
         marginBottom: 8,
+        gap: 8,
     },
     detailText: {
         fontSize: 14,
-        color: colors.gray,
-        marginLeft: 10,
-    },
-    customerInfo: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingTop: 10,
-        paddingBottom: 10,
-        borderTopWidth: 1,
-        borderTopColor: '#F0F0F0',
-    },
-    customerText: {
-        fontSize: 14,
         color: colors.black,
-        fontWeight: '500',
-        marginLeft: 10,
+        flex: 1,
     },
-    orderCardFooter: {
+    bookingCardFooter: {
         flexDirection: 'row',
-        alignItems: 'center',
         justifyContent: 'space-between',
-        paddingTop: 15,
+        alignItems: 'center',
+        paddingTop: 12,
         borderTopWidth: 1,
         borderTopColor: '#F0F0F0',
     },
@@ -593,49 +887,52 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
     emptyContainer: {
-        alignItems: 'center',
+        flex: 1,
         justifyContent: 'center',
-        paddingVertical: 60,
+        alignItems: 'center',
+        paddingTop: 60,
     },
     emptyText: {
         fontSize: 18,
-        color: colors.black,
+        color: colors.gray,
         fontWeight: '600',
-        marginTop: 20,
+        marginTop: 15,
         marginBottom: 8,
     },
     emptySubText: {
         fontSize: 14,
-        color: colors.gray,
+        color: colors.lightGray,
         textAlign: 'center',
-        paddingHorizontal: 40,
+        maxWidth: 250,
     },
     statsContainer: {
+        flexDirection: 'row',
+        backgroundColor: '#FFFFFF',
+        paddingVertical: 15,
+        borderTopWidth: 1,
+        borderTopColor: '#F0F0F0',
         position: 'absolute',
         bottom: 0,
         left: 0,
         right: 0,
-        backgroundColor: '#FFFFFF',
-        paddingHorizontal: 20,
-        paddingVertical: 15,
-        borderTopWidth: 1,
-        borderTopColor: '#F0F0F0',
-        flexDirection: 'row',
-        justifyContent: 'space-around',
+        paddingBottom: 30,
     },
     statBox: {
+        flex: 1,
         alignItems: 'center',
+        paddingVertical: 10,
     },
     statNumber: {
-        fontSize: 24,
-        fontWeight: 'bold',
+        fontSize: 22,
         color: colors.brandColor,
+        fontWeight: 'bold',
+        marginBottom: 5,
     },
     statLabel: {
         fontSize: 12,
         color: colors.gray,
-        marginTop: 5,
+        fontWeight: '500',
     },
 });
 
-export default MerchantOrderHistory;
+export default MerchantAllBookings;
