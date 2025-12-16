@@ -8,8 +8,6 @@ import {
   StatusBar,
   ActivityIndicator,
   Alert,
-  Platform,
-  PermissionsAndroid,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -20,7 +18,6 @@ import QRCode from 'react-native-qrcode-svg';
 import ViewShot from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import * as MediaLibrary from 'expo-media-library';
-import * as FileSystem from 'expo-file-system';
 
 export default function OrderReceiptPage() {
   const router = useRouter();
@@ -101,28 +98,7 @@ export default function OrderReceiptPage() {
     router.replace('/userHome'); 
   }, [router, dispatch]);
 
-  // Request permissions for Android
-  const requestPermissions = async () => {
-    if (Platform.OS === 'android') {
-      try {
-        const granted = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
-          {
-            title: 'Storage Permission',
-            message: 'App needs access to your storage to save the receipt',
-            buttonNeutral: 'Ask Me Later',
-            buttonNegative: 'Cancel',
-            buttonPositive: 'OK',
-          }
-        );
-        return granted === PermissionsAndroid.RESULTS.GRANTED;
-      } catch (err) {
-        console.warn(err);
-        return false;
-      }
-    }
-    return true;
-  };
+  
 
   const handleShareReceipt = async () => {
     try {
@@ -150,67 +126,54 @@ export default function OrderReceiptPage() {
     }
   };
 
-  const handleDownloadReceipt = async () => {
-    try {
-      setDownloading(true);
+ const handleDownloadReceipt = async () => {
+  try {
+    setDownloading(true);
 
-      if (!viewShotRef.current) {
-        Alert.alert('Error', 'Unable to capture receipt');
-        return;
-      }
-
-      // Request permissions with error handling
-      const { status } = await MediaLibrary.requestPermissionsAsync(false);
-      
-      if (status !== 'granted') {
-        Alert.alert(
-          'Permission Required',
-          'Please grant storage permission to save the receipt',
-          [{ text: 'OK' }]
-        );
-        return;
-      }
-
-      // Capture the screenshot
-      const uri = await viewShotRef.current.capture();
-      console.log('Captured receipt URI:', uri);
-
-      // Save directly to media library (simpler approach)
-      const asset = await MediaLibrary.createAssetAsync(uri);
-      
-      // Optional: Create album
-      try {
-        const album = await MediaLibrary.getAlbumAsync('Vervoer Receipts');
-        if (album == null) {
-          await MediaLibrary.createAlbumAsync('Vervoer Receipts', asset, false);
-        } else {
-          await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
-        }
-      } catch (e) {
-        console.log('Album creation failed, but image saved to gallery');
-      }
-
-      Alert.alert(
-        'Success',
-        'Receipt saved to gallery successfully!',
-        [{ text: 'OK' }]
-      );
-
-    } catch (error: any) {
-      console.error('Error downloading receipt:', error);
-      Alert.alert(
-        'Error',
-        error.message || 'Failed to save receipt. Please try again.'
-      );
-    } finally {
-      setDownloading(false);
+    if (!viewShotRef.current) {
+      Alert.alert('Error', 'Unable to capture receipt');
+      return;
     }
-  };
+    const permission = await MediaLibrary.requestPermissionsAsync();
 
-  // QR Code value - use order ID
+    if (permission.status !== 'granted') {
+      Alert.alert(
+        'Permission Required',
+        'Please allow photo access to save the receipt'
+      );
+      return;
+    }
+
+    const uri = await viewShotRef.current.capture({
+      format: 'png',
+      quality: 0.9,
+    });
+
+    const asset = await MediaLibrary.createAssetAsync(uri);
+
+    try {
+      const album = await MediaLibrary.getAlbumAsync('Vervoer Receipts');
+      if (!album) {
+        await MediaLibrary.createAlbumAsync('Vervoer Receipts', asset, false);
+      } else {
+        await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+      }
+    } catch {
+    }
+
+    Alert.alert('Success', 'Receipt saved to gallery successfully!');
+  } catch (error: any) {
+    console.error('Error downloading receipt:', error);
+    Alert.alert('Error', error.message || 'Failed to save receipt');
+  } finally {
+    setDownloading(false);
+  }
+};
+
+
+
   const qrCodeValue = orderId || orderNumber || trackingId || 'N/A';
 
-  // Loading state
   if (loading) {
     return (
       <View style={styles.container}>

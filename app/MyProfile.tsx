@@ -66,7 +66,7 @@ const Input = ({
 const MyProfile = () => {
   const router = useRouter();
   const dispatch = useDispatch();
-  const baseUrl = "https://vervoer-backend2.onrender.com/api";
+  const baseUrl = "http://192.168.29.162:5000/api";
 
   const { token, user: currentUser } = useSelector(
     (state: RootState) => state.auth

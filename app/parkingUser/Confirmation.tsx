@@ -313,47 +313,47 @@ const Confirmation = () => {
   // ============================================================================
   // Uncomment this section for testing (currently active)
 
-  const handlePayment = async () => {
-    if (!vehicleNumber.trim()) {
-      Alert.alert(
-        "Required",
-        "Please enter your car plate number to continue."
-      );
-      setPopupVisible(true);
-      return;
-    }
+  // const handlePayment = async () => {
+  //   if (!vehicleNumber.trim()) {
+  //     Alert.alert(
+  //       "Required",
+  //       "Please enter your car plate number to continue."
+  //     );
+  //     setPopupVisible(true);
+  //     return;
+  //   }
 
-    if (!data?.bookingId) {
-      Alert.alert("Error", "Booking ID not available. Please try again.");
-      return;
-    }
+  //   if (!data?.bookingId) {
+  //     Alert.alert("Error", "Booking ID not available. Please try again.");
+  //     return;
+  //   }
 
-    setPaymentLoading(true);
+  //   setPaymentLoading(true);
 
-    try {
-      console.log("🧪 TESTING MODE: Skipping payment and booking API call...");
+  //   try {
+  //     console.log("🧪 TESTING MODE: Skipping payment and booking API call...");
 
-      // Simulate a delay to mimic API call
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+  //     // Simulate a delay to mimic API call
+  //     await new Promise((resolve) => setTimeout(resolve, 1000));
 
-      console.log("✅ Simulated successful booking");
+  //     console.log("✅ Simulated successful booking");
 
-      // Directly show the receipt without calling the booking API
-      setShowReceipt(true);
-    } catch (err: any) {
-      console.error("❌ Error:", err);
-      Alert.alert("Error", "Something went wrong. Please try again.");
-    } finally {
-      setPaymentLoading(false);
-    }
-  };
+  //     // Directly show the receipt without calling the booking API
+  //     setShowReceipt(true);
+  //   } catch (err: any) {
+  //     console.error("❌ Error:", err);
+  //     Alert.alert("Error", "Something went wrong. Please try again.");
+  //   } finally {
+  //     setPaymentLoading(false);
+  //   }
+  // };
 
   // ============================================================================
   // 🚀 PRODUCTION VERSION - FULL PAYMENT FLOW
   // ============================================================================
   // Uncomment this section for production deployment
 
-  /*
+  
 const handlePayment = async () => {
   if (!vehicleNumber.trim()) {
     Alert.alert(
@@ -431,7 +431,7 @@ const handlePayment = async () => {
     setPaymentLoading(false);
   }
 };
-*/
+
 
   // ============================================================================
   // RECEIPT CLOSE HANDLER - TOGGLE BETWEEN PRODUCTION AND TESTING MODE
@@ -442,21 +442,21 @@ const handlePayment = async () => {
   // ============================================================================
   // Uncomment this section for testing (currently active)
 
-  const handleReceiptClose = () => {
-    setShowReceipt(false);
+  // const handleReceiptClose = () => {
+  //   setShowReceipt(false);
 
-    console.log(
-      "🧪 TESTING MODE: Returning to home (booking not created on backend)"
-    );
-    router.replace("/userHome");
-  };
+  //   console.log(
+  //     "🧪 TESTING MODE: Returning to home (booking not created on backend)"
+  //   );
+  //   router.replace("/userHome");
+  // };
 
   // ============================================================================
   // 🚀 PRODUCTION VERSION - GO TO LIVE SESSION
   // ============================================================================
   // Uncomment this section for production deployment
 
-  /*
+  
 const handleReceiptClose = () => {
   setShowReceipt(false);
   
@@ -469,7 +469,7 @@ const handleReceiptClose = () => {
     },
   });
 };
-*/
+
   if (!lot || !type) {
     return (
       <View style={styles.errorContainer}>
