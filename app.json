@@ -44,14 +44,21 @@
       ]
     },
 
-    "plugins": [
+   "plugins": [
       "expo-barcode-scanner",
       [
         "expo-media-library",
         {
-          "photosPermission": "Allow Vervoer to access your photos to save receipts.",
+          "photosPermission": "Allow Vervoer to access your photos.",
           "savePhotosPermission": "Allow Vervoer to save receipts to your gallery.",
-          "granularPermissions": ["photo", "audio"]
+          "isAccessMediaLocationEnabled": true
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Vervoer to access your photos.",
+          "cameraPermission": "Allow Vervoer to access your camera."
         }
       ]
     ]
