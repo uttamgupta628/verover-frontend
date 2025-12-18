@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from "react";
 import {
   StatusBar,
   StyleSheet,
@@ -10,26 +10,30 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
-} from 'react-native';
-import { useRouter } from 'expo-router';
-import { responsiveFontSize, responsiveHeight, responsiveWidth } from 'react-native-responsive-dimensions';
-import { MaterialCommunityIcons as Icon } from '@expo/vector-icons';
-import { useAppDispatch, useAppSelector } from '../components/redux/hooks';
-import { verifyOTP } from '../components/redux/authSlice';
-import axiosInstance from '../api/axios';
+} from "react-native";
+import { useRouter } from "expo-router";
+import {
+  responsiveFontSize,
+  responsiveHeight,
+  responsiveWidth,
+} from "react-native-responsive-dimensions";
+import { MaterialCommunityIcons as Icon } from "@expo/vector-icons";
+import { useAppDispatch, useAppSelector } from "../components/redux/hooks";
+import { verifyOTP } from "../components/redux/authSlice";
+import axiosInstance from "../api/axios";
 
 const colors = {
-  primary: '#FF8C00',
-  white: '#FFFFFF',
-  gray: '#888888',
-  black: '#000000',
-  error: '#FF0000',
-  lightGray: '#E0E0E0',
-  backgroundGray: '#F9F9F9',
+  primary: "#FF8C00",
+  white: "#FFFFFF",
+  gray: "#888888",
+  black: "#000000",
+  error: "#FF0000",
+  lightGray: "#E0E0E0",
+  backgroundGray: "#F9F9F9",
 };
 
 export default function EmailOTP() {
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [loading, setLoading] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
   const [resendTimer, setResendTimer] = useState(60);
@@ -38,14 +42,14 @@ export default function EmailOTP() {
 
   const router = useRouter();
   const dispatch = useAppDispatch();
-  
+
   // Get token and email from Redux store
   const { token, user } = useAppSelector((state) => state.auth);
 
   // Timer for resend OTP
   useEffect(() => {
     let interval: NodeJS.Timeout;
-    
+
     if (resendTimer > 0 && !canResend) {
       interval = setInterval(() => {
         setResendTimer((prev) => {
@@ -85,13 +89,13 @@ export default function EmailOTP() {
     setOtp(newOtp);
 
     // Move to next input
-    if (value !== '' && index < 5) {
+    if (value !== "" && index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
 
     // Auto-submit when all 6 digits are entered
-    if (index === 5 && value !== '') {
-      const fullOtp = [...newOtp.slice(0, 5), value].join('');
+    if (index === 5 && value !== "") {
+      const fullOtp = [...newOtp.slice(0, 5), value].join("");
       if (fullOtp.length === 6) {
         setTimeout(() => handleVerifyOTP(fullOtp), 100);
       }
@@ -99,28 +103,28 @@ export default function EmailOTP() {
   };
 
   const handleKeyPress = (e: any, index: number) => {
-    if (e.nativeEvent.key === 'Backspace' && otp[index] === '' && index > 0) {
+    if (e.nativeEvent.key === "Backspace" && otp[index] === "" && index > 0) {
       inputRefs.current[index - 1]?.focus();
       // Clear the previous input
       const newOtp = [...otp];
-      newOtp[index - 1] = '';
+      newOtp[index - 1] = "";
       setOtp(newOtp);
     }
   };
 
   const handleVerifyOTP = async (otpCode?: string) => {
-    const code = otpCode || otp.join('');
-    
+    const code = otpCode || otp.join("");
+
     if (code.length !== 6) {
-      Alert.alert('Invalid OTP', 'Please enter a 6-digit OTP');
+      Alert.alert("Invalid OTP", "Please enter a 6-digit OTP");
       return;
     }
 
     if (!token) {
-      Alert.alert('Error', 'Session expired. Please register again.', [
+      Alert.alert("Error", "Session expired. Please register again.", [
         {
-          text: 'OK',
-          onPress: () => router.replace('/signup'),
+          text: "OK",
+          onPress: () => router.replace("/signup"),
         },
       ]);
       return;
@@ -129,35 +133,60 @@ export default function EmailOTP() {
     setLoading(true);
 
     try {
-      console.log('Verifying OTP:', code);
-      console.log('Using token:', token);
-      
+      console.log("Verifying OTP:", code);
+      console.log("Using token:", token);
+
       await dispatch(verifyOTP(code, token));
-      
-      Alert.alert(
-        'Success', 
-        'Email verified successfully!',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              // Navigate to tabs (home) after successful verification
-              router.replace('/EmailOTPSuccess');
-            }
-          }
-        ]
-      );
+
+      Alert.alert("Success", "Email verified successfully!", [
+        {
+          text: "OK",
+          onPress: () => {
+            // Navigate to tabs (home) after successful verification
+            router.replace("/EmailOTPSuccess");
+          },
+        },
+      ]);
     } catch (error: any) {
-      console.error('OTP Verification Error:', error);
-      
-      // Clear OTP inputs on error
-      setOtp(['', '', '', '', '', '']);
+      console.error("OTP Verification Error:", error);
+
+      // Clear OTP inputs
+      setOtp(["", "", "", "", "", ""]);
       inputRefs.current[0]?.focus();
-      
-      Alert.alert(
-        'Verification Failed', 
-        error.message || 'Invalid OTP. Please try again.'
-      );
+
+      let errorMessage = "Invalid OTP. Please try again.";
+
+      if (error.response?.data) {
+        const errorData = error.response.data;
+
+        if (typeof errorData === "string") {
+          const match = errorData.match(/Error:\s*([A-Z_]+)/);
+          if (match) {
+            const errorMap: Record<string, string> = {
+              OTP_REQUIRED: "Please enter the OTP.",
+              USER_NOT_FOUND: "Session expired. Please register again.",
+              USER_ALREADY_VERIFIED: "Your account is already verified.",
+              INVALID_OTP: "Invalid OTP. Please check and try again.",
+              OTP_EXPIRED: "OTP has expired. Please request a new one.",
+              TOKEN_EXPIRED: "Session expired. Please register again.",
+              UNAUTHORIZED_ACCESS: "Unauthorized. Please register again.",
+            };
+            errorMessage =
+              errorMap[match[1]] || match[1].replace(/_/g, " ").toLowerCase();
+          }
+        }
+      }
+
+      if (errorMessage.toLowerCase().includes("session expired")) {
+        Alert.alert("Session Expired", errorMessage, [
+          {
+            text: "OK",
+            onPress: () => router.replace("/signup"),
+          },
+        ]);
+      } else {
+        Alert.alert("Verification Failed", errorMessage);
+      }
     } finally {
       setLoading(false);
     }
@@ -169,10 +198,10 @@ export default function EmailOTP() {
     }
 
     if (!token || !user?.email) {
-      Alert.alert('Error', 'Session expired. Please register again.', [
+      Alert.alert("Error", "Session expired. Please register again.", [
         {
-          text: 'OK',
-          onPress: () => router.replace('/signup'),
+          text: "OK",
+          onPress: () => router.replace("/signup"),
         },
       ]);
       return;
@@ -181,42 +210,46 @@ export default function EmailOTP() {
     setResendLoading(true);
 
     try {
-      console.log('Resending OTP to:', user.email);
-      
-      const response = await axiosInstance.post('/users/resend-otp', {
-        email: user.email,
-      }, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
+      console.log("Resending OTP to:", user.email);
+
+      const response = await axiosInstance.post(
+        "/users/resend-otp",
+        {
+          email: user.email,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
         }
-      });
+      );
 
-      console.log('Resend OTP Response:', response.data);
+      console.log("Resend OTP Response:", response.data);
 
-      Alert.alert('Success', 'A new OTP has been sent to your email.');
-      
+      Alert.alert("Success", "A new OTP has been sent to your email.");
+
       // Reset timer
       setResendTimer(60);
       setCanResend(false);
-      
+
       // Clear current OTP
-      setOtp(['', '', '', '', '', '']);
+      setOtp(["", "", "", "", "", ""]);
       inputRefs.current[0]?.focus();
-      
     } catch (error: any) {
-      console.error('Resend OTP Error:', error);
-      
-      let errorMessage = 'Failed to resend OTP. Please try again.';
-      
+      console.error("Resend OTP Error:", error);
+
+      let errorMessage = "Failed to resend OTP. Please try again.";
+
       if (error.response) {
-        errorMessage = error.response.data?.message 
-          || error.response.data?.error 
-          || errorMessage;
+        errorMessage =
+          error.response.data?.message ||
+          error.response.data?.error ||
+          errorMessage;
       } else if (error.message) {
         errorMessage = error.message;
       }
-      
-      Alert.alert('Error', errorMessage);
+
+      Alert.alert("Error", errorMessage);
     } finally {
       setResendLoading(false);
     }
@@ -225,9 +258,13 @@ export default function EmailOTP() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+      <StatusBar
+        barStyle="dark-content"
+        backgroundColor="transparent"
+        translucent
+      />
 
       {/* Header */}
       <View style={styles.headerContainer}>
@@ -243,8 +280,8 @@ export default function EmailOTP() {
         <Icon name="email-check" size={80} color={colors.primary} />
         <Text style={styles.mainTitle}>Enter Verification Code</Text>
         <Text style={styles.subtitleText}>
-          We've sent a 6-digit code to {'\n'}
-          <Text style={styles.emailText}>{user?.email || 'your email'}</Text>
+          We've sent a 6-digit code to {"\n"}
+          <Text style={styles.emailText}>{user?.email || "your email"}</Text>
         </Text>
       </View>
 
@@ -254,10 +291,7 @@ export default function EmailOTP() {
           <TextInput
             key={index}
             ref={(ref) => (inputRefs.current[index] = ref)}
-            style={[
-              styles.otpInput,
-              digit !== '' && styles.otpInputFilled,
-            ]}
+            style={[styles.otpInput, digit !== "" && styles.otpInputFilled]}
             maxLength={1}
             keyboardType="number-pad"
             value={digit}
@@ -272,11 +306,11 @@ export default function EmailOTP() {
       {/* Verify Button */}
       <TouchableOpacity
         style={[
-          styles.verifyButton, 
-          (loading || otp.join('').length !== 6) && styles.disabledButton
+          styles.verifyButton,
+          (loading || otp.join("").length !== 6) && styles.disabledButton,
         ]}
         onPress={() => handleVerifyOTP()}
-        disabled={loading || otp.join('').length !== 6}
+        disabled={loading || otp.join("").length !== 6}
       >
         {loading ? (
           <ActivityIndicator color={colors.white} />
@@ -289,14 +323,11 @@ export default function EmailOTP() {
       <View style={styles.resendContainer}>
         <Text style={styles.resendText}>Didn't receive the code?</Text>
         {canResend ? (
-          <TouchableOpacity 
-            onPress={handleResendOTP}
-            disabled={resendLoading}
-          >
+          <TouchableOpacity onPress={handleResendOTP} disabled={resendLoading}>
             {resendLoading ? (
-              <ActivityIndicator 
-                size="small" 
-                color={colors.primary} 
+              <ActivityIndicator
+                size="small"
+                color={colors.primary}
                 style={{ marginLeft: 8 }}
               />
             ) : (
@@ -304,15 +335,17 @@ export default function EmailOTP() {
             )}
           </TouchableOpacity>
         ) : (
-          <Text style={styles.timerText}>
-            Resend in {resendTimer}s
-          </Text>
+          <Text style={styles.timerText}>Resend in {resendTimer}s</Text>
         )}
       </View>
 
       {/* Help Text */}
       <View style={styles.helpContainer}>
-        <Icon name="information" size={responsiveFontSize(2)} color={colors.gray} />
+        <Icon
+          name="information"
+          size={responsiveFontSize(2)}
+          color={colors.gray}
+        />
         <Text style={styles.helpText}>
           Check your spam folder if you don't see the email
         </Text>
@@ -325,47 +358,48 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.white,
-    alignItems: 'center',
+    alignItems: "center",
   },
   headerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     width: responsiveWidth(90),
-    marginTop: Platform.OS === 'ios' ? responsiveHeight(6) : responsiveHeight(4),
+    marginTop:
+      Platform.OS === "ios" ? responsiveHeight(6) : responsiveHeight(4),
     paddingHorizontal: responsiveWidth(5),
   },
   headerTitle: {
     fontSize: responsiveFontSize(2.5),
     color: colors.primary,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   titleContainer: {
     width: responsiveWidth(85),
     marginTop: responsiveHeight(5),
-    alignItems: 'center',
+    alignItems: "center",
   },
   mainTitle: {
     fontSize: responsiveFontSize(2.8),
     color: colors.black,
-    textAlign: 'center',
-    fontWeight: '600',
+    textAlign: "center",
+    fontWeight: "600",
     marginTop: responsiveHeight(2),
   },
   subtitleText: {
     fontSize: responsiveFontSize(1.8),
     color: colors.gray,
-    textAlign: 'center',
+    textAlign: "center",
     marginTop: responsiveHeight(1.5),
     lineHeight: responsiveFontSize(2.6),
   },
   emailText: {
     color: colors.primary,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   otpContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     width: responsiveWidth(85),
     marginTop: responsiveHeight(5),
   },
@@ -376,9 +410,9 @@ const styles = StyleSheet.create({
     borderColor: colors.lightGray,
     borderRadius: 12,
     fontSize: responsiveFontSize(3.5),
-    textAlign: 'center',
+    textAlign: "center",
     color: colors.black,
-    fontWeight: '600',
+    fontWeight: "600",
     backgroundColor: colors.backgroundGray,
   },
   otpInputFilled: {
@@ -390,8 +424,8 @@ const styles = StyleSheet.create({
     width: responsiveWidth(85),
     marginTop: responsiveHeight(4),
     backgroundColor: colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     borderRadius: 25,
     shadowColor: colors.primary,
     shadowOffset: {
@@ -411,12 +445,12 @@ const styles = StyleSheet.create({
   verifyButtonText: {
     fontSize: responsiveFontSize(2),
     color: colors.white,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   resendContainer: {
-    flexDirection: 'row',
+    flexDirection: "row",
     marginTop: responsiveHeight(3),
-    alignItems: 'center',
+    alignItems: "center",
   },
   resendText: {
     fontSize: responsiveFontSize(1.7),
@@ -426,18 +460,18 @@ const styles = StyleSheet.create({
     fontSize: responsiveFontSize(1.7),
     color: colors.primary,
     marginLeft: 8,
-    fontWeight: '600',
-    textDecorationLine: 'underline',
+    fontWeight: "600",
+    textDecorationLine: "underline",
   },
   timerText: {
     fontSize: responsiveFontSize(1.7),
     color: colors.gray,
     marginLeft: 8,
-    fontWeight: '500',
+    fontWeight: "500",
   },
   helpContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginTop: responsiveHeight(4),
     paddingHorizontal: responsiveWidth(10),
   },
@@ -445,7 +479,7 @@ const styles = StyleSheet.create({
     fontSize: responsiveFontSize(1.5),
     color: colors.gray,
     marginLeft: 8,
-    textAlign: 'center',
+    textAlign: "center",
     flex: 1,
   },
 });

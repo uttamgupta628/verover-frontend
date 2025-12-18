@@ -1,15 +1,14 @@
-import React, { useState } from 'react';
+import React from 'react';
 import {
   StatusBar,
   StyleSheet,
   Text,
-  TextInput,
   Image,
   View,
   TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
   ScrollView,
+  SafeAreaView,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
@@ -24,108 +23,213 @@ import { images } from '../assets/images/images';
 export default function UserHome() {
   const router = useRouter();
 
+  const services = [
+    {
+      id: 1,
+      title: 'Parking',
+      image: images.Parking,
+      imageStyle: { width: '50%', height: '35%' },
+      route: 'parkingUser/parking',
+    },
+    {
+      id: 2,
+      title: 'Dry Cleaners',
+      image: images.Cleaning,
+      imageStyle: { width: '35%', height: '35%' },
+      route: 'dryCleanerUser/allDrycleanerLocation',
+    },
+    {
+      id: 3,
+      title: 'My Orders',
+      image: images.Cleaning,
+      imageStyle: { width: '35%', height: '35%' },
+      route: 'dryCleanerUser/myOrder',
+    },
+  ];
+
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.safeArea}>
       <StatusBar
         hidden={false}
         barStyle="dark-content"
         animated={true}
         backgroundColor="transparent"
+        translucent={Platform.OS === 'android'}
       />
+      
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        bounces={true}
+      >
+        {/* Header */}
+        <View style={styles.headerContainer}>
+          <View style={styles.headerTextContainer}>
+            <Text style={styles.headerTitle}>Users - Home</Text>
+            <Text style={styles.headerSubtitle}>Welcome back!</Text>
+          </View>
+        </View>
 
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          width: responsiveWidth(90),
-          justifyContent: 'space-between',
-          marginTop: '0%',
-        }}>
-        <View style={{ width: responsiveWidth(60) }}>
-          <Text
-            style={{
-              fontSize: responsiveFontSize(2.5),
-              color: `${colors.black}`,
-            }}>
-            Users - Home
+        {/* Slider Section */}
+        <View style={styles.sliderContainer}>
+          <CarRentalSlider />
+        </View>
+
+        {/* Services Title */}
+        <View style={styles.servicesTitleContainer}>
+          <Text style={styles.servicesTitle}>Our Services</Text>
+          <Text style={styles.servicesSubtitle}>
+            Choose from our available services
           </Text>
         </View>
-      </View>
 
-      <View style={{ height: responsiveHeight(20) }}>
-        <CarRentalSlider />
-      </View>
+        {/* Services Grid */}
+        <View style={styles.servicesContainer}>
+          {services.map((service, index) => (
+            <TouchableOpacity
+              key={service.id}
+              style={[
+                styles.serviceButton,
+                index % 2 === 0 ? styles.serviceButtonLeft : styles.serviceButtonRight,
+              ]}
+              onPress={() => router.push(service.route as any)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.serviceIconContainer}>
+                <Image
+                  source={service.image}
+                  style={service.imageStyle}
+                  resizeMode="contain"
+                />
+              </View>
+              <Text style={styles.serviceButtonText}>{service.title}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
 
-      <View
-        style={{
-          alignItems: 'center',
-          marginTop: '2%',
-          width: responsiveWidth(45),
-          height: responsiveHeight(50),
-          justifyContent: 'space-evenly',
-        }}>
-        <TouchableOpacity
-          style={styles.button}
-          onPress={() => {
-            router.push('parkingUser/parking');
-          }}>
-          <Image
-            source={images.Parking}
-            style={{ width: '50%', height: '35%' }}
-          />
-          <Text style={styles.buttonText}>Parking</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.button}
-          onPress={() => {
-            router.push('dryCleanerUser/allDrycleanerLocation');
-          }}>
-          <Image
-            source={images.Cleaning}
-            style={{ width: '35%', height: '35%' }}
-          />
-          <Text style={styles.buttonText}>Dry Cleaners</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.button}
-          onPress={() => {
-            router.push('dryCleanerUser/myOrder');
-          }}>
-          <Image
-            source={images.Cleaning}
-            style={{ width: '35%', height: '35%' }}
-          />
-          <Text style={styles.buttonText}>Dry Cleaners</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+        {/* Bottom Spacing */}
+        <View style={styles.bottomSpacing} />
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    backgroundColor: '#FFFFFF',
-    alignItems: 'center',
+  safeArea: {
+    flex: 1,
+    backgroundColor: colors.white || '#FFFFFF',
   },
-  button: {
-    backgroundColor: `${colors.white}`,
-    width: '60%',
-    height: '25%',
+  scrollView: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: responsiveHeight(3),
+  },
+  
+  // Header Styles
+  headerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingHorizontal: responsiveWidth(5),
+    paddingTop: Platform.OS === 'ios' ? responsiveHeight(2) : responsiveHeight(4),
+    paddingBottom: responsiveHeight(2),
+  },
+  headerTextContainer: {
+    flex: 1,
+  },
+  headerTitle: {
+    fontSize: responsiveFontSize(2.8),
+    color: colors.black || '#000000',
+    fontWeight: '700',
+    marginBottom: responsiveHeight(0.5),
+  },
+  headerSubtitle: {
+    fontSize: responsiveFontSize(1.8),
+    color: colors.gray || '#666666',
+    fontWeight: '400',
+  },
+
+  // Slider Styles
+  sliderContainer: {
+    height: responsiveHeight(22),
+    marginTop: responsiveHeight(1),
+    marginBottom: responsiveHeight(2),
+  },
+
+  // Services Title
+  servicesTitleContainer: {
+    paddingHorizontal: responsiveWidth(5),
+    marginTop: responsiveHeight(1),
+    marginBottom: responsiveHeight(2),
+  },
+  servicesTitle: {
+    fontSize: responsiveFontSize(2.4),
+    color: colors.black || '#000000',
+    fontWeight: '600',
+    marginBottom: responsiveHeight(0.5),
+  },
+  servicesSubtitle: {
+    fontSize: responsiveFontSize(1.7),
+    color: colors.gray || '#666666',
+    fontWeight: '400',
+  },
+
+  // Services Container
+  servicesContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: responsiveWidth(3),
+    justifyContent: 'space-between',
+  },
+
+  // Service Button Styles
+  serviceButton: {
+    backgroundColor: colors.white || '#FFFFFF',
+    width: responsiveWidth(44),
+    minHeight: responsiveHeight(20),
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 20,
+    borderRadius: 16,
+    paddingVertical: responsiveHeight(2.5),
+    paddingHorizontal: responsiveWidth(3),
+    marginBottom: responsiveHeight(2),
+    
+    // Shadow for iOS
     shadowColor: '#000',
-    shadowOffset: { width: 5, height: 5 },
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
-    elevation: 5,
-    marginTop: '10%',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    
+    // Shadow for Android
+    elevation: 6,
   },
-  buttonText: {
-    marginTop: '5%',
-    color: `${colors.black}`,
+  serviceButtonLeft: {
+    marginLeft: responsiveWidth(2),
+  },
+  serviceButtonRight: {
+    marginRight: responsiveWidth(2),
+  },
+  serviceIconContainer: {
+    width: '100%',
+    height: responsiveHeight(10),
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: responsiveHeight(1),
+  },
+  serviceButtonText: {
+    marginTop: responsiveHeight(1),
+    fontSize: responsiveFontSize(1.9),
+    color: colors.black || '#000000',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+
+  // Bottom Spacing
+  bottomSpacing: {
+    height: responsiveHeight(2),
   },
 });

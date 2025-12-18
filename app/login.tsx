@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState } from "react";
 import { MaterialCommunityIcons as Icon } from "@expo/vector-icons";
 
 import {
@@ -14,27 +14,111 @@ import {
   Platform,
   ScrollView,
   Alert,
-} from 'react-native';
+} from "react-native";
 
-import { useRouter } from 'expo-router';
-import { useForm, Controller } from 'react-hook-form';
-import { responsiveFontSize, responsiveHeight, responsiveWidth } from 'react-native-responsive-dimensions';
+import { useRouter } from "expo-router";
+import { useForm, Controller } from "react-hook-form";
+import {
+  responsiveFontSize,
+  responsiveHeight,
+  responsiveWidth,
+} from "react-native-responsive-dimensions";
 
-import { useAppDispatch, useAppSelector } from '../components/redux/hooks';
-import { loginWithEmailPassword } from '../components/redux/authSlice';
+import { useAppDispatch } from "../components/redux/hooks";
+import { loginWithEmailPassword } from "../components/redux/authSlice";
 
 interface LoginFormData {
   email: string;
   password: string;
-  userType: 'user' | 'merchant' | 'driver';
+  userType: "user" | "merchant" | "driver";
 }
 
 const colors = {
-  primary: '#FF8C00',
-  white: '#FFFFFF',
-  gray: '#888888',
-  black: '#000000',
-  error: '#FF0000',
+  primary: "#FF8C00",
+  white: "#FFFFFF",
+  gray: "#888888",
+  black: "#000000",
+  error: "#FF0000",
+};
+
+// Enhanced error message mapper
+const getErrorMessage = (error: any): string => {
+  // Check for response data
+  if (error.response?.data) {
+    const errorData = error.response.data;
+
+    // Handle HTML error responses with error codes
+    if (typeof errorData === "string") {
+      // Extract error code from HTML response
+      const match = errorData.match(/Error:\s*([A-Z_]+)/);
+      if (match) {
+        const errorCode = match[1];
+
+        // Map error codes to user-friendly messages
+        const errorMessages: Record<string, string> = {
+          USER_NOT_FOUND:
+            "No account found with this email. Please check your email or sign up.",
+          INVALID_EMAIL_OR_PASSWORD:
+            "Invalid email or password. Please try again.",
+          PASSWORD_LOGIN_NOT_AVAILABLE:
+            "This account was created using social login. Please use Google or Facebook to sign in.",
+          UNAUTHORIZED_ACCESS: "Unauthorized access. Please try again.",
+          TOKEN_EXPIRED: "Your session has expired. Please login again.",
+          USER_ALREADY_EXISTS: "An account with this email already exists.",
+          INVALID_DATA: "Please check your input and try again.",
+        };
+
+        return (
+          errorMessages[errorCode] || errorCode.replace(/_/g, " ").toLowerCase()
+        );
+      }
+
+      // Check for specific error strings in HTML
+      if (errorData.includes("User not found")) {
+        return "No account found with this email. Please check your email or sign up.";
+      }
+      if (errorData.includes("Invalid email or password")) {
+        return "Invalid email or password. Please try again.";
+      }
+      if (errorData.includes("Password login not available")) {
+        return "This account was created using social login. Please use Google or Facebook to sign in.";
+      }
+    }
+
+    // Handle JSON error responses
+    if (errorData.message) {
+      return errorData.message;
+    }
+
+    if (errorData.error) {
+      return errorData.error;
+    }
+  }
+
+  // Handle HTTP status codes
+  if (error.response?.status) {
+    const statusMessages: Record<number, string> = {
+      400: "Invalid request. Please check your input.",
+      401: "Invalid email or password.",
+      404: "No account found with this email.",
+      500: "Server error. Please try again later.",
+      503: "Service temporarily unavailable. Please try again later.",
+    };
+
+    return (
+      statusMessages[error.response.status] || `Error: ${error.response.status}`
+    );
+  }
+
+  // Handle network errors
+  if (error.message) {
+    if (error.message.includes("Network")) {
+      return "Network error. Please check your internet connection.";
+    }
+    return error.message;
+  }
+
+  return "Login failed. Please try again.";
 };
 
 export default function Login() {
@@ -43,71 +127,93 @@ export default function Login() {
 
   const [secureEntry, setSecureEntry] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [selectedUserType, setSelectedUserType] = useState<'user' | 'merchant' | 'driver'>('user');
+  const [selectedUserType, setSelectedUserType] = useState<
+    "user" | "merchant" | "driver"
+  >("user");
 
-  const { control, handleSubmit, formState: { errors, isValid }, setValue } = useForm<LoginFormData>({
-    defaultValues: { email: '', password: '', userType: 'user' },
-    mode: 'onChange',
+  const {
+    control,
+    handleSubmit,
+    formState: { errors, isValid },
+    setValue,
+  } = useForm<LoginFormData>({
+    defaultValues: { email: "", password: "", userType: "user" },
+    mode: "onChange",
   });
 
-  const handleUserTypeSelect = (type: 'user' | 'merchant' | 'driver') => {
+  const handleUserTypeSelect = (type: "user" | "merchant" | "driver") => {
     setSelectedUserType(type);
-    setValue('userType', type);
+    setValue("userType", type, { shouldValidate: true });
   };
 
   const handleLogin = async (data: LoginFormData) => {
     setLoading(true);
+
     try {
-      // Call the login thunk - it returns the axios response
-      const response = await dispatch(loginWithEmailPassword(data.email, data.password, data.userType) as any);
-      
-      console.log('Login response:', response);
-      
-      // Check if the response indicates success
-      if (response && response.data) {
-        // Login was successful - the Redux state is already updated by loginSuccess
-        console.log('Login successful, redirecting...');
-        
-        // Redirect based on user type
-        if (data.userType === 'merchant') {
-          router.replace('/merchantHome');
-        } else if (data.userType === 'driver') {
-          router.replace('/driverHome');
-        } else {
-          router.replace('/userHome');
-        }
+      console.log("Attempting login with:", {
+        email: data.email,
+        userType: data.userType,
+      });
+
+      // Call the login thunk
+      const response = await dispatch(
+        loginWithEmailPassword(data.email, data.password, data.userType) as any
+      );
+
+      console.log("Login response:", response);
+
+      // Check if login was successful
+      if (response && response.data && response.data.success) {
+        console.log("Login successful");
+
+        // Show success message
+        Alert.alert(
+          "Welcome Back!",
+          `Successfully logged in as ${data.userType}.`,
+          [
+            {
+              text: "OK",
+              onPress: () => {
+                // Redirect based on user type
+                if (data.userType === "merchant") {
+                  router.replace("/merchantHome");
+                } else if (data.userType === "driver") {
+                  router.replace("/driverHome");
+                } else {
+                  router.replace("/userHome");
+                }
+              },
+            },
+          ]
+        );
       } else {
-        // If response doesn't have data, something went wrong
-        throw new Error('Invalid response from server');
+        throw new Error("Invalid response from server");
       }
-      
     } catch (error: any) {
-      console.error('Login error caught:', error);
-      
-      let errorMessage = 'Login failed. Please try again.';
-      
-      // Handle Axios errors
-      if (error.response?.data) {
-        const errorData = error.response.data;
-        
-        // Handle HTML error responses
-        if (typeof errorData === 'string' && errorData.includes('Error:')) {
-          const match = errorData.match(/Error:\s*([A-Z_]+)/);
-          if (match) {
-            const errorCode = match[1];
-            errorMessage = errorCode.replace(/_/g, ' ').toLowerCase();
-            errorMessage = errorMessage.charAt(0).toUpperCase() + errorMessage.slice(1);
-          }
-        } else if (errorData.message) {
-          errorMessage = errorData.message;
-        } else if (typeof errorData === 'string') {
-          errorMessage = errorData;
-        }
-      } else if (error.message) {
-        errorMessage = error.message;
+      console.error("Login error:", error);
+
+      const errorMessage = getErrorMessage(error);
+
+      // Special handling for "user not found" - offer to sign up
+      if (errorMessage.toLowerCase().includes("no account found")) {
+        Alert.alert("Account Not Found", errorMessage, [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "Sign Up",
+            onPress: () => router.push("/signup"),
+          },
+        ]);
       }
-      
-      Alert.alert('Login Error', errorMessage);
+      // Special handling for social login accounts
+      else if (errorMessage.toLowerCase().includes("social login")) {
+        Alert.alert("Social Login Required", errorMessage, [
+          { text: "OK", style: "default" },
+        ]);
+      }
+      // General error handling
+      else {
+        Alert.alert("Login Failed", errorMessage);
+      }
     } finally {
       setLoading(false);
     }
@@ -115,24 +221,31 @@ export default function Login() {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={styles.container}
     >
-      <ScrollView 
+      <ScrollView
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
-        <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+        <StatusBar
+          barStyle="dark-content"
+          backgroundColor="transparent"
+          translucent
+        />
 
         {/* Back Button */}
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+        <TouchableOpacity
+          onPress={() => router.back()}
+          style={styles.backButton}
+        >
           <Icon name="arrow-left" size={24} color={colors.primary} />
         </TouchableOpacity>
 
         {/* Logo */}
         <View style={styles.logoContainer}>
           <Image
-            source={require('../assets/images/Logo.png')}
+            source={require("../assets/images/Logo.png")}
             style={styles.logo}
             resizeMode="contain"
           />
@@ -140,13 +253,12 @@ export default function Login() {
 
         {/* Form */}
         <View style={styles.formContainer}>
-          
           {/* User Type */}
           <View style={styles.inputWrapper}>
-            <Text style={styles.label}>User Type</Text>
+            <Text style={styles.label}>User Type *</Text>
 
             <View style={styles.userTypeContainer}>
-              {['user', 'merchant', 'driver'].map((type) => (
+              {["user", "merchant", "driver"].map((type) => (
                 <TouchableOpacity
                   key={type}
                   style={[
@@ -158,7 +270,8 @@ export default function Login() {
                   <Text
                     style={[
                       styles.userTypeButtonText,
-                      selectedUserType === type && styles.selectedUserTypeButtonText,
+                      selectedUserType === type &&
+                        styles.selectedUserTypeButtonText,
                     ]}
                   >
                     {type.charAt(0).toUpperCase() + type.slice(1)}
@@ -170,24 +283,26 @@ export default function Login() {
             <Controller
               control={control}
               name="userType"
-              rules={{ required: 'User type is required' }}
+              rules={{ required: "User type is required" }}
               render={() => null}
             />
-            {errors.userType && <Text style={styles.error}>{errors.userType.message}</Text>}
+            {errors.userType && (
+              <Text style={styles.error}>{errors.userType.message}</Text>
+            )}
           </View>
 
           {/* Email Input */}
           <View style={styles.inputWrapper}>
-            <Text style={styles.label}>Email</Text>
+            <Text style={styles.label}>Email *</Text>
 
             <Controller
               control={control}
               name="email"
               rules={{
-                required: 'Email is required',
+                required: "Email is required",
                 pattern: {
                   value: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-                  message: 'Invalid email address',
+                  message: "Please enter a valid email address",
                 },
               }}
               render={({ field: { onChange, onBlur, value } }) => (
@@ -203,19 +318,24 @@ export default function Login() {
                 />
               )}
             />
-            {errors.email && <Text style={styles.error}>{errors.email.message}</Text>}
+            {errors.email && (
+              <Text style={styles.error}>{errors.email.message}</Text>
+            )}
           </View>
 
           {/* Password Input */}
           <View style={styles.inputWrapper}>
-            <Text style={styles.label}>Password</Text>
+            <Text style={styles.label}>Password *</Text>
 
             <Controller
               control={control}
               name="password"
               rules={{
-                required: 'Password is required',
-                minLength: { value: 6, message: 'Password must be at least 6 characters' },
+                required: "Password is required",
+                minLength: {
+                  value: 6,
+                  message: "Password must be at least 6 characters",
+                },
               }}
               render={({ field: { onChange, onBlur, value } }) => (
                 <View style={styles.passwordContainer}>
@@ -232,22 +352,31 @@ export default function Login() {
                     onPress={() => setSecureEntry(!secureEntry)}
                     style={styles.eyeIcon}
                   >
-                    <Icon name={secureEntry ? 'eye-off' : 'eye'} size={24} color={colors.gray} />
+                    <Icon
+                      name={secureEntry ? "eye-off" : "eye"}
+                      size={24}
+                      color={colors.gray}
+                    />
                   </TouchableOpacity>
                 </View>
               )}
             />
-            {errors.password && <Text style={styles.error}>{errors.password.message}</Text>}
+            {errors.password && (
+              <Text style={styles.error}>{errors.password.message}</Text>
+            )}
           </View>
 
           {/* Forgot Password */}
-          <TouchableOpacity onPress={() => router.push('/forgot-password')}>
+          <TouchableOpacity onPress={() => router.push("/forgot-password")}>
             <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
           </TouchableOpacity>
 
           {/* Login Button */}
           <TouchableOpacity
-            style={[styles.loginButton, (!isValid || loading) && styles.loginButtonDisabled]}
+            style={[
+              styles.loginButton,
+              (!isValid || loading) && styles.loginButtonDisabled,
+            ]}
             onPress={handleSubmit(handleLogin)}
             disabled={!isValid || loading}
           >
@@ -261,11 +390,10 @@ export default function Login() {
           {/* Sign Up Link */}
           <View style={styles.signUpContainer}>
             <Text style={styles.signUpPrompt}>Don't have an account? </Text>
-            <TouchableOpacity onPress={() => router.push('/signup')}>
+            <TouchableOpacity onPress={() => router.push("/signup")}>
               <Text style={styles.signUpLink}>Sign Up</Text>
             </TouchableOpacity>
           </View>
-
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -279,18 +407,18 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
+    paddingTop: Platform.OS === "ios" ? 60 : 40,
     paddingBottom: 40,
   },
   backButton: {
     padding: 16,
-    position: 'absolute',
-    top: Platform.OS === 'ios' ? 40 : 20,
+    position: "absolute",
+    top: Platform.OS === "ios" ? 40 : 20,
     left: 10,
     zIndex: 1,
   },
   logoContainer: {
-    alignItems: 'center',
+    alignItems: "center",
     marginTop: responsiveHeight(8),
     marginBottom: responsiveHeight(6),
   },
@@ -320,8 +448,8 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.error,
   },
   passwordContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     borderBottomWidth: 1,
     borderBottomColor: colors.gray,
   },
@@ -341,8 +469,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     borderRadius: 25,
     height: responsiveHeight(6),
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     marginTop: responsiveHeight(2),
   },
   loginButtonDisabled: {
@@ -351,12 +479,12 @@ const styles = StyleSheet.create({
   loginButtonText: {
     color: colors.white,
     fontSize: responsiveFontSize(2),
-    fontWeight: '600',
+    fontWeight: "600",
   },
   signUpContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
     marginTop: responsiveHeight(3),
   },
   signUpPrompt: {
@@ -366,7 +494,7 @@ const styles = StyleSheet.create({
   signUpLink: {
     fontSize: responsiveFontSize(1.8),
     color: colors.primary,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   error: {
     color: colors.error,
@@ -374,8 +502,8 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   userTypeContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginBottom: responsiveHeight(1),
   },
   userTypeButton: {
@@ -385,7 +513,7 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     borderWidth: 1,
     borderColor: colors.gray,
-    alignItems: 'center',
+    alignItems: "center",
   },
   selectedUserTypeButton: {
     backgroundColor: colors.primary,
