@@ -377,7 +377,7 @@ const MerchantGarageForm = () => {
 
       const endpoint = garageId
         ? `/api/merchants/garage/update/${garageId}`
-        : "https://vervoer-backend2.onrender.com/api/merchants/garage/registration";
+        : "http://192.168.29.162:5000/api/merchants/garage/registration";
 
       const method = garageId ? "put" : "post";
 

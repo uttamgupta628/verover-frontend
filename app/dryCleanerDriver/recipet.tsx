@@ -12,6 +12,7 @@ import {
   ScrollView,
   StatusBar,
   Share,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -20,6 +21,7 @@ import { useSelector } from 'react-redux';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { captureRef } from 'react-native-view-shot';
+import QRCode from 'react-native-qrcode-svg';
 import { images } from '../../assets/images/images';
 import colors from '../../assets/color';
 import axiosInstance from '../../api/axios';
@@ -30,6 +32,7 @@ const DriverReceipt = () => {
   const router = useRouter();
   const params = useLocalSearchParams();
   const receiptRef = useRef<View>(null);
+  const qrCodeRef = useRef<any>(null);
   
   // Redux auth state
   const { user, token, isAuthenticated } = useSelector((state: any) => state.auth);
@@ -40,6 +43,8 @@ const DriverReceipt = () => {
   const [loading, setLoading] = useState(true);
   const [isSharing, setIsSharing] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
+  const [showQRModal, setShowQRModal] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState<string>('');
 
   useEffect(() => {
     try {
@@ -162,6 +167,35 @@ const DriverReceipt = () => {
     }
   }, [receiptData?.payment?.deliveryCharge]);
 
+  // Generate QR Code Data
+  const generateQRData = () => {
+    if (!receiptData) return '';
+    
+    const qrData = {
+      receiptNumber: receiptData.receiptNumber,
+      bookingId: receiptData.bookingId,
+      orderNumber: receiptData.orderNumber,
+      driver: {
+        name: receiptData.driver?.name,
+        id: receiptData.driver?.id,
+      },
+      service: receiptData.service?.provider,
+      date: receiptData.date,
+      time: receiptData.time,
+      total: receiptData.payment?.total || 0,
+      status: receiptData.status,
+      // Add verification URL
+      verifyUrl: `https://yourapp.com/verify/${receiptData.receiptNumber}`,
+    };
+    
+    return JSON.stringify(qrData);
+  };
+
+  // Handle QR Code generation callback
+  const handleQRCodeGenerated = (dataUrl: string) => {
+    setQrDataUrl(dataUrl);
+  };
+
   // Format currency
   const formatCurrency = (amount: number) => {
     return `$${amount.toFixed(2)}`;
@@ -275,6 +309,17 @@ const DriverReceipt = () => {
             margin: 5px 0;
             color: #666;
           }
+          .qr-container {
+            text-align: center;
+            margin: 20px 0;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 8px;
+          }
+          .qr-container img {
+            width: 150px;
+            height: 150px;
+          }
           .section {
             margin: 20px 0;
             padding: 15px;
@@ -324,6 +369,13 @@ const DriverReceipt = () => {
           <h1>🚗 Delivery Receipt</h1>
           <p>Receipt #${receiptData?.receiptNumber || 'N/A'}</p>
           <p>${receiptData?.date || 'N/A'} at ${receiptData?.time || 'N/A'}</p>
+        </div>
+
+        <div class="qr-container">
+          <img src="${qrDataUrl}" alt="QR Code" />
+          <p style="margin-top: 10px; color: #666; font-size: 12px;">
+            Scan to verify receipt details
+          </p>
         </div>
 
         <div class="section">
@@ -440,6 +492,11 @@ const DriverReceipt = () => {
     router.replace('/driverHome'); 
   };
 
+  // Show QR Code Modal
+  const handleShowQR = () => {
+    setShowQRModal(true);
+  };
+
   if (!isAuthenticated || !token) {
     return (
       <SafeAreaView style={styles.container}>
@@ -481,12 +538,12 @@ const DriverReceipt = () => {
           <MaterialIcons name="home" size={35} color={colors.brandColor} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Receipt</Text>
-        {/* <TouchableOpacity 
+        <TouchableOpacity 
           style={styles.headerButton}
-          onPress={handleEmailReceipt}
+          onPress={handleShowQR}
         >
-          <MaterialIcons name="email" size={24} color={colors.brandColor} />
-        </TouchableOpacity> */}
+          <MaterialIcons name="qr-code-2" size={24} color={colors.brandColor} />
+        </TouchableOpacity>
       </View>
 
       <ScrollView 
@@ -507,6 +564,26 @@ const DriverReceipt = () => {
               <MaterialIcons name="check-circle" size={16} color="#FFFFFF" />
               <Text style={styles.statusText}>COMPLETED</Text>
             </View>
+          </View>
+
+          {/* QR Code Section */}
+          <View style={styles.qrSection}>
+            <TouchableOpacity 
+              style={styles.qrCodeContainer}
+              onPress={handleShowQR}
+              activeOpacity={0.8}
+            >
+              <QRCode
+                value={generateQRData()}
+                size={120}
+                color="#000000"
+                backgroundColor="#FFFFFF"
+                getRef={(ref) => (qrCodeRef.current = ref)}
+                onLoad={handleQRCodeGenerated}
+              />
+            </TouchableOpacity>
+            <Text style={styles.qrLabel}>Tap to view QR Code</Text>
+            <Text style={styles.qrSubLabel}>Scan to verify receipt</Text>
           </View>
 
           {/* Date & Time */}
@@ -689,6 +766,48 @@ const DriverReceipt = () => {
         </View>
       </ScrollView>
 
+      {/* QR Code Modal */}
+      <Modal
+        visible={showQRModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowQRModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Receipt QR Code</Text>
+              <TouchableOpacity 
+                onPress={() => setShowQRModal(false)}
+                style={styles.closeButton}
+              >
+                <MaterialIcons name="close" size={28} color="#666" />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.modalQRContainer}>
+              <View style={styles.qrWrapper}>
+                <QRCode
+                  value={generateQRData()}
+                  size={250}
+                  color="#000000"
+                  backgroundColor="#FFFFFF"
+                />
+              </View>
+              <Text style={styles.modalQRLabel}>Scan to verify receipt details</Text>
+              <Text style={styles.modalReceiptNumber}>#{receiptData?.receiptNumber}</Text>
+            </View>
+            
+            <TouchableOpacity 
+              style={styles.modalButton}
+              onPress={() => setShowQRModal(false)}
+            >
+              <Text style={styles.modalButtonText}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* Action Buttons */}
       <View style={styles.actionButtonsContainer}>
         <View style={styles.actionButtons}>
@@ -840,6 +959,32 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#FFFFFF',
     letterSpacing: 0.5,
+  },
+  qrSection: {
+    alignItems: 'center',
+    paddingVertical: 20,
+    backgroundColor: '#FAFAFA',
+  },
+  qrCodeContainer: {
+    padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  qrLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginTop: 12,
+  },
+  qrSubLabel: {
+    fontSize: 12,
+    color: '#999',
+    marginTop: 4,
   },
   dateTimeContainer: {
     flexDirection: 'row',
@@ -1029,6 +1174,84 @@ const styles = StyleSheet.create({
     flex: 1,
     lineHeight: 18,
   },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  closeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalQRContainer: {
+    alignItems: 'center',
+  },
+  qrWrapper: {
+    padding: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#FF8C00',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  modalQRLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginTop: 20,
+    textAlign: 'center',
+  },
+  modalReceiptNumber: {
+    fontSize: 14,
+    color: '#FF8C00',
+    marginTop: 8,
+    fontWeight: '600',
+  },
+  modalButton: {
+    backgroundColor: '#FF8C00',
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginTop: 24,
+    alignItems: 'center',
+  },
+  modalButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
   actionButtonsContainer: {
     position: 'absolute',
     bottom: 0,
@@ -1137,4 +1360,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
+
 export default DriverReceipt;

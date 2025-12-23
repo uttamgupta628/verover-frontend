@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
   Animated,
@@ -34,6 +34,9 @@ const ProfileDrawer: React.FC<ProfileDrawerProps> = ({ visible, onClose }) => {
   const dispatch = useAppDispatch();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  
+  // Add state to track if navigation is ready
+  const [canNavigate, setCanNavigate] = useState(false);
 
   const { user: authUser, isAuthenticated } = useAppSelector(
     (state) => state.auth
@@ -41,6 +44,15 @@ const ProfileDrawer: React.FC<ProfileDrawerProps> = ({ visible, onClose }) => {
   const { firstName, lastName, profileImage } = useAppSelector(
     (state) => state.profile
   );
+
+  // Wait for component to be ready before allowing navigation
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setCanNavigate(true);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     if (visible) {
@@ -86,12 +98,14 @@ const ProfileDrawer: React.FC<ProfileDrawerProps> = ({ visible, onClose }) => {
     }
   }, [visible]);
 
-  useEffect(() => {
-    if (!isAuthenticated) {
-      console.log("User is logged out, navigating to Login...");
-      router.replace("/login");
-    }
-  }, [isAuthenticated, router]);
+  // REMOVED THE PROBLEMATIC useEffect THAT WAS CAUSING THE ERROR
+  // This navigation is handled by AuthGuard in _layout.tsx
+  // useEffect(() => {
+  //   if (!isAuthenticated) {
+  //     console.log("User is logged out, navigating to Login...");
+  //     router.replace("/login");
+  //   }
+  // }, [isAuthenticated, router]);
 
   const handleCloseWithHaptic = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -110,9 +124,18 @@ const ProfileDrawer: React.FC<ProfileDrawerProps> = ({ visible, onClose }) => {
   ];
 
   const handleNavigation = async (route: string) => {
-    await Haptics.selectionAsync();
-    router.push(route);
-    onClose();
+    if (!canNavigate) {
+      console.log('Navigation not ready yet');
+      return;
+    }
+
+    try {
+      await Haptics.selectionAsync();
+      router.push(route as any);
+      onClose();
+    } catch (error) {
+      console.error('Navigation error:', error);
+    }
   };
 
   const handleLogout = () => {
@@ -129,13 +152,31 @@ const ProfileDrawer: React.FC<ProfileDrawerProps> = ({ visible, onClose }) => {
           text: "Logout",
           style: "destructive",
           onPress: async () => {
-            await Haptics.notificationAsync(
-              Haptics.NotificationFeedbackType.Warning
-            );
-            console.log("Logging out...");
-            dispatch(logout());
-            dispatch(clearProfile());
-            router.replace("/login");
+            if (!canNavigate) {
+              console.log('Navigation not ready yet');
+              return;
+            }
+
+            try {
+              await Haptics.notificationAsync(
+                Haptics.NotificationFeedbackType.Warning
+              );
+              console.log("Logging out...");
+              
+              // Close drawer first
+              onClose();
+              
+              // Dispatch logout actions
+              dispatch(logout());
+              dispatch(clearProfile());
+              
+              // Wait a bit for state to update, then navigate
+              setTimeout(() => {
+                router.replace("/login");
+              }, 300);
+            } catch (error) {
+              console.error('Logout navigation error:', error);
+            }
           },
         },
       ],
@@ -221,6 +262,7 @@ const ProfileDrawer: React.FC<ProfileDrawerProps> = ({ visible, onClose }) => {
                 onPress={() => handleNavigation(item.route)}
                 style={styles.menuItem}
                 activeOpacity={0.7}
+                disabled={!canNavigate}
               >
                 <View style={styles.menuIconContainer}>
                   <Feather
@@ -247,6 +289,7 @@ const ProfileDrawer: React.FC<ProfileDrawerProps> = ({ visible, onClose }) => {
               onPress={handleLogout}
               style={styles.logoutButton}
               activeOpacity={0.7}
+              disabled={!canNavigate}
             >
               <View style={styles.menuIconContainer}>
                 <Feather name="log-out" size={20} color="#FF6B6B" />
@@ -279,7 +322,7 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     flexDirection: "row",
-    justifyContent: "flex-start", // Changed from "flex-end" to "flex-start"
+    justifyContent: "flex-start",
   },
   blurOverlay: {
     flex: 1,
@@ -289,7 +332,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     height: "100%",
     shadowColor: "#000",
-    shadowOffset: { width: 4, height: 0 }, // Changed from -4 to 4 for left-side shadow
+    shadowOffset: { width: 4, height: 0 },
     shadowOpacity: 0.25,
     shadowRadius: 12,
     elevation: 16,

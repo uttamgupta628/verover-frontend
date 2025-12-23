@@ -9,43 +9,33 @@ interface BookingHistoryCardProps {
 }
 
 const BookingHistoryCard: React.FC<BookingHistoryCardProps> = ({ booking, onPress }) => {
-  
-  // Get the correct amount from multiple possible fields
-  const getAmount = () => {
-    // Priority order for amount fields
-    if (booking.amountToPaid !== undefined && booking.amountToPaid > 0) {
-      return booking.amountToPaid;
-    }
-    if (booking.totalAmount !== undefined && booking.totalAmount > 0) {
-      return booking.totalAmount;
-    }
-    if (booking.pricing?.totalAmount !== undefined && booking.pricing.totalAmount > 0) {
-      return booking.pricing.totalAmount;
-    }
-    if (booking.paymentDetails?.amount !== undefined && booking.paymentDetails.amount > 0) {
-      return booking.paymentDetails.amount;
-    }
-    return 0;
+
+  // Get place name based on booking type
+  const getPlaceName = () => {
+    if (booking.type === 'G') return booking.garage?.name;
+    if (booking.type === 'L') return booking.parking?.name;
+    if (booking.type === 'R') return booking.residence?.name;
+    return "Unknown";
   };
 
-  const amount = getAmount();
-  
+  // Get amount
+  const amount = booking.paymentDetails?.totalAmount || 0;
+
   // Format date
   const formatDate = (dateString: string) => {
     try {
-      const date = new Date(dateString);
-      return date.toLocaleDateString('en-IN', {
+      return new Date(dateString).toLocaleDateString('en-IN', {
         day: 'numeric',
         month: 'short',
         year: 'numeric',
       });
-    } catch (error) {
+    } catch {
       return dateString;
     }
   };
 
-  // Get status color
-  const getStatusColor = (status: string) => {
+  // Status color
+  const getStatusColor = (status?: string) => {
     switch (status?.toUpperCase()) {
       case 'SUCCESS': return '#10B981';
       case 'PENDING': return '#F59E0B';
@@ -59,21 +49,19 @@ const BookingHistoryCard: React.FC<BookingHistoryCardProps> = ({ booking, onPres
   const statusColor = getStatusColor(booking.paymentDetails?.status);
 
   return (
-    <TouchableOpacity 
-      style={styles.cardContainer}
-      onPress={onPress}
-      activeOpacity={0.7}
-    >
+    <TouchableOpacity style={styles.cardContainer} onPress={onPress} activeOpacity={0.7}>
+      
       <View style={styles.cardHeader}>
         <View>
           <Text style={styles.dateText}>
-            {booking.bookingPeriod?.from ? formatDate(booking.bookingPeriod.from) : 'Date N/A'}
+            {formatDate(booking.createdAt)}
           </Text>
-          <Text style={styles.garageName} numberOfLines={1}>
-            {booking.garageName || booking.placeInfo?.name || 'Unknown Garage'}
+
+          <Text style={styles.placeText} numberOfLines={1}>
+            {getPlaceName()}
           </Text>
         </View>
-        
+
         <View style={[styles.statusBadge, { backgroundColor: `${statusColor}15` }]}>
           <Text style={[styles.statusText, { color: statusColor }]}>
             {booking.paymentDetails?.status || 'UNKNOWN'}
@@ -85,28 +73,31 @@ const BookingHistoryCard: React.FC<BookingHistoryCardProps> = ({ booking, onPres
         <View style={styles.detailRow}>
           <View style={styles.detailItem}>
             <Icon source="map-marker" size={16} color="#6B7280" />
-            <Text style={styles.detailText}>{booking.slot || 'No Slot'}</Text>
+            <Text style={styles.detailText}>
+              {booking.bookedSlot || 'No Slot'}
+            </Text>
           </View>
-          
+
           <View style={styles.detailItem}>
-            <Icon source="car" size={16} color="#6B7280" />
-            <Text style={styles.detailText}>{booking.vehicleNumber || 'No Vehicle'}</Text>
+            <Icon source="account" size={16} color="#6B7280" />
+            <Text style={styles.detailText}>
+              {booking.customer?.phone || 'N/A'}
+            </Text>
           </View>
         </View>
-        
+
         <View style={styles.detailRow}>
           <View style={styles.detailItem}>
             <Icon source="clock-outline" size={16} color="#6B7280" />
             <Text style={styles.detailText}>
-              {booking.bookingPeriod?.from 
-                ? new Date(booking.bookingPeriod.from).toLocaleTimeString([], { 
-                    hour: '2-digit', minute: '2-digit' 
-                  }) 
-                : '--:--'
-              }
+              {booking.bookingPeriod?.from
+                ? new Date(booking.bookingPeriod.from).toLocaleTimeString([], {
+                    hour: '2-digit', minute: '2-digit'
+                  })
+                : '--:--'}
             </Text>
           </View>
-          
+
           <View style={styles.detailItem}>
             <Icon source="timer" size={16} color="#6B7280" />
             <Text style={styles.detailText}>
@@ -125,41 +116,20 @@ const BookingHistoryCard: React.FC<BookingHistoryCardProps> = ({ booking, onPres
       </View>
 
       <View style={styles.cardFooter}>
-        <View style={styles.amountContainer}>
+        <View>
           <Text style={styles.amountLabel}>Amount</Text>
           <Text style={styles.amountValue}>
-            {amount > 0 ? `₹${amount.toFixed(2)}` : '₹0.00'}
+            ₹{amount.toFixed(2)}
           </Text>
         </View>
-        
+
         <View style={styles.paymentMethodContainer}>
-          {booking.paymentDetails?.method && (
-            <>
-              <Icon 
-                source={
-                  booking.paymentDetails.method === 'CASH' ? 'cash' : 
-                  booking.paymentDetails.method === 'CARD' ? 'credit-card' :
-                  booking.paymentDetails.method === 'UPI' ? 'cellphone' : 'wallet'
-                } 
-                size={16} 
-                color="#6B7280" 
-              />
-              <Text style={styles.paymentMethodText}>
-                {booking.paymentDetails.method}
-              </Text>
-            </>
-          )}
+          <Icon source="wallet" size={16} color="#6B7280" />
+          <Text style={styles.paymentMethodText}>
+            {booking.paymentDetails?.status || 'N/A'}
+          </Text>
         </View>
       </View>
-      
-      {booking.paymentDetails?.status === 'SUCCESS' && 
-       booking.bookingPeriod?.to && 
-       new Date(booking.bookingPeriod.to) > new Date() && (
-        <View style={styles.activeBadge}>
-          <View style={styles.activeDot} />
-          <Text style={styles.activeText}>ACTIVE</Text>
-        </View>
-      )}
     </TouchableOpacity>
   );
 };
@@ -170,112 +140,28 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
     borderWidth: 1,
     borderColor: '#E5E7EB',
-    position: 'relative',
+    elevation: 3
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
     marginBottom: 12,
   },
-  dateText: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginBottom: 4,
-  },
-  garageName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1F2937',
-  },
-  statusBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  statusText: {
-    fontSize: 11,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-  },
-  cardBody: {
-    marginBottom: 12,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  detailItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  detailText: {
-    fontSize: 14,
-    color: '#4B5563',
-    marginLeft: 6,
-  },
-  cardFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
-  },
-  amountContainer: {},
-  amountLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginBottom: 2,
-  },
-  amountValue: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#10B981',
-  },
-  paymentMethodContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  paymentMethodText: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginLeft: 4,
-  },
-  activeBadge: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#10B981',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-  },
-  activeDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#FFFFFF',
-    marginRight: 4,
-  },
-  activeText: {
-    fontSize: 9,
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
+  dateText: { fontSize: 12, color: '#6B7280' },
+  placeText: { fontSize: 16, fontWeight: '600', color: '#1F2937' },
+  statusBadge: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  statusText: { fontSize: 11, fontWeight: '600' },
+  cardBody: { marginBottom: 12 },
+  detailRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 },
+  detailItem: { flexDirection: 'row', alignItems: 'center' },
+  detailText: { marginLeft: 6, fontSize: 14, color: '#4B5563' },
+  cardFooter: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: 12 },
+  amountLabel: { fontSize: 12, color: '#6B7280' },
+  amountValue: { fontSize: 18, color: '#FF9800', fontWeight: '700' },
+  paymentMethodContainer: { flexDirection: 'row', alignItems: 'center' },
+  paymentMethodText: { color: '#6B7280', marginLeft: 4 }
 });
 
 export default BookingHistoryCard;

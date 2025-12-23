@@ -40,24 +40,6 @@ const generateTrackingId = () => {
   return randomNum.toString();
 };
 
-// // Haversine formula to calculate distance between two coordinates
-// const calculateDistanceFromCoords = (lat1, lon1, lat2, lon2) => {
-//   const R = 6371; // Earth's radius in kilometers
-//   const dLat = (lat2 - lat1) * Math.PI / 180;
-//   const dLon = (lon2 - lon1) * Math.PI / 180;
-  
-//   const a = 
-//     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-//     Math.cos(lat1 * Math.PI / 180) * 
-//     Math.cos(lat2 * Math.PI / 180) *
-//     Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  
-//   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-//   const distance = R * c;
-  
-//   return distance;
-// };
-
 export default function OrderSummaryApp() {
   const router = useRouter();
   const dispatch = useDispatch();
@@ -111,6 +93,7 @@ export default function OrderSummaryApp() {
     return orderData?.items && orderData.items.length > 0;
   }, [orderData?.items]);
 
+  // State declarations
   const [showWashOnlyModal, setShowWashOnlyModal] = useState(false);
   const [showStarchLevelModal, setShowStarchLevelModal] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState(null);
@@ -118,23 +101,20 @@ export default function OrderSummaryApp() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [completedBookingId, setCompletedBookingId] = useState(null);
-
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState("debit");
   const [paymentLoading, setPaymentLoading] = useState(false);
-
   const [orderNumber, setOrderNumber] = useState("");
   const [trackingId, setTrackingId] = useState("");
   const [isCalculating, setIsCalculating] = useState(false);
-
-  // Distance state
-  const [deliveryDistance, setDeliveryDistance] = useState(null);
-  const [distanceLoading, setDistanceLoading] = useState(false);
+  const [deliveryDistance, setDeliveryDistance] = useState(null); // Added missing state
+  const [distanceLoading, setDistanceLoading] = useState(false); // Added missing state
+  const [tipAmount, setTipAmount] = useState("");
   const [cardDetails, setCardDetails] = useState({
-  cardNumber: "",
-  expiry: "",
-  cvv: "",
-});
+    cardNumber: "",
+    expiry: "",
+    cvv: "",
+  });
 
   useEffect(() => {
     if (!orderNumber) {
@@ -164,175 +144,172 @@ export default function OrderSummaryApp() {
   );
 
   // Geocode address using Nominatim (free, no API key required)
-  // Improved geocoding function with better error handling and address formatting
-const geocodeAddress = async (address) => {
-  try {
-    // Clean and format the address for better geocoding
-    const cleanAddress = address
-      .replace(/\s+/g, ' ')  // Remove extra spaces
-      .trim();
-    
-    console.log("🔍 Attempting to geocode:", cleanAddress);
-    
-    // Use Nominatim with better parameters
-    const url = `https://nominatim.openstreetmap.org/search?` + 
-      `format=json` +
-      `&q=${encodeURIComponent(cleanAddress)}` +
-      `&limit=1` +
-      `&countrycodes=in` +  // Limit to India for better results
-      `&addressdetails=1`;
-    
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'DryCleanerApp/1.0 (contact@example.com)',
-        'Accept': 'application/json',
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    
-    const data = await response.json();
-
-    if (data && data.length > 0) {
-      const result = {
-        lat: parseFloat(data[0].lat),
-        lng: parseFloat(data[0].lon)
-      };
-      console.log("✅ Geocoding successful:", result);
-      return result;
-    }
-
-    // Try alternative geocoding with just city and state if full address fails
-    const fallbackParts = cleanAddress.split(',').slice(-3); // Get last 3 parts (usually city, state, country)
-    if (fallbackParts.length > 0) {
-      console.log("🔄 Trying fallback geocoding with:", fallbackParts.join(','));
+  const geocodeAddress = async (address) => {
+    try {
+      const cleanAddress = address
+        .replace(/\s+/g, ' ')
+        .trim();
       
-      await new Promise(resolve => setTimeout(resolve, 1500)); // Wait longer between requests
+      console.log("🔍 Attempting to geocode:", cleanAddress);
       
-      const fallbackUrl = `https://nominatim.openstreetmap.org/search?` + 
+      const url = `https://nominatim.openstreetmap.org/search?` + 
         `format=json` +
-        `&q=${encodeURIComponent(fallbackParts.join(',').trim())}` +
+        `&q=${encodeURIComponent(cleanAddress)}` +
         `&limit=1` +
-        `&countrycodes=in`;
+        `&countrycodes=in` +
+        `&addressdetails=1`;
       
-      const fallbackResponse = await fetch(fallbackUrl, {
+      const response = await fetch(url, {
         headers: {
           'User-Agent': 'DryCleanerApp/1.0 (contact@example.com)',
           'Accept': 'application/json',
         }
       });
       
-      const fallbackData = await fallbackResponse.json();
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
       
-      if (fallbackData && fallbackData.length > 0) {
+      const data = await response.json();
+
+      if (data && data.length > 0) {
         const result = {
-          lat: parseFloat(fallbackData[0].lat),
-          lng: parseFloat(fallbackData[0].lon)
+          lat: parseFloat(data[0].lat),
+          lng: parseFloat(data[0].lon)
         };
-        console.log("✅ Fallback geocoding successful:", result);
+        console.log("✅ Geocoding successful:", result);
         return result;
       }
-    }
 
-    console.warn("⚠️ Geocoding failed: No results found for:", cleanAddress);
-    return null;
-  } catch (error) {
-    console.error("❌ Geocoding error:", error.message);
-    return null;
-  }
-};
-
-// Improved distance calculation with caching
-const calculateDistance = useCallback(async (pickupAddr, dropoffAddr) => {
-  if (!pickupAddr || !dropoffAddr) {
-    console.log("⚠️ Missing addresses");
-    setDeliveryDistance(10);
-    setDistanceLoading(false);
-    return 10;
-  }
-  
-  // Prevent concurrent calls
-  if (isCalculating) {
-    console.log("⚠️ Distance calculation already in progress");
-    return;
-  }
-  
-  console.log("🗺️ Calculating distance via backend...");
-  setDistanceLoading(true);
-  setIsCalculating(true);
-  
-  try {
-    const response = await axiosInstance.post(
-      "/users/calculate-distance",
-      {
-        pickupAddress: pickupAddr,
-        dropoffAddress: dropoffAddr
-      },
-      {
-        headers: {
-          "Content-Type": "application/json",
-        },
-        timeout: 15000,
-      }
-    );
-    
-    if (response.data?.success && response.data?.data?.distance) {
-      const distance = parseFloat(response.data.data.distance);
-      console.log("✅ Distance from backend:", distance, "km");
-      
-      setDeliveryDistance(distance);
-      return distance;
-    }
-    
-    console.log("⚠️ Using default 10km");
-    setDeliveryDistance(10);
-    return 10;
-  } catch (error) {
-    console.error("❌ Distance calculation error:", error.message);
-    setDeliveryDistance(10);
-    return 10;
-  } finally {
-    setDistanceLoading(false);
-    setIsCalculating(false);
-  }
-}, []); 
-
-// Remove the duplicate useEffect blocks and replace with this one
-useEffect(() => {
-  let isSubscribed = true;
-  let timeoutId;
-  
-  const fetchDistance = async () => {
-    // Only calculate if we have all required data and haven't calculated yet
-    if (
-      userAddress && 
-      cleanerAddress && 
-      globalPricing && 
-      deliveryDistance === null && 
-      !distanceLoading
-    ) {
-      console.log("🔄 Starting distance calculation...");
-      
-      // Debounce to prevent multiple rapid calls
-      timeoutId = setTimeout(async () => {
-        if (isSubscribed) {
-          await calculateDistance(userAddress, cleanerAddress);
+      // Try alternative geocoding with just city and state if full address fails
+      const fallbackParts = cleanAddress.split(',').slice(-3);
+      if (fallbackParts.length > 0) {
+        console.log("🔄 Trying fallback geocoding with:", fallbackParts.join(','));
+        
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        
+        const fallbackUrl = `https://nominatim.openstreetmap.org/search?` + 
+          `format=json` +
+          `&q=${encodeURIComponent(fallbackParts.join(',').trim())}` +
+          `&limit=1` +
+          `&countrycodes=in`;
+        
+        const fallbackResponse = await fetch(fallbackUrl, {
+          headers: {
+            'User-Agent': 'DryCleanerApp/1.0 (contact@example.com)',
+            'Accept': 'application/json',
+          }
+        });
+        
+        const fallbackData = await fallbackResponse.json();
+        
+        if (fallbackData && fallbackData.length > 0) {
+          const result = {
+            lat: parseFloat(fallbackData[0].lat),
+            lng: parseFloat(fallbackData[0].lon)
+          };
+          console.log("✅ Fallback geocoding successful:", result);
+          return result;
         }
-      }, 500); // Wait 500ms before making the call
+      }
+
+      console.warn("⚠️ Geocoding failed: No results found for:", cleanAddress);
+      return null;
+    } catch (error) {
+      console.error("❌ Geocoding error:", error.message);
+      return null;
     }
   };
 
-  fetchDistance();
-  
-  return () => {
-    isSubscribed = false;
-    if (timeoutId) {
-      clearTimeout(timeoutId);
+  // Improved distance calculation with caching
+  const calculateDistance = useCallback(async (pickupAddr, dropoffAddr) => {
+    if (!pickupAddr || !dropoffAddr) {
+      console.log("⚠️ Missing addresses");
+      setDeliveryDistance(10);
+      setDistanceLoading(false);
+      return 10;
     }
-  };
-}, [userAddress, cleanerAddress, globalPricing]); // Remove calculateDistance, deliveryDistance, and distanceLoading from dependencies
+    
+    // Prevent concurrent calls
+    if (isCalculating) {
+      console.log("⚠️ Distance calculation already in progress");
+      return;
+    }
+    
+    console.log("🗺️ Calculating distance via backend...");
+    setDistanceLoading(true);
+    setIsCalculating(true);
+    
+    try {
+      const response = await axiosInstance.post(
+        "/users/calculate-distance",
+        {
+          pickupAddress: pickupAddr,
+          dropoffAddress: dropoffAddr
+        },
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
+          timeout: 15000,
+        }
+      );
+      
+      if (response.data?.success && response.data?.data?.distance) {
+        const distance = parseFloat(response.data.data.distance);
+        console.log("✅ Distance from backend:", distance, "km");
+        
+        setDeliveryDistance(distance);
+        return distance;
+      }
+      
+      console.log("⚠️ Using default 10km");
+      setDeliveryDistance(10);
+      return 10;
+    } catch (error) {
+      console.error("❌ Distance calculation error:", error.message);
+      setDeliveryDistance(10);
+      return 10;
+    } finally {
+      setDistanceLoading(false);
+      setIsCalculating(false);
+    }
+  }, [isCalculating]); // Added isCalculating to dependencies
+
+  // Remove the duplicate useEffect blocks and replace with this one
+  useEffect(() => {
+    let isSubscribed = true;
+    let timeoutId;
+    
+    const fetchDistance = async () => {
+      // Only calculate if we have all required data and haven't calculated yet
+      if (
+        userAddress && 
+        cleanerAddress && 
+        globalPricing && 
+        deliveryDistance === null && 
+        !distanceLoading
+      ) {
+        console.log("🔄 Starting distance calculation...");
+        
+        // Debounce to prevent multiple rapid calls
+        timeoutId = setTimeout(async () => {
+          if (isSubscribed) {
+            await calculateDistance(userAddress, cleanerAddress);
+          }
+        }, 500); // Wait 500ms before making the call
+      }
+    };
+
+    fetchDistance();
+    
+    return () => {
+      isSubscribed = false;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
+  }, [userAddress, cleanerAddress, globalPricing, deliveryDistance, distanceLoading, calculateDistance]);
 
   // Fetch global pricing from backend
   const fetchGlobalPricing = useCallback(async () => {
@@ -385,19 +362,8 @@ useEffect(() => {
     fetchGlobalPricing();
   }, [fetchGlobalPricing]);
 
-  // Calculate distance when addresses and pricing are available
-  useEffect(() => {
-    const fetchDistance = async () => {
-      if (userAddress && cleanerAddress && globalPricing && deliveryDistance === null) {
-        console.log("🔄 Addresses ready, calculating distance...");
-        await calculateDistance(userAddress, cleanerAddress);
-      }
-    };
-
-    fetchDistance();
-  }, [userAddress, cleanerAddress, globalPricing, deliveryDistance, calculateDistance]);
-
   // Calculate order totals
+  
   const calculations = useMemo(() => {
     if (!orderData?.items || !globalPricing) {
       return {
@@ -405,6 +371,7 @@ useEffect(() => {
         serviceFees: 0,
         deliveryCharge: 0,
         platformFee: 0,
+        tip: 0,
         total: 0,
       };
     }
@@ -420,16 +387,21 @@ useEffect(() => {
     const deliveryChargePerKm = globalPricing.deliveryChargePerKm || 25;
     const deliveryCharge = deliveryChargePerKm * distanceToUse;
     const platformFee = globalPricing.platformFee || 2;
-    const total = subtotal + serviceFees + deliveryCharge + platformFee;
+    
+    const tip = isNaN(parseFloat(tipAmount)) ? 0 : parseFloat(tipAmount);
+
+    
+    const total = subtotal + serviceFees + deliveryCharge + platformFee + tip;
 
     return {
       subtotal,
       serviceFees,
       deliveryCharge,
       platformFee,
+      tip,
       total,
     };
-  }, [orderData?.items, globalPricing, deliveryDistance]);
+  }, [orderData?.items, globalPricing, deliveryDistance, tipAmount]);
 
   const buildISODate = (date, month, time) => {
     try {
@@ -630,6 +602,7 @@ useEffect(() => {
           serviceFees: calculations.serviceFees,
           deliveryCharge: calculations.deliveryCharge,
           platformFee: calculations.platformFee,
+          tip: calculations.tip,
           totalAmount: calculations.total,
         },
         distance: finalDistance,
@@ -666,6 +639,15 @@ useEffect(() => {
       setCompletedBookingId(createdBooking._id);
 
       console.log("✅ Booking created:", createdBookingId);
+      console.log("📤 BOOKING PRICING PAYLOAD", {
+  subtotal: calculations.subtotal,
+  serviceFees: calculations.serviceFees,
+  deliveryCharge: calculations.deliveryCharge,
+  platformFee: calculations.platformFee,
+  tip: calculations.tip,
+  totalAmount: calculations.total,
+});
+
 
       console.log("💳 Creating payment intent...");
       const paymentIntentResponse = await axiosInstance.post(
@@ -809,6 +791,29 @@ useEffect(() => {
       setLocalPaymentReady(false);
       paymentReadyRef.current = false;
     }
+  };
+
+  // Add handler for custom tip input
+ const handleCustomTip = (value: string) => {
+  // Allow empty input
+  if (value === '') {
+    setTipAmount('');
+    return;
+  }
+
+  // Allow only valid decimal numbers
+  const sanitized = value.replace(/[^0-9.]/g, '');
+
+  // Prevent multiple decimals
+  if ((sanitized.match(/\./g) || []).length > 1) return;
+
+  setTipAmount(sanitized);
+};
+
+
+  // Clear tip input
+  const clearTip = () => {
+    setTipAmount("");
   };
 
   const toggleOption = useCallback(
@@ -975,6 +980,41 @@ useEffect(() => {
       </View>
     );
   }
+
+  // Tip Section Component - Simplified to only show input field
+  const TipSection = () => (
+    <View style={styles.tipSection}>
+      <Text style={styles.tipSectionTitle}>Add a Tip</Text>
+      <Text style={styles.tipSectionSubtitle}>
+        Enter the tip amount you would like to give
+      </Text>
+      
+      <View style={styles.customTipContainer}>
+        <Text style={styles.customTipLabel}>Tip Amount</Text>
+        <View style={styles.customTipInputContainer}>
+          <Text style={styles.currencySymbol}>$</Text>
+          <TextInput
+            style={styles.customTipInput}
+            value={tipAmount}
+            onChangeText={handleCustomTip}
+            keyboardType="decimal-pad"
+            placeholder="0.00"
+            placeholderTextColor="#999"
+          />
+          {tipAmount ? (
+            <TouchableOpacity onPress={clearTip} style={styles.clearTipButton}>
+              <MaterialIcons name="clear" size={20} color="#666" />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+        {tipAmount ? (
+          <Text style={styles.tipValue}>
+            You're tipping: ${(parseFloat(tipAmount) || 0).toFixed(2)}
+          </Text>
+        ) : null}
+      </View>
+    </View>
+  );
 
   return (
     <View style={styles.container}>
@@ -1165,6 +1205,9 @@ useEffect(() => {
                 </View>
               </View>
             ))}
+            
+            {/* Tip Section - Placed after items but before summary */}
+            <TipSection />
           </ScrollView>
 
           <View style={styles.summary}>
@@ -1186,16 +1229,23 @@ useEffect(() => {
             </View>
 
             <View style={styles.summaryRow}>
-  <Text style={styles.summaryLabel}>
-    Delivery Charge ({deliveryDistance > 0 ? deliveryDistance.toFixed(2) : '10 (default)'}km @ $
-    {globalPricing?.deliveryChargePerKm ?? 25}/km)
-    {distanceLoading && " ⏳"}
-    {deliveryDistance <= 0 && !distanceLoading && " ⚠️ Using default"}
-  </Text>
-  <Text style={styles.summaryValue}>
-    ${calculations?.deliveryCharge?.toFixed(2) ?? "0.00"}
-  </Text>
-</View>
+              <Text style={styles.summaryLabel}>
+                Delivery Charge ({deliveryDistance > 0 ? deliveryDistance.toFixed(2) : '10 (default)'}km @ $
+                {globalPricing?.deliveryChargePerKm ?? 25}/km)
+                {distanceLoading && " ⏳"}
+                {deliveryDistance <= 0 && !distanceLoading && " ⚠️ Using default"}
+              </Text>
+              <Text style={styles.summaryValue}>
+                ${calculations?.deliveryCharge?.toFixed(2) ?? "0.00"}
+              </Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Tip</Text>
+              <Text style={styles.summaryValue}>
+  ${Number(calculations?.tip || 0).toFixed(2)}
+</Text>
+
+            </View>
 
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Platform Fee</Text>
@@ -1207,8 +1257,9 @@ useEffect(() => {
             <View style={[styles.summaryRow, styles.totalRow]}>
               <Text style={styles.totalLabel}>Total Payment</Text>
               <Text style={styles.totalValue}>
-                ${calculations?.total?.toFixed(2) ?? "0.00"}
-              </Text>
+  ${Number(calculations?.total || 0).toFixed(2)}
+</Text>
+
             </View>
 
             <TouchableOpacity
@@ -1482,7 +1533,7 @@ const styles = StyleSheet.create({
   },
   headerContainer: {
     paddingHorizontal: 20,
-    marginBottom:40,
+    marginBottom: 40,
     top: 9,
     flexDirection: "row",
     alignItems: "center",
@@ -1496,11 +1547,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#666",
     marginLeft: 8,
-  },
-  distanceErrorText: {
-    fontSize: 12,
-    color: "#FF6B6B",
-    marginTop: 4,
   },
   disabledButton: {
     backgroundColor: "#CCC",
@@ -1677,17 +1723,10 @@ const styles = StyleSheet.create({
     elevation: 2,
     marginHorizontal: 2,
   },
-  quantityButtonDisabled: {
-    backgroundColor: "#F0F0F0",
-    shadowOpacity: 0.05,
-  },
   quantityButtonText: {
     fontSize: 18,
     fontWeight: "600",
     color: "#333",
-  },
-  quantityButtonTextDisabled: {
-    color: "#999",
   },
   quantityText: {
     fontSize: 16,
@@ -2012,9 +2051,6 @@ const styles = StyleSheet.create({
     marginBottom: 30,
     alignItems: "center",
   },
-  disabledButton: {
-    backgroundColor: "#555",
-  },
   payButtonContent: {
     flexDirection: "row",
     alignItems: "center",
@@ -2148,5 +2184,72 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
     textAlign: "center",
+  },
+  // Tip Section Styles
+  tipSection: {
+    backgroundColor: "#FFFFFF",
+    marginHorizontal: 0,
+    marginBottom: 15,
+    marginTop: 0,
+    padding: 20,
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  tipSectionTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#000",
+    marginBottom: 4,
+  },
+  tipSectionSubtitle: {
+    fontSize: 14,
+    color: "#666",
+    marginBottom: 16,
+  },
+  customTipContainer: {
+    marginTop: 8,
+  },
+  customTipLabel: {
+    fontSize: 14,
+    color: "#666",
+    marginBottom: 8,
+    fontWeight: "500",
+  },
+  customTipInputContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F5F5F5",
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: "#E0E0E0",
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+  },
+  currencySymbol: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#333",
+    marginRight: 8,
+  },
+  customTipInput: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#333",
+    padding: 0,
+  },
+  clearTipButton: {
+    padding: 4,
+    marginLeft: 8,
+  },
+  tipValue: {
+    fontSize: 14,
+    color: "#4CAF50",
+    fontWeight: "600",
+    marginTop: 8,
   },
 });

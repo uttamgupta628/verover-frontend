@@ -374,7 +374,7 @@ const RegisterParkingLot = () => {
 
       const endpoint = parkingLotId
         ? `/api/merchants/parkinglot/${parkingLotId}`
-        : "https://vervoer-backend2.onrender.com/api/merchants/parkinglot/registration";
+        : "http://192.168.29.162:5000/api/merchants/parkinglot/registration";
 
       const method = parkingLotId ? "put" : "post";
 

@@ -18,9 +18,8 @@ export default function StripeWrapper({ children }: { children: React.ReactNode 
     const [loading, setLoading] = useState(!STRIPE_KEY);
 
     useEffect(() => {
-        // If we already have a key from config, no need to fetch
         if (STRIPE_KEY) {
-            console.log('✅ Using Stripe key from app.json');
+            console.log(' Using Stripe key from app.json');
             const keyMode = STRIPE_KEY.startsWith('pk_test_') ? 'TEST' : 
                            STRIPE_KEY.startsWith('pk_live_') ? 'LIVE' : 'UNKNOWN';
             console.log(`🔑 Stripe mode: ${keyMode}`);
@@ -29,7 +28,6 @@ export default function StripeWrapper({ children }: { children: React.ReactNode 
             return;
         }
 
-        // Fallback: fetch from server if no key in config
         const fetchPublicKey = async () => {
             try {
                 console.log('🔄 Fetching Stripe public key from server...');

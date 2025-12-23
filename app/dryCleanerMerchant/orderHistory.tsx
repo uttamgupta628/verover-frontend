@@ -38,13 +38,35 @@ const MerchantOrderHistory = () => {
         filterOrders();
     }, [orders, activeFilter]);
 
+    // Helper function to format address
+    const formatAddress = (location: any) => {
+        if (!location) return 'N/A';
+        
+        // If address is already a string
+        if (typeof location.address === 'string') {
+            return location.address;
+        }
+        
+        // If address is an object, format it
+        if (typeof location.address === 'object') {
+            const addr = location.address;
+            const parts = [
+                addr.street,
+                addr.city,
+                addr.state,
+                addr.zipCode,
+                addr.country
+            ].filter(Boolean);
+            return parts.length > 0 ? parts.join(', ') : 'N/A';
+        }
+        
+        return 'N/A';
+    };
+
     const fetchOrders = async () => {
         try {
             setLoading(true);
             
-            // Use the correct API endpoint for merchants
-            // If your axiosInstance baseURL is '/api', use '/merchants/bookings'
-            // If your axiosInstance baseURL is '/api/users', you need to override it
             const response = await axiosInstance.get('/users/merchants/bookings', {
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -61,30 +83,60 @@ const MerchantOrderHistory = () => {
                 const bookings = response.data.data?.bookings || response.data.data || [];
                 
                 // Transform backend data to match frontend structure
-                const transformedOrders = bookings.map((booking: any) => ({
-                    _id: booking._id,
-                    orderNumber: booking.bookingNumber || `#DRYCL${booking._id.slice(-6)}`,
-                    status: booking.status,
-                    createdAt: booking.createdAt,
-                    items: booking.items || [],
-                    totalAmount: booking.totalPrice || booking.totalAmount || 0,
-                    pickupAddress: booking.pickupLocation?.address || 'N/A',
-                    deliveryAddress: booking.deliveryLocation?.address || 'N/A',
-                    pickupTime: booking.pickupTimeSlot || 'N/A',
-                    deliveryTime: booking.deliveryTimeSlot || 'N/A',
-                    user: booking.user,
-                    driver: booking.driver,
-                    acceptedAt: booking.acceptedAt,
-                    inProgressAt: booking.inProgressAt,
-                    completedAt: booking.completedAt,
-                    deliveredAt: booking.deliveredAt,
-                    paymentMethod: booking.paymentMethod,
-                    paymentStatus: booking.paymentStatus,
-                    specialInstructions: booking.specialInstructions
-                }));
+                const transformedOrders = bookings.map((booking: any) => {
+                    // Handle different field names from backend
+                    const orderNumber = booking.orderNumber || booking.bookingNumber || `#DRYCL${booking._id?.slice(-6) || ''}`;
+                    const createdDate = booking.createdAt || booking.requestedAt || new Date().toISOString();
+                    
+                    // Handle items - could be orderItems or items
+                    const items = booking.orderItems || booking.items || [];
+                    
+                    // Handle total amount from different possible fields
+                    const totalAmount = 
+                        booking.pricing?.totalAmount || 
+                        booking.price || 
+                        booking.totalPrice || 
+                        booking.totalAmount || 
+                        0;
+                    
+                    // Handle addresses - could be string or object
+                    const pickupAddress = 
+                        (typeof booking.pickupAddress === 'string' ? booking.pickupAddress : null) ||
+                        formatAddress(booking.pickupLocation) ||
+                        'N/A';
+                    
+                    const deliveryAddress = 
+                        (typeof booking.dropoffAddress === 'string' ? booking.dropoffAddress : null) ||
+                        (typeof booking.deliveryAddress === 'string' ? booking.deliveryAddress : null) ||
+                        formatAddress(booking.deliveryLocation) ||
+                        'N/A';
+                    
+                    return {
+                        _id: booking._id,
+                        orderNumber,
+                        status: booking.status,
+                        createdAt: createdDate,
+                        items,
+                        totalAmount,
+                        pickupAddress,
+                        deliveryAddress,
+                        pickupTime: booking.scheduledPickupDateTime || booking.pickupTimeSlot || 'N/A',
+                        deliveryTime: booking.scheduledDeliveryDateTime || booking.deliveryTimeSlot || 'N/A',
+                        user: booking.user,
+                        driver: booking.driver,
+                        paymentMethod: booking.paymentMethod,
+                        paymentStatus: booking.paymentStatus,
+                        specialInstructions: booking.specialInstructions,
+                        orderSummary: booking.orderSummary,
+                        totalItems: booking.totalItems
+                    };
+                });
 
                 setOrders(transformedOrders);
                 console.log('Fetched merchant orders:', transformedOrders.length);
+                if (transformedOrders.length > 0) {
+                    console.log('Sample order:', transformedOrders[0]);
+                }
             } else {
                 console.warn('No orders found in response');
                 setOrders([]);
@@ -192,9 +244,20 @@ const MerchantOrderHistory = () => {
         });
     };
 
-    const calculateTotalItems = (items: any[]) => {
-        if (!items || items.length === 0) return 0;
-        return items.reduce((total, item) => total + (item.quantity || 0), 0);
+    const calculateTotalItems = (order: any) => {
+        // If backend provides totalItems, use it directly
+        if (order.totalItems && typeof order.totalItems === 'number') {
+            return order.totalItems;
+        }
+        
+        // Otherwise calculate from items array
+        const items = order.items || [];
+        if (items.length === 0) return 0;
+        
+        return items.reduce((total: number, item: any) => {
+            const quantity = item.quantity || item.count || 1;
+            return total + quantity;
+        }, 0);
     };
 
     const handleOrderPress = (order: any) => {
@@ -343,13 +406,13 @@ const MerchantOrderHistory = () => {
                                 <View style={styles.detailRow}>
                                     <Ionicons name="shirt-outline" size={16} color={colors.gray} />
                                     <Text style={styles.detailText}>
-                                        {calculateTotalItems(order.items)} items
+                                        {calculateTotalItems(order)} items
                                     </Text>
                                 </View>
                                 <View style={styles.detailRow}>
                                     <Ionicons name="cash-outline" size={16} color={colors.gray} />
                                     <Text style={styles.detailText}>
-                                        ₹{order.totalAmount}
+                                        ${order.totalAmount}
                                     </Text>
                                 </View>
                             </View>

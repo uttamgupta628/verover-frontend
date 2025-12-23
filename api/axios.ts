@@ -1,8 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import axios from "axios";
-// 'https://vervoer-backend2.onrender.com/api'
+// 'http://192.168.29.162:5000/api'
 const axiosInstance = axios.create({
-  baseURL: "https://vervoer-backend2.onrender.com/api",
+  baseURL: "http://192.168.29.162:5000/api",
   timeout: 10000,
   headers: {
     "Content-Type": "application/json",
@@ -27,12 +27,10 @@ axiosInstance.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor for error handling
 axiosInstance.interceptors.response.use(
   (response) => response,
   async (error) => {
     if (error.response?.status === 401) {
-      // Token expired, logout user
       await AsyncStorage.removeItem("loginKey");
     }
     return Promise.reject(error);

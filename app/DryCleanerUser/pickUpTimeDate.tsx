@@ -10,7 +10,7 @@ import {
   SafeAreaView,
   StatusBar,
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import 'expo-router';
 import { IconButton } from 'react-native-paper';
 import colors from '../../assets/color';
 import { useDispatch, useSelector } from 'react-redux';
@@ -22,6 +22,7 @@ import {
   OrderData,
   disableOrderProtection,
 } from '../../components/redux/userSlice';
+import { useRouter, useLocalSearchParams } from "expo-router";
 
 const { width, height } = Dimensions.get('window');
 

@@ -8,21 +8,19 @@ import {
   View,
   TouchableOpacity,
   ScrollView,
-  Dimensions,
+  SafeAreaView,
+  Platform,
 } from "react-native";
 import { useRouter } from "expo-router";
+import {
+  responsiveFontSize,
+  responsiveHeight,
+  responsiveWidth,
+} from "react-native-responsive-dimensions";
 import { useAppSelector } from "../components/redux/hooks";
 import colors from "../assets/color";
 import { images } from "../assets/images/images";
 import CarRentalSlider from "../components/CarRentalSlider";
-
-const { width, height } = Dimensions.get("window");
-const responsiveWidth = (percentage: number) => (width * percentage) / 100;
-const responsiveHeight = (percentage: number) => (height * percentage) / 100;
-const responsiveFontSize = (size: number) => {
-  const scale = Math.min(width / 375, height / 812);
-  return size * scale;
-};
 
 export default function MerchantHome() {
   const router = useRouter();
@@ -36,252 +34,292 @@ export default function MerchantHome() {
   }, [user]);
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.safeArea}>
       <StatusBar
         hidden={false}
         barStyle="dark-content"
         animated={true}
         backgroundColor="transparent"
+        translucent={Platform.OS === 'android'}
       />
 
-      {/* Header - Exact same layout as original */}
-      <View style={styles.headerRow}>
-        <TouchableOpacity
-          onPress={() => {
-            router.back();
-          }}
-        >
-          <Ionicons name="arrow-back" size={35} color={colors.brandColor} />
-        </TouchableOpacity>
-        <View style={styles.titleWrapper}>
-          <Text style={styles.titleText}>Merchants - Home</Text>
-        </View>
-        <TouchableOpacity
-          style={styles.scanContainer}
-          onPress={() => {
-            router.push("/scan");
-          }}
-        >
-          <Image source={images.Scanner} style={styles.scanImage} />
-          <Text style={styles.scanLabel}>Scan QBR</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Car Rental Slider */}
-      <View style={styles.sliderWrapper}>
-        <CarRentalSlider />
-      </View>
-
-      {/* First Row - Exact same spacing */}
-      <View style={styles.firstRow}>
-        <TouchableOpacity
-          style={styles.button}
-          onPress={() => {
-            router.push("/parkingMerchent/merchantParkinglotList");
-          }}
-        >
-          <Image source={images.MerchantParkLot} style={styles.parkLotImage} />
-          <Text style={styles.buttonText}>Parking Lot</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.button}
-          onPress={() => {
-            router.push("/parkingMerchent/merchantGarageList");
-          }}
-        >
-          <Image source={images.Parking} style={styles.parkingImage} />
-          <Text style={styles.buttonText}>Parking Garage</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.button}
-          onPress={() => {
-            router.push("/parkingMerchent/merchantResidenceList");
-          }}
-        >
-          <Image source={images.Parking} style={styles.parkingImage} />
-          <Text style={styles.buttonText}>Residence Parking</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Second Row - Exact same spacing */}
-      <View style={styles.secondRow}>
-        <TouchableOpacity
-          style={styles.button}
-          onPress={() => {
-            router.push("/dryCleanerMerchant/merchantAddDryCleaner");
-          }}
-        >
-          <Image source={images.Cleaning} style={styles.cleaningImage} />
-          <Text style={styles.buttonText}>Add Dry Cleaner</Text>
-        </TouchableOpacity>
-        {/* <TouchableOpacity
-          style={styles.buttonMargin}
-          onPress={() => {
-            router.push("/dryCleanerMerchant");
-          }}
-        >
-          <MaterialCommunityIcons
-            name="plus-thick"
-            size={30}
-            color={colors.brandColor}
-          />
-          <Text style={styles.buttonText}>Add Parking</Text>
-        </TouchableOpacity> */}
-        <TouchableOpacity
-          style={styles.buttonMargin}
-          onPress={() => {
-            router.push("/dryCleanerMerchant/orderHistory");
-          }}
-        >
-          <MaterialCommunityIcons
-            name="book-outline"
-            size={30}
-            color={colors.brandColor}
-          />
-          <Text style={styles.buttonText}>DryCleaner History</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.button, { marginLeft: 20 }]}
-          onPress={() => {
-            router.push("/dryCleanerMerchant/myDryCleaners");
-          }}
-        >
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        bounces={true}
+      >
+        {/* Header */}
+        <View style={styles.headerContainer}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => router.back()}
+          >
+            <Ionicons name="arrow-back" size={28} color={colors.brandColor} />
+          </TouchableOpacity>
           
-          <Image source={images.Cleaning} style={styles.myCleaningImage} />
-          <Text style={styles.buttonText}>My Dry Cleaners</Text>
-        </TouchableOpacity>
-      </View>
+          <View style={styles.headerTextContainer}>
+            <Text style={styles.headerTitle}>Merchants - Home</Text>
+          </View>
 
-      {/* Third Row - Exact same spacing */}
-      <View style={styles.thirdRow}>
-        <TouchableOpacity
-          style={[styles.button, { marginLeft: 0 }]}
-          onPress={() => {
-            router.push("/parkingMerchent/order");
-          }}
-        >
-          <MaterialCommunityIcons
-            name="book-outline"
-            size={30}
-            color={colors.brandColor}
-          />
-          <Text style={styles.buttonText}>Parking History</Text>
-        </TouchableOpacity>
-        {/* Optional: Add more buttons here if needed */}
-        <View style={styles.placeholderButton} />
-        <View style={styles.placeholderButton} />
-      </View>
-    </View>
+          <TouchableOpacity
+            style={styles.scanButton}
+            onPress={() => router.push("/scan")}
+          >
+            <Image source={images.Scanner} style={styles.scanImage} />
+            <Text style={styles.scanLabel}>Scan QBR</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Slider Section */}
+        <View style={styles.sliderContainer}>
+          <CarRentalSlider />
+        </View>
+
+        {/* Services Title */}
+        <View style={styles.servicesTitleContainer}>
+          <Text style={styles.servicesTitle}>Merchant Services</Text>
+          <Text style={styles.servicesSubtitle}>Manage your business</Text>
+        </View>
+
+        {/* Services Grid */}
+        <View style={styles.servicesContainer}>
+          {/* Parking Services */}
+          <TouchableOpacity
+            style={styles.serviceCard}
+            onPress={() => router.push("/parkingMerchent/merchantParkinglotList")}
+          >
+            <View style={styles.serviceIconContainer}>
+              <Image source={images.MerchantParkLot} style={styles.parkLotImage} />
+            </View>
+            <Text style={styles.serviceCardText}>Parking Lot</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.serviceCard}
+            onPress={() => router.push("/parkingMerchent/merchantGarageList")}
+          >
+            <View style={styles.serviceIconContainer}>
+              <Image source={images.Parking} style={styles.parkingImage} />
+            </View>
+            <Text style={styles.serviceCardText}>Parking Garage</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.serviceCard}
+            onPress={() => router.push("/parkingMerchent/merchantResidenceList")}
+          >
+            <View style={styles.serviceIconContainer}>
+              <Image source={images.Parking} style={styles.parkingImage} />
+            </View>
+            <Text style={styles.serviceCardText}>Residence Parking</Text>
+          </TouchableOpacity>
+
+          {/* Dry Cleaner Services */}
+          <TouchableOpacity
+            style={styles.serviceCard}
+            onPress={() => router.push("/dryCleanerMerchant/merchantAddDryCleaner")}
+          >
+            <View style={styles.serviceIconContainer}>
+              <Image source={images.Cleaning} style={styles.cleaningImage} />
+            </View>
+            <Text style={styles.serviceCardText}>Add Dry Cleaner</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.serviceCard}
+            onPress={() => router.push("/dryCleanerMerchant/orderHistory")}
+          >
+            <View style={styles.serviceIconContainer}>
+              <MaterialCommunityIcons
+                name="book-outline"
+                size={responsiveWidth(10)}
+                color={colors.brandColor}
+              />
+            </View>
+            <Text style={styles.serviceCardText}>DryCleaner History</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.serviceCard}
+            onPress={() => router.push("/dryCleanerMerchant/myDryCleaners")}
+          >
+            <View style={styles.serviceIconContainer}>
+              <Image source={images.Cleaning} style={styles.myCleaningImage} />
+            </View>
+            <Text style={styles.serviceCardText}>My Dry Cleaners</Text>
+          </TouchableOpacity>
+
+          {/* History */}
+          <TouchableOpacity
+            style={styles.serviceCard}
+            onPress={() => router.push("/parkingMerchent/order")}
+          >
+            <View style={styles.serviceIconContainer}>
+              <MaterialCommunityIcons
+                name="book-outline"
+                size={responsiveWidth(10)}
+                color={colors.brandColor}
+              />
+            </View>
+            <Text style={styles.serviceCardText}>Parking History</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Bottom Spacing */}
+        <View style={styles.bottomSpacing} />
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
-    alignItems: "center",
+    backgroundColor: colors.white || '#FFFFFF',
   },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    width: responsiveWidth(90),
-    justifyContent: "space-between",
-    marginTop: "0%",
+  scrollView: {
+    flex: 1,
   },
-  titleWrapper: {
-    width: responsiveWidth(60),
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: responsiveHeight(3),
   },
-  titleText: {
-    fontSize: responsiveFontSize(20),
-    color: colors.black,
-    textAlign: "center",
+
+  // Header Styles
+  headerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    paddingHorizontal: responsiveWidth(5),
+    paddingTop: Platform.OS === 'ios' ? responsiveHeight(2) : responsiveHeight(4),
+    paddingBottom: responsiveHeight(2),
   },
-  scanContainer: {
-    alignItems: "center",
+  backButton: {
+    padding: responsiveWidth(2),
+  },
+  headerTextContainer: {
+    flex: 1,
+    alignItems: 'center',
+    marginHorizontal: responsiveWidth(2),
+  },
+  headerTitle: {
+    fontSize: responsiveFontSize(2.4),
+    color: colors.black || '#000000',
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  scanButton: {
+    alignItems: 'center',
+    padding: responsiveWidth(2),
   },
   scanImage: {
     width: responsiveWidth(8),
-    height: responsiveHeight(4),
+    height: responsiveWidth(8),
+    resizeMode: 'contain',
   },
   scanLabel: {
-    color: colors.text,
+    color: colors.text || '#666666',
+    fontSize: responsiveFontSize(1.4),
+    marginTop: responsiveHeight(0.5),
+  },
+
+  // Slider Styles
+  sliderContainer: {
+    height: responsiveHeight(22),
+    marginTop: responsiveHeight(1),
+    marginBottom: responsiveHeight(2),
+  },
+
+  // Services Title
+  servicesTitleContainer: {
+    paddingHorizontal: responsiveWidth(5),
+    marginTop: responsiveHeight(1),
+    marginBottom: responsiveHeight(2),
+  },
+  servicesTitle: {
+    fontSize: responsiveFontSize(2.4),
+    color: colors.black || '#000000',
+    fontWeight: '600',
+    marginBottom: responsiveHeight(0.5),
+  },
+  servicesSubtitle: {
+    fontSize: responsiveFontSize(1.7),
+    color: colors.gray || '#666666',
+    fontWeight: '400',
+  },
+
+  // Services Container
+  servicesContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: responsiveWidth(3),
+    justifyContent: 'space-between',
+  },
+
+  // Service Card Styles
+  serviceCard: {
+    backgroundColor: colors.white || '#FFFFFF',
+    width: responsiveWidth(29),
+    minHeight: responsiveHeight(16),
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+    paddingVertical: responsiveHeight(2),
+    paddingHorizontal: responsiveWidth(2),
+    marginBottom: responsiveHeight(2),
+    marginHorizontal: responsiveWidth(1),
+    
+    // Shadow for iOS
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    
+    // Shadow for Android
+    elevation: 6,
+  },
+  serviceIconContainer: {
+    width: '100%',
+    height: responsiveHeight(8),
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: responsiveHeight(1),
+  },
+  serviceCardText: {
+    marginTop: responsiveHeight(0.5),
     fontSize: responsiveFontSize(1.6),
+    color: colors.black || '#000000',
+    fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: responsiveFontSize(2),
   },
-  sliderWrapper: {
-    height: responsiveHeight(20),
-    width: "100%",
-  },
-  firstRow: {
-    marginTop: "10%",
-    width: responsiveWidth(90),
-    height: responsiveHeight(12),
-    justifyContent: "space-between",
-    flexDirection: "row",
-  },
-  secondRow: {
-    marginTop: "5%",
-    width: responsiveWidth(90),
-    height: responsiveHeight(12),
-    flexDirection: "row",
-  },
-  thirdRow: {
-    marginTop: "5%",
-    width: responsiveWidth(90),
-    height: responsiveHeight(12),
-    flexDirection: "row",
-  },
-  button: {
-    backgroundColor: colors.white,
-    width: "30%",
-    height: "100%",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 5, height: 5 },
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
-    elevation: 5,
-  },
-  buttonMargin: {
-    backgroundColor: colors.white,
-    width: "30%",
-    height: "100%",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 5, height: 5 },
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
-    elevation: 5,
-    marginLeft: "5%",
-  },
-  buttonText: {
-    marginTop: "5%",
-    color: colors.black,
-    textAlign: "center",
-    fontSize: responsiveFontSize(15),
-  },
+
+  // Image Styles
   parkLotImage: {
-    width: "30%",
-    height: "20%",
+    width: '40%',
+    height: '60%',
+    resizeMode: 'contain',
   },
   parkingImage: {
-    width: "50%",
-    height: "35%",
+    width: '60%',
+    height: '80%',
+    resizeMode: 'contain',
   },
   cleaningImage: {
-    width: "35%",
-    height: "35%",
+    width: '50%',
+    height: '70%',
+    resizeMode: 'contain',
   },
   myCleaningImage: {
-    width: "40%",
-    height: "40%",
+    width: '55%',
+    height: '75%',
+    resizeMode: 'contain',
   },
-  placeholderButton: {
-    width: "30%",
-    height: "100%",
-    marginLeft: "5%",
+
+  // Bottom Spacing
+  bottomSpacing: {
+    height: responsiveHeight(2),
   },
 });

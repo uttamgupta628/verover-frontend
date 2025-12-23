@@ -1,220 +1,308 @@
-import React, { useState } from 'react';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import React from "react";
 import {
-    StatusBar,
-    StyleSheet,
-    Text,
-    Image,
-    View,
-    TouchableOpacity,
-    Dimensions,
-} from 'react-native';
-import { useRouter } from 'expo-router';
-import CarRentalSlider from '../components/CarRentalSlider';
-import colors from '../assets/color';
-import { images } from '../assets/images/images';
-
-// Responsive helper functions
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-
-const responsiveWidth = (percentage) => {
-    return (percentage * SCREEN_WIDTH) / 100;
-};
-
-const responsiveHeight = (percentage) => {
-    return (percentage * SCREEN_HEIGHT) / 100;
-};
-
-const responsiveFontSize = (percentage) => {
-    return Math.round((percentage * SCREEN_WIDTH) / 100);
-};
+  StatusBar,
+  StyleSheet,
+  Text,
+  Image,
+  View,
+  TouchableOpacity,
+  ScrollView,
+  useWindowDimensions,
+} from "react-native";
+import { useRouter } from "expo-router";
+import CarRentalSlider from "../components/CarRentalSlider";
+import colors from "../assets/color";
+import { images } from "../assets/images/images";
 
 export default function DriverMainHome() {
-    const router = useRouter();
-    const [text, setText] = React.useState('');
-    
-    return (
-        <View style={styles.container}>
-            <StatusBar
-                hidden={false}
-                barStyle="dark-content"
-                animated={true}
-                backgroundColor="transparent"
-                translucent
-            />
-            <View style={styles.header}>
-                <View style={styles.titleContainer}>
-                    <Text style={styles.title}>Driver - Home</Text>
-                </View>
-                <TouchableOpacity 
-                    style={styles.scanButton} 
-                    onPress={() => router.push('/QRCode')}
-                >
-                    <Image 
-                        source={images.Scanner} 
-                        style={styles.scanImage}
-                    />
-                    <Text style={styles.scanText}>Scan QBR</Text>
-                </TouchableOpacity>
-            </View>
-            
-            <View style={styles.sliderContainer}>
-                <CarRentalSlider />
-            </View>
+  const router = useRouter();
+  const { width, height } = useWindowDimensions();
 
-            {/* First row */}
-            <View style={styles.buttonRow}>
-                <TouchableOpacity
-                    style={styles.button}
-                    onPress={() => router.push('/RideTrackingLocate')}
-                >
-                    <Image source={images.Ride} style={styles.rideImage} />
-                    <Text style={styles.buttonText}>Locate Rider</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={styles.button}
-                    onPress={() => router.push('/dryCleanerDriver/orderRequest')}
-                >
-                    <Image source={images.Cleaning} style={styles.cleaningImage} />
-                    <Text style={styles.buttonText}>Dry Cleaning</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                    style={styles.button}
-                    onPress={() => router.push('/FoodDeliveryHome')}
-                >
-                    <Image source={images.FoodDelivery} style={styles.foodImage} />
-                    <Text style={styles.buttonText}>Food Delivery</Text>
-                </TouchableOpacity>
-            </View>
+  // Helper functions for responsive design
+  const responsiveWidth = (value: number) => (value * width) / 100;
+  const responsiveHeight = (value: number) => (value * height) / 100;
+  const responsiveFontSize = (value: number) =>
+    Math.round((value * width) / 100);
 
-            {/* Second row */}
-            <View style={styles.buttonRow2}>
-                <TouchableOpacity
-                    style={styles.button}
-                    onPress={() => router.push('/Vehicleinfo')}
-                >
-                    <Image source={images.Ride} style={styles.rideImage} />
-                    <Text style={styles.buttonText}>Driver Registration</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={styles.button}
-                    onPress={() => router.push('/QRCode')}
-                >
-                    <Image source={images.Scanner} style={styles.cleaningImage} />
-                    <Text style={styles.buttonText}>Scan QBR</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                    style={styles.button}
-                    onPress={() => router.push('/MicroMobility')}
-                >
-                    <Image source={images.MicroMobility} style={styles.microImage} />
-                    <Text style={styles.buttonText}>Micro Mobility</Text>
-                </TouchableOpacity>
-            </View>
+  // Calculate button size based on screen width
+  const buttonSize = width < 768 ? "small" : width < 1024 ? "medium" : "large";
 
-            {/* Third row */}
-            <View style={styles.buttonRow3}>
-                <TouchableOpacity
-                    style={styles.button}
-                    onPress={() => {
-                        console.log('Navigating to driver history...');
-                        router.push('/dryCleanerDriver/driverHistory');
-                    }}
-                >
-                    <Image source={images.Cleaning} style={styles.cleaningImage} />
-                    <Text style={styles.buttonText}>Driver History</Text>
-                </TouchableOpacity>
-            </View>
+  const styles = createStyles({
+    responsiveWidth,
+    responsiveHeight,
+    responsiveFontSize,
+    buttonSize,
+    width,
+    height,
+  });
+
+  const renderButton = (
+    onPress: () => void,
+    imageSource: any,
+    text: string,
+    imageStyle?: any
+  ) => (
+    <TouchableOpacity style={styles.button} onPress={onPress}>
+      <Image
+        source={imageSource}
+        style={[styles.buttonImage, imageStyle]}
+        resizeMode="contain"
+      />
+      <Text style={styles.buttonText} numberOfLines={2} adjustsFontSizeToFit>
+        {text}
+      </Text>
+    </TouchableOpacity>
+  );
+
+  return (
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.contentContainer}
+      showsVerticalScrollIndicator={false}
+    >
+      <StatusBar
+        barStyle="dark-content"
+        backgroundColor="transparent"
+        translucent
+      />
+
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={styles.titleContainer}>
+          <Text style={styles.title}>Driver - Home</Text>
         </View>
-    );
+        <TouchableOpacity
+          style={styles.scanButton}
+          onPress={() => router.push("/scan")}
+        >
+          <Image
+            source={images.Scanner}
+            style={styles.scanImage}
+            resizeMode="contain"
+          />
+          <Text style={styles.scanText}>Scan QBR</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Slider Section */}
+      <View style={styles.sliderContainer}>
+        <CarRentalSlider />
+      </View>
+
+      {/* Buttons Grid - Responsive layout */}
+      <View style={styles.buttonsGrid}>
+        {/* Row 1 */}
+        <View style={styles.buttonRow}>
+          {/* {renderButton(
+            () => router.push('/RideTrackingLocate'),
+            images.Ride,
+            'Locate Rider'
+          )} */}
+          {renderButton(
+            () => router.push("/dryCleanerDriver/orderRequest"),
+            images.Cleaning,
+            "Dry Cleaning",
+            styles.cleaningImage
+          )}
+          {renderButton(
+            () => router.push("/dryCleanerDriver/driverHistory"),
+            images.Cleaning,
+            "Driver History",
+            styles.cleaningImage
+          )}
+          {renderButton(
+            () => router.push("/dryCleanerDriver/Vehicleinfo"),
+            images.Ride,
+            "Driver Registration"
+          )}
+          {renderButton(
+            () => router.push("dryCleanerDriver/driver"),
+            images.Ride,
+            "My Info",
+            styles.foodImage
+          )}
+        </View>
+
+        {/* Row 2 */}
+        <View style={styles.buttonRow}>
+          {/* {renderButton(
+            () => router.push('/QRCode'),
+            images.Scanner,
+            'Scan QBR',
+            styles.scanButtonImage
+          )} */}
+          {/* {renderButton(
+            () => router.push('/MicroMobility'),
+            images.MicroMobility,
+            'Micro Mobility',
+            styles.microImage
+          )} */}
+        </View>
+
+        {/* Row 3 - Single button centered on mobile, full width on larger screens */}
+        <View style={styles.singleButtonRow}></View>
+      </View>
+    </ScrollView>
+  );
 }
 
-const styles = StyleSheet.create({
+interface StyleProps {
+  responsiveWidth: (value: number) => number;
+  responsiveHeight: (value: number) => number;
+  responsiveFontSize: (value: number) => number;
+  buttonSize: "small" | "medium" | "large";
+  width: number;
+  height: number;
+}
+
+const createStyles = ({
+  responsiveWidth,
+  responsiveHeight,
+  responsiveFontSize,
+  buttonSize,
+  width,
+  height,
+}: StyleProps) => {
+  const isSmallScreen = width < 768;
+  const isMediumScreen = width >= 768 && width < 1024;
+  const isLargeScreen = width >= 1024;
+
+  const buttonWidth = isSmallScreen
+    ? responsiveWidth(30)
+    : isMediumScreen
+    ? responsiveWidth(28)
+    : responsiveWidth(25);
+
+  const buttonHeight = isSmallScreen
+    ? responsiveHeight(12)
+    : isMediumScreen
+    ? responsiveHeight(10)
+    : responsiveHeight(8);
+
+  return StyleSheet.create({
     container: {
-        flexGrow: 1,
-        backgroundColor: '#FFFFFF',
-        alignItems: 'center',
+      flex: 1,
+      backgroundColor: "#FFFFFF",
+    },
+    contentContainer: {
+      flexGrow: 1,
+      alignItems: "center",
+      paddingBottom: responsiveHeight(5),
+      paddingHorizontal: isSmallScreen
+        ? responsiveWidth(5)
+        : isMediumScreen
+        ? responsiveWidth(10)
+        : responsiveWidth(15),
     },
     header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        width: responsiveWidth(90),
-        justifyContent: 'space-between',
-        marginTop: responsiveHeight(0),
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      width: "100%",
+      marginTop: responsiveHeight(isSmallScreen ? 3 : 5),
+      marginBottom: responsiveHeight(2),
     },
     titleContainer: {
-        width: responsiveWidth(60),
+      flex: 1,
     },
     title: {
-        fontSize: responsiveFontSize(4.5),
-        color: colors.black,
+      fontSize: responsiveFontSize(
+        isSmallScreen ? 5 : isMediumScreen ? 4.5 : 4
+      ),
+      color: colors.black,
+      fontWeight: "600",
     },
     scanButton: {
-        alignItems: 'center',
+      alignItems: "center",
+      justifyContent: "center",
+      padding: responsiveWidth(2),
+      marginLeft: responsiveWidth(2),
     },
     scanImage: {
-        width: responsiveWidth(8),
-        height: responsiveHeight(4),
+      width: responsiveWidth(isSmallScreen ? 8 : 7),
+      height: responsiveHeight(isSmallScreen ? 4 : 3.5),
+      marginBottom: responsiveHeight(0.5),
     },
     scanText: {
-        color: colors.text,
+      color: colors.text,
+      fontSize: responsiveFontSize(isSmallScreen ? 3 : 2.8),
+      textAlign: "center",
     },
     sliderContainer: {
-        height: responsiveHeight(20),
+      width: "100%",
+      height: responsiveHeight(isSmallScreen ? 20 : isMediumScreen ? 18 : 16),
+      marginBottom: responsiveHeight(3),
+    },
+    buttonsGrid: {
+      width: "100%",
+      maxWidth: 1200,
+      alignSelf: "center",
     },
     buttonRow: {
-        marginTop: responsiveHeight(5),
-        width: responsiveWidth(90),
-        height: responsiveHeight(12),
-        justifyContent: 'space-between',
-        flexDirection: 'row',
+      flexDirection: "row",
+      justifyContent: "center",
+      alignItems: "center",
+      flexWrap: "wrap",
+      width: "100%",
+      marginBottom: responsiveHeight(3),
     },
-    buttonRow2: {
-        marginTop: responsiveHeight(2.5),
-        width: responsiveWidth(90),
-        height: responsiveHeight(12),
-        justifyContent: 'space-between',
-        flexDirection: 'row',
-    },
-    buttonRow3: {
-        marginTop: responsiveHeight(2.5),
-        width: responsiveWidth(90),
-        height: responsiveHeight(12),
-        justifyContent: 'space-between',
-        flexDirection: 'row',
+
+    singleButtonRow: {
+      flexDirection: "row",
+      justifyContent: "center",
+      alignItems: "center",
+      width: "100%",
+      marginTop: responsiveHeight(1),
     },
     button: {
-        backgroundColor: colors.white,
-        width: '30%',
-        height: '100%',
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderRadius: 20,
-        shadowColor: '#000',
-        shadowOffset: { width: 5, height: 5 },
-        shadowOpacity: 0.5,
-        shadowRadius: 10,
-        elevation: 5,
+      backgroundColor: colors.white,
+      alignItems: "center",
+      justifyContent: "center",
+      borderRadius: responsiveWidth(4),
+      shadowColor: "#000",
+      shadowOffset: {
+        width: responsiveWidth(0.5),
+        height: responsiveHeight(0.5),
+      },
+      shadowOpacity: 0.2,
+      shadowRadius: responsiveWidth(2),
+      elevation: 5,
+      padding: responsiveWidth(3),
+      width: buttonWidth,
+      height: buttonHeight,
+      minHeight: responsiveHeight(10),
+
+      alignSelf: "center",
+      marginBottom: isSmallScreen ? responsiveHeight(3) : responsiveHeight(1),
     },
-    buttonText: {
-        marginTop: '5%',
-        color: colors.black,
-        textAlign: 'center',
-    },
-    rideImage: {
-        width: '48%',
-        height: '30%',
+    buttonImage: {
+      width: responsiveWidth(isSmallScreen ? 12 : 10),
+      height: responsiveHeight(isSmallScreen ? 6 : 5),
+      marginBottom: responsiveHeight(1),
     },
     cleaningImage: {
-        width: '35%',
-        height: '35%',
+      width: responsiveWidth(isSmallScreen ? 10 : 9),
+      height: responsiveHeight(isSmallScreen ? 6 : 5.5),
     },
     foodImage: {
-        width: '40%',
-        height: '35%',
+      width: responsiveWidth(isSmallScreen ? 11 : 10),
+      height: responsiveHeight(isSmallScreen ? 6 : 5.5),
     },
     microImage: {
-        width: '40%',
-        height: '39%',
+      width: responsiveWidth(isSmallScreen ? 11 : 10),
+      height: responsiveHeight(isSmallScreen ? 6.5 : 6),
     },
-});
+    scanButtonImage: {
+      width: responsiveWidth(isSmallScreen ? 10 : 9),
+      height: responsiveHeight(isSmallScreen ? 5 : 4.5),
+    },
+    buttonText: {
+      color: colors.black,
+      fontSize: responsiveFontSize(isSmallScreen ? 3.5 : 3.2),
+      fontWeight: "500",
+      textAlign: "center",
+      lineHeight: responsiveFontSize(4),
+      marginTop: responsiveHeight(0.5),
+    },
+  });
+};

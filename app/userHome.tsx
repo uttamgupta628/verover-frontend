@@ -28,21 +28,21 @@ export default function UserHome() {
       id: 1,
       title: 'Parking',
       image: images.Parking,
-      imageStyle: { width: '50%', height: '35%' },
+      imageStyle: { width: '50%', height: '50%' },
       route: 'parkingUser/parking',
     },
     {
       id: 2,
       title: 'Dry Cleaners',
       image: images.Cleaning,
-      imageStyle: { width: '35%', height: '35%' },
+      imageStyle: { width: '50%', height: '50%' },
       route: 'dryCleanerUser/allDrycleanerLocation',
     },
     {
       id: 3,
       title: 'My Orders',
       image: images.Cleaning,
-      imageStyle: { width: '35%', height: '35%' },
+      imageStyle: { width: '50%', height: '50%' },
       route: 'dryCleanerUser/myOrder',
     },
   ];
@@ -84,15 +84,12 @@ export default function UserHome() {
           </Text>
         </View>
 
-        {/* Services Grid */}
+        {/* Services Grid - Vertical Single Column */}
         <View style={styles.servicesContainer}>
-          {services.map((service, index) => (
+          {services.map((service) => (
             <TouchableOpacity
               key={service.id}
-              style={[
-                styles.serviceButton,
-                index % 2 === 0 ? styles.serviceButtonLeft : styles.serviceButtonRight,
-              ]}
+              style={styles.serviceButton}
               onPress={() => router.push(service.route as any)}
               activeOpacity={0.7}
             >
@@ -145,7 +142,7 @@ const styles = StyleSheet.create({
     fontSize: responsiveFontSize(2.8),
     color: colors.black || '#000000',
     fontWeight: '700',
-    marginBottom: responsiveHeight(0.5),
+    marginBottom: responsiveHeight(0),
   },
   headerSubtitle: {
     fontSize: responsiveFontSize(1.8),
@@ -156,7 +153,7 @@ const styles = StyleSheet.create({
   // Slider Styles
   sliderContainer: {
     height: responsiveHeight(22),
-    marginTop: responsiveHeight(1),
+    marginTop: responsiveHeight(0),
     marginBottom: responsiveHeight(2),
   },
 
@@ -170,7 +167,7 @@ const styles = StyleSheet.create({
     fontSize: responsiveFontSize(2.4),
     color: colors.black || '#000000',
     fontWeight: '600',
-    marginBottom: responsiveHeight(0.5),
+    marginBottom: responsiveHeight(0),
   },
   servicesSubtitle: {
     fontSize: responsiveFontSize(1.7),
@@ -178,18 +175,17 @@ const styles = StyleSheet.create({
     fontWeight: '400',
   },
 
-  // Services Container
+  // Services Container - Vertical Single Column
   servicesContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    paddingHorizontal: responsiveWidth(3),
-    justifyContent: 'space-between',
+    flexDirection: 'column',
+    paddingHorizontal: responsiveWidth(5),
+    alignItems: 'stretch',
   },
 
-  // Service Button Styles
+  // Service Button Styles - Original Size, Vertical Layout
   serviceButton: {
     backgroundColor: colors.white || '#FFFFFF',
-    width: responsiveWidth(44),
+    width: '100%',
     minHeight: responsiveHeight(20),
     alignItems: 'center',
     justifyContent: 'center',
@@ -206,12 +202,6 @@ const styles = StyleSheet.create({
     
     // Shadow for Android
     elevation: 6,
-  },
-  serviceButtonLeft: {
-    marginLeft: responsiveWidth(2),
-  },
-  serviceButtonRight: {
-    marginRight: responsiveWidth(2),
   },
   serviceIconContainer: {
     width: '100%',

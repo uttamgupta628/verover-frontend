@@ -12,7 +12,6 @@ import colors from '../assets/color';
 import { ParkingViewType } from './types';
 import { responsiveHeight, responsiveWidth } from 'react-native-responsive-dimensions';
 
-// EXPO-SPECIFIC IMPORTS
 import * as Haptics from 'expo-haptics';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

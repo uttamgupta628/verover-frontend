@@ -26,8 +26,8 @@ import {
 } from "../../utils/slotIdConverter";
 import { useStripeWrapper } from "../stripWrapper";
 import BookingReceipt from "./BookingReceipt";
-import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps"; // Add this import
-import * as Location from 'expo-location'; // Add this import
+import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps"; 
+import * as Location from 'expo-location'; 
 
 type PaymentMethod = "CASH" | "CARD" | "UPI";
 
@@ -499,7 +499,6 @@ const Confirmation = () => {
     };
   }, []);
 
-  // Initialize map when component mounts (for cases where we might have location data without checkout)
   useEffect(() => {
     if (!loading && lot) {
       initializeMap();
@@ -507,50 +506,88 @@ const Confirmation = () => {
   }, [lot]);
 
   const initializeStripePaymentSheet = async (stripeDetails: any) => {
-    try {
-      if (!stripeDetails || !stripeDetails.paymentIntent || !stripeDetails.customerId) {
-        console.log("Missing Stripe details for initialization");
-        return false;
-      }
+  try {
+    console.log("🔄 INITIALIZING PAYMENT SHEET - Stripe details:", {
+      hasPaymentIntent: !!stripeDetails?.paymentIntent,
+      hasEphemeralKey: !!stripeDetails?.ephemeralKey,
+      hasCustomerId: !!stripeDetails?.customerId,
+      hasPaymentIntentId: !!stripeDetails?.paymentIntentId,
+      stripeDetails: stripeDetails,
+    });
 
-      if (stripeInitialized.current) {
-        console.log("Stripe already initialized, skipping...");
-        return true;
-      }
-
-      console.log("🔄 INITIALIZING PAYMENT SHEET");
-      console.log("🔍 Payment data received:", {
-        customerPrefix: stripeDetails.customerId?.substring(0, 10),
-        hasCustomer: !!stripeDetails.customerId,
-        hasEphemeralKey: !!stripeDetails.ephemeralKey,
-        hasPaymentIntent: !!stripeDetails.paymentIntent,
-        intentId: stripeDetails.paymentIntentId || "not provided",
-        paymentIntentPrefix: stripeDetails.paymentIntent?.substring(0, 10),
+    if (!stripeDetails || !stripeDetails.paymentIntent || !stripeDetails.ephemeralKey) {
+      console.log("❌ Missing required Stripe details for initialization", {
+        paymentIntent: stripeDetails?.paymentIntent,
+        ephemeralKey: stripeDetails?.ephemeralKey,
+        customerId: stripeDetails?.customerId,
       });
-
-      const initSuccess = await Stripe.initializedPaymentSheet(
-        stripeDetails.paymentIntent,
-        stripeDetails.ephemeralKey || "",
-        stripeDetails.customerId,
-        stripeDetails.paymentIntentId
-      );
-
-      console.log("🔍 initPaymentSheet result:", initSuccess);
-
-      if (initSuccess) {
-        stripeInitialized.current = true;
-        console.log("✅ Payment sheet initialized successfully");
-        return true;
-      } else {
-        console.log("❌ Payment sheet initialization failed");
-        return false;
-      }
-    } catch (error) {
-      console.error("Error initializing Stripe:", error);
-      stripeInitialized.current = false;
       return false;
     }
-  };
+
+    console.log("🔄 Attempting to initialize payment sheet with:", {
+      paymentIntent: stripeDetails.paymentIntent?.substring(0, 20) + "...",
+      ephemeralKey: stripeDetails.ephemeralKey?.substring(0, 20) + "...",
+      customerId: stripeDetails.customerId || "not provided",
+      paymentIntentId: stripeDetails.paymentIntentId,
+    });
+
+    // Try to extract customerId from ephemeralKey if not provided
+    let customerId = stripeDetails.customerId;
+    if (!customerId && stripeDetails.ephemeralKey) {
+      // Try to parse customerId from ephemeralKey (format: ek_live_...)
+      try {
+        const parts = stripeDetails.ephemeralKey.split('_');
+        if (parts.length >= 3) {
+          // The format is typically: ek_[mode]_[data]
+          // The data part might contain customer info
+          const dataPart = parts[2];
+          // Try to base64 decode if it looks like base64
+          if (dataPart && dataPart.length > 20) {
+            // For now, use the paymentIntentId as fallback customerId
+            customerId = stripeDetails.paymentIntentId || 'temp_customer_' + Date.now();
+            console.log("ℹ️ Generated fallback customerId:", customerId);
+          }
+        }
+      } catch (e) {
+        console.log("⚠️ Could not parse customerId from ephemeralKey:", e);
+      }
+    }
+
+    // Use paymentIntentId as customerId if still not available
+    if (!customerId && stripeDetails.paymentIntentId) {
+      customerId = stripeDetails.paymentIntentId;
+      console.log("ℹ️ Using paymentIntentId as customerId:", customerId);
+    }
+
+    // Last resort: create a temporary customerId
+    if (!customerId) {
+      customerId = 'temp_customer_' + Date.now();
+      console.log("ℹ️ Created temporary customerId:", customerId);
+    }
+
+    const initSuccess = await Stripe.initializedPaymentSheet(
+      stripeDetails.paymentIntent,
+      stripeDetails.ephemeralKey || "",
+      customerId,
+      stripeDetails.paymentIntentId
+    );
+
+    console.log("🔍 initPaymentSheet result:", initSuccess);
+
+    if (initSuccess) {
+      stripeInitialized.current = true;
+      console.log("✅ Payment sheet initialized successfully");
+      return true;
+    } else {
+      console.log("❌ Payment sheet initialization failed");
+      return false;
+    }
+  } catch (error) {
+    console.error("❌ Error initializing Stripe:", error);
+    stripeInitialized.current = false;
+    return false;
+  }
+};
 
   const handleConfirmBooking = async () => {
     console.log("🚀 Starting booking confirmation...");

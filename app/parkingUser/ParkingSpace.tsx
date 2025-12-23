@@ -227,7 +227,7 @@ const ParkingSpace = () => {
         })
         .catch((err) => {
           console.log("Error fetching parking lot data:", err);
-          hasFetchedData.current = false; // Allow retry on error
+          hasFetchedData.current = false;
         });
     } else if (
       parsedParams.type === "G" &&
@@ -260,7 +260,7 @@ const ParkingSpace = () => {
           } else {
             console.log("Error:", err);
           }
-          hasFetchedData.current = false; // Allow retry on error
+          hasFetchedData.current = false; 
         });
     } else if (!hasFetchedData.current) {
       Alert.alert("Error", "Lot Not Selected", [
@@ -278,7 +278,6 @@ const ParkingSpace = () => {
       return;
     }
 
-    // Navigate to Confirmation screen with all params
     router.push({
       pathname: "/parkingUser/Confirmation",
       params: {

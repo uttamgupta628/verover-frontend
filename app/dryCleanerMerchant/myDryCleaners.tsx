@@ -26,7 +26,7 @@ import { RootState } from '../../components/redux/store';
 import { Image } from 'expo-image';
 
 const { width: screenWidth } = Dimensions.get('window');
-const API_BASE_URL = 'https://vervoer-backend2.onrender.com/api/users';
+const API_BASE_URL = 'http://192.168.29.162:5000/api/users';
 // Define the DryCleaner type based on your backend model
 interface DryCleaner {
   _id: string;
@@ -1364,7 +1364,7 @@ const MerchantCleanerCard = ({
       
       {/* Action Buttons */}
       <View style={styles.actionButtonsContainer}>
-        <TouchableOpacity 
+        {/* <TouchableOpacity 
           style={[styles.editButton, !canEdit && styles.disabledActionButton]}
           onPress={() => canEdit ? onEdit(cleaner) : Alert.alert('Access Denied', 'You can only edit dry cleaners that you own.')}
           disabled={!canEdit}
@@ -1372,7 +1372,7 @@ const MerchantCleanerCard = ({
           <MaterialCommunityIcons name="pencil" size={16} color={canEdit ? "#4CAF50" : "#ccc"} />
           <Text style={[styles.editButtonText, !canEdit && styles.disabledActionText]}>Edit</Text>
         </TouchableOpacity>
-        
+         */}
         <TouchableOpacity 
           style={styles.viewDetailsButton}
           onPress={() => onViewDetails(cleaner)}
@@ -2103,7 +2103,7 @@ const MyDryCleaners = () => {
       }
 
       const response = await axios.get(
-        'https://vervoer-backend2.onrender.com/api/users/get-own-drycleaner',
+        'http://192.168.29.162:5000/api/users/get-own-drycleaner',
         {
           headers: {
             'Content-Type': 'application/json',
@@ -2204,7 +2204,7 @@ const MyDryCleaners = () => {
       }
 
       const response = await axios.delete(
-        `https://vervoer-backend2.onrender.com/api/users/delete-own-drycleaner/${cleanerId}`,
+        `http://192.168.29.162:5000/api/users/delete-own-drycleaner/${cleanerId}`,
         {
           headers: {
             'Authorization': `Bearer ${authToken}`

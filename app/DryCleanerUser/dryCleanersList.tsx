@@ -515,7 +515,7 @@ const DryCleanersList = () => {
       setLoading(true);
 
       const response = await axios.get(
-        "https://vervoer-backend2.onrender.com/api/users/dry-cleaner",
+        "http://192.168.29.162:5000/api/users/dry-cleaner",
         {
           headers: {
             "Content-Type": "application/json",

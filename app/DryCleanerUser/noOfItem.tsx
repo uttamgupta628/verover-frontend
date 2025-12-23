@@ -58,7 +58,8 @@ const AvailableServicesScreen: React.FC = () => {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [hasFetchedServices, setHasFetchedServices] = useState(false);
-  const [isInitialized, setIsInitialized] = useState(false); // ADDED THIS
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState("All"); // LOCAL STATE FOR CATEGORIES
 
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -66,18 +67,19 @@ const AvailableServicesScreen: React.FC = () => {
 
   // Redux state
   const orderData = useSelector((state: any) => state.user?.order || null);
-  const selectedCategory = useSelector(
-    (state: any) => state.user?.selections?.selectedCategory || "All"
-  );
 
+  // Standard categories - always show these
   const categories = [
     "All",
-    "Blanket",
-    "Blouse/Tops",
-    "Coat",
-    "Comforter",
-    "Duvet Cover",
+    "Shirts",
     "Pants",
+    "Suits",
+    "Dresses",
+    "Coats",
+    "Blankets",
+    "Comforters",
+    "Curtains",
+    "Other",
   ];
 
   const washOnlyOptions = ["Yes", "No"];
@@ -86,13 +88,31 @@ const AvailableServicesScreen: React.FC = () => {
   // Validate item data
   const validateItemData = useCallback((item: any): ServiceItem => {
     try {
+      // Category mapping - convert old/incorrect categories to standard ones
+      const categoryMap: { [key: string]: string } = {
+        Wast: "Pants",
+        Wash: "Shirts",
+        wash: "Shirts",
+        pant: "Pants",
+        shirt: "Shirts",
+        coat: "Coats",
+        suit: "Suits",
+        dress: "Dresses",
+        blanket: "Blankets",
+        comforter: "Comforters",
+        curtain: "Curtains",
+      };
+
+      const rawCategory = item.category || "Other";
+      const mappedCategory = categoryMap[rawCategory] || rawCategory;
+
       const validatedItem = {
         _id: item._id?.toString() || `temp_${Date.now()}_${Math.random()}`,
         name: item.name || "Unknown Item",
         price: typeof item.price === "number" ? item.price : 0,
         quantity:
           typeof item.quantity === "number" ? Math.max(0, item.quantity) : 0,
-        category: item.category || "All",
+        category: mappedCategory, // Use mapped category
         starchLevel:
           typeof item.starchLevel === "number" ? item.starchLevel : 3,
         washOnly: typeof item.washOnly === "boolean" ? item.washOnly : false,
@@ -135,7 +155,7 @@ const AvailableServicesScreen: React.FC = () => {
         name: "Unknown Item",
         price: 0,
         quantity: 0,
-        category: "All",
+        category: "Other",
         starchLevel: 3,
         washOnly: false,
         additionalservice: null,
@@ -212,7 +232,6 @@ const AvailableServicesScreen: React.FC = () => {
     }
   }, []);
 
-  // Fetch cleaner services
   const fetchSelectedCleanerServices = useCallback(
     async (cleaner: Cleaner) => {
       if (!cleaner || !cleaner._id) {
@@ -225,7 +244,6 @@ const AvailableServicesScreen: React.FC = () => {
         setIsLoading(true);
         console.log("Fetching services for cleaner:", cleaner.shopname);
 
-        // Check if cleaner is open
         if (
           cleaner.hoursOfOperation &&
           !isDryCleanerOpen(cleaner.hoursOfOperation)
@@ -236,11 +254,11 @@ const AvailableServicesScreen: React.FC = () => {
             [{ text: "OK" }]
           );
           setItems([]);
-          setIsInitialized(true); // FIXED: Now this function exists
+          setIsInitialized(true);
           return;
         }
 
-        const apiUrl = `https://vervoer-backend2.onrender.com/api/users/dry-cleaners/${cleaner._id}/services`;
+        const apiUrl = `http://192.168.29.162:5000/api/users/dry-cleaners/${cleaner._id}/services`;
 
         console.log("Fetching from URL:", apiUrl);
 
@@ -260,7 +278,6 @@ const AvailableServicesScreen: React.FC = () => {
 
         let services: any[] = [];
 
-        // Handle different response structures
         if (data.data && Array.isArray(data.data)) {
           services = data.data;
         } else if (data.services && Array.isArray(data.services)) {
@@ -277,11 +294,10 @@ const AvailableServicesScreen: React.FC = () => {
             `No services available from ${cleaner.shopname} at this time.`
           );
           setItems([]);
-          setIsInitialized(true); // FIXED
+          setIsInitialized(true);
           return;
         }
 
-        // Convert services to items
         const cleanerServices = services.map((service) => {
           const baseOptions = {
             washAndFold: false,
@@ -332,7 +348,7 @@ const AvailableServicesScreen: React.FC = () => {
         setItems([]);
       } finally {
         setIsLoading(false);
-        setIsInitialized(true); // FIXED: Now this function exists
+        setIsInitialized(true);
       }
     },
     [isDryCleanerOpen, validateItemData]
@@ -417,9 +433,9 @@ const AvailableServicesScreen: React.FC = () => {
     fetchServices();
   }, [selectedCleaner, hasFetchedServices, fetchSelectedCleanerServices]);
 
-  // Category selection
+  // Category selection - NOW FUNCTIONAL
   const handleCategorySelection = useCallback((category: string) => {
-    console.log("Selected category:", category);
+    setSelectedCategory(category);
   }, []);
 
   // Delete item (reset quantity to 0)
@@ -572,15 +588,6 @@ const AvailableServicesScreen: React.FC = () => {
     );
   }, [items, selectedCategory]);
 
-  // Add this near the top of your component
-  useEffect(() => {
-    console.log("🔍 Checking Redux actions:", {
-      saveOrderData: typeof saveOrderData,
-      setSelectedCleaner: typeof setSelectedCleaner,
-      enableOrderProtection: typeof enableOrderProtection,
-    });
-  }, []);
-
   const handleContinue = useCallback(() => {
     if (totalItems === 0) {
       Alert.alert(
@@ -607,9 +614,6 @@ const AvailableServicesScreen: React.FC = () => {
     });
 
     try {
-      // DON'T enable protection - it blocks reading the data!
-      // dispatch(enableOrderProtection()); // ← REMOVE THIS LINE
-
       // Save cleaner
       if (selectedCleaner) {
         const cleanerData = {
@@ -712,8 +716,6 @@ const AvailableServicesScreen: React.FC = () => {
       {/* Header */}
       <View style={styles.headerContainer}>
         <TouchableOpacity onPress={() => router.back()}>
-          {" "}
-          {/* Changed */}
           <Icon name="arrow-left" size={35} color="#FF8C00" />
         </TouchableOpacity>
         <View style={styles.titleContainer}>
@@ -739,10 +741,12 @@ const AvailableServicesScreen: React.FC = () => {
           horizontal
           showsHorizontalScrollIndicator={false}
           style={styles.categoriesContainer}
+          contentContainerStyle={styles.categoriesContentContainer}
         >
           {categories.map((category) => (
             <TouchableOpacity
               key={category}
+              activeOpacity={0.7}
               style={[
                 styles.categoryButton,
                 category === selectedCategory && styles.categoryButtonActive,
@@ -1031,6 +1035,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     paddingHorizontal: 15,
   },
+  categoriesContentContainer: {
+    paddingRight: 20,
+  },
   categoryButton: {
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -1038,6 +1045,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginHorizontal: 4,
     justifyContent: "center",
+    minWidth: 60,
   },
   categoryButtonActive: {
     backgroundColor: "#FF8C00",

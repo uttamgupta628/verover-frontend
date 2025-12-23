@@ -31,7 +31,7 @@ const OrderDetails = () => {
     const hasFetched = React.useRef(false);
 
    useEffect(() => {
-    if (hasFetched.current) return;  // prevents duplicate calls
+    if (hasFetched.current) return;
 
     if (params.orderId) {
         hasFetched.current = true;
@@ -48,15 +48,13 @@ const OrderDetails = () => {
         Alert.alert('Error', 'No order information provided');
         router.back();
     }
-}, []);  // <-- EMPTY dependency (runs only once)
+}, []);
 
 
     const fetchOrderDetails = async (orderId: string) => {
         try {
             setLoading(true);
             
-            // Use correct endpoint based on user type
-            // Since merchant routes are in users router as /merchant-bookings
             const endpoint = isMerchant 
                 ? `/users/merchant-bookings/${orderId}`
                 : `/users/bookings/${orderId}`;
@@ -74,25 +72,95 @@ const OrderDetails = () => {
             if (response.data.success && response.data.data) {
                 const booking = response.data.data;
                 
-                // Transform backend data to match frontend structure
+                // Helper function to format address
+                const formatAddress = (location: any) => {
+                    if (!location) return 'N/A';
+                    
+                    // If address is already a string
+                    if (typeof location.address === 'string') {
+                        return location.address;
+                    }
+                    
+                    // If address is an object, format it
+                    if (typeof location.address === 'object') {
+                        const addr = location.address;
+                        const parts = [
+                            addr.street,
+                            addr.city,
+                            addr.state,
+                            addr.zipCode,
+                            addr.country
+                        ].filter(Boolean);
+                        return parts.length > 0 ? parts.join(', ') : 'N/A';
+                    }
+                    
+                    return 'N/A';
+                };
+
+                // Helper to format dryCleaner address
+                const formatDryCleanerAddress = (dryCleaner: any) => {
+                    if (!dryCleaner) return 'N/A';
+                    
+                    // If address is a string
+                    if (typeof dryCleaner.address === 'string') {
+                        return dryCleaner.address;
+                    }
+                    
+                    // If address is an array, take first element
+                    if (Array.isArray(dryCleaner.address) && dryCleaner.address.length > 0) {
+                        const addr = dryCleaner.address[0];
+                        if (typeof addr === 'string') return addr;
+                        if (typeof addr === 'object') {
+                            const parts = [
+                                addr.street,
+                                addr.city,
+                                addr.state,
+                                addr.zipCode,
+                                addr.country
+                            ].filter(Boolean);
+                            return parts.length > 0 ? parts.join(', ') : 'N/A';
+                        }
+                    }
+                    
+                    // If address is an object
+                    if (typeof dryCleaner.address === 'object' && !Array.isArray(dryCleaner.address)) {
+                        const addr = dryCleaner.address;
+                        const parts = [
+                            addr.street,
+                            addr.city,
+                            addr.state,
+                            addr.zipCode,
+                            addr.country
+                        ].filter(Boolean);
+                        return parts.length > 0 ? parts.join(', ') : 'N/A';
+                    }
+                    
+                    return 'N/A';
+                };
+                
+                // Format dry cleaner data safely
+                const formattedDryCleaner = booking.dryCleaner ? {
+                    _id: booking.dryCleaner._id,
+                    shopname: booking.dryCleaner.shopname || 'N/A',
+                    phoneNumber: booking.dryCleaner.phoneNumber || null,
+                    address: formatDryCleanerAddress(booking.dryCleaner)
+                } : null;
+
+                // Use backend data directly
                 const transformedOrder = {
                     _id: booking._id,
-                    orderNumber: booking.bookingNumber || `#DRYCL${booking._id.slice(-6)}`,
+                    orderNumber: booking.orderNumber || booking.bookingNumber || `#DRYCL${booking._id.slice(-6)}`,
                     status: booking.status,
-                    createdAt: booking.createdAt,
-                    items: booking.items || [],
-                    totalAmount: booking.totalPrice || booking.totalAmount || 0,
-                    pickupAddress: booking.pickupLocation?.address || 'N/A',
-                    deliveryAddress: booking.deliveryLocation?.address || 'N/A',
-                    pickupTime: booking.pickupTimeSlot || 'N/A',
-                    deliveryTime: booking.deliveryTimeSlot || 'N/A',
-                    dryCleaner: booking.dryCleaner,
+                    createdAt: booking.createdAt || booking.requestedAt,
+                    items: booking.orderItems || booking.items || [],
+                    totalAmount: booking.pricing?.totalAmount || booking.price || booking.totalPrice || booking.totalAmount || 0,
+                    pickupAddress: booking.pickupAddress || formatAddress(booking.pickupLocation),
+                    deliveryAddress: booking.dropoffAddress || booking.deliveryAddress || formatAddress(booking.deliveryLocation),
+                    pickupTime: booking.scheduledPickupDateTime || booking.pickupTimeSlot || 'N/A',
+                    deliveryTime: booking.scheduledDeliveryDateTime || booking.deliveryTimeSlot || 'N/A',
+                    dryCleaner: formattedDryCleaner,
                     driver: booking.driver,
                     user: booking.user,
-                    acceptedAt: booking.acceptedAt,
-                    inProgressAt: booking.inProgressAt,
-                    completedAt: booking.completedAt,
-                    deliveredAt: booking.deliveredAt,
                     paymentMethod: booking.paymentMethod || 'Cash on Delivery',
                     paymentStatus: booking.paymentStatus || 'pending',
                     specialInstructions: booking.specialInstructions || booking.notes
@@ -101,7 +169,6 @@ const OrderDetails = () => {
                 setOrder(transformedOrder);
             } else {
                 Alert.alert('Error', 'Order not found');
-                // Don't go back if there's no navigation stack
                 if (router.canGoBack()) {
                     router.back();
                 }
@@ -115,7 +182,6 @@ const OrderDetails = () => {
                 error.response?.data?.message || 'Failed to fetch order details'
             );
             
-            // Don't go back if there's no navigation stack
             if (router.canGoBack()) {
                 router.back();
             }
@@ -250,6 +316,7 @@ const OrderDetails = () => {
     };
 
     const formatDate = (dateString: string) => {
+        if (!dateString || dateString === 'N/A') return 'N/A';
         const date = new Date(dateString);
         return date.toLocaleDateString('en-US', {
             day: 'numeric',
@@ -259,11 +326,25 @@ const OrderDetails = () => {
     };
 
     const formatTime = (dateString: string) => {
+        if (!dateString || dateString === 'N/A') return 'N/A';
         const date = new Date(dateString);
         return date.toLocaleTimeString('en-US', {
             hour: '2-digit',
             minute: '2-digit'
         });
+    };
+
+    const formatDateTime = (dateString: string) => {
+        if (!dateString || dateString === 'N/A') return 'N/A';
+        const date = new Date(dateString);
+        return `${date.toLocaleDateString('en-US', {
+            day: 'numeric',
+            month: 'short',
+            year: 'numeric'
+        })} at ${date.toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit'
+        })}`;
     };
 
     const canCancelOrder = () => {
@@ -321,127 +402,34 @@ const OrderDetails = () => {
                     </Text>
                 </View>
 
-                {/* Order Timeline */}
-                <View style={styles.sectionCard}>
-                    <Text style={styles.sectionTitle}>Order Timeline</Text>
-                    <View style={styles.timeline}>
-                        <View style={styles.timelineItem}>
-                            <View style={[styles.timelineCircle, styles.timelineCircleActive]}>
-                                <Ionicons name="checkmark" size={16} color="#FFF" />
-                            </View>
-                            <View style={styles.timelineContent}>
-                                <Text style={styles.timelineTitle}>Order Placed</Text>
-                                <Text style={styles.timelineDate}>
-                                    {formatDate(order.createdAt)} • {formatTime(order.createdAt)}
-                                </Text>
-                            </View>
-                        </View>
-
-                        <View style={styles.timelineLine} />
-
-                        <View style={styles.timelineItem}>
-                            <View style={[
-                                styles.timelineCircle, 
-                                (order.status === 'accepted' || order.status === 'in_progress' || 
-                                 order.status === 'completed' || order.status === 'delivered') && 
-                                styles.timelineCircleActive
-                            ]}>
-                                {(order.status === 'accepted' || order.status === 'in_progress' || 
-                                  order.status === 'completed' || order.status === 'delivered') && (
-                                    <Ionicons name="checkmark" size={16} color="#FFF" />
-                                )}
-                            </View>
-                            <View style={styles.timelineContent}>
-                                <Text style={styles.timelineTitle}>Order Accepted</Text>
-                                <Text style={styles.timelineDate}>
-                                    {order.acceptedAt ? formatDate(order.acceptedAt) : 'Pending'}
-                                </Text>
-                            </View>
-                        </View>
-
-                        <View style={styles.timelineLine} />
-
-                        <View style={styles.timelineItem}>
-                            <View style={[
-                                styles.timelineCircle, 
-                                (order.status === 'in_progress' || order.status === 'completed' || 
-                                 order.status === 'delivered') && styles.timelineCircleActive
-                            ]}>
-                                {(order.status === 'in_progress' || order.status === 'completed' || 
-                                  order.status === 'delivered') && (
-                                    <Ionicons name="checkmark" size={16} color="#FFF" />
-                                )}
-                            </View>
-                            <View style={styles.timelineContent}>
-                                <Text style={styles.timelineTitle}>In Progress</Text>
-                                <Text style={styles.timelineDate}>
-                                    {order.inProgressAt ? formatDate(order.inProgressAt) : 'Pending'}
-                                </Text>
-                            </View>
-                        </View>
-
-                        <View style={styles.timelineLine} />
-
-                        <View style={styles.timelineItem}>
-                            <View style={[
-                                styles.timelineCircle, 
-                                (order.status === 'completed' || order.status === 'delivered') && 
-                                styles.timelineCircleActive
-                            ]}>
-                                {(order.status === 'completed' || order.status === 'delivered') && (
-                                    <Ionicons name="checkmark" size={16} color="#FFF" />
-                                )}
-                            </View>
-                            <View style={styles.timelineContent}>
-                                <Text style={styles.timelineTitle}>Completed</Text>
-                                <Text style={styles.timelineDate}>
-                                    {order.completedAt ? formatDate(order.completedAt) : 'Pending'}
-                                </Text>
-                            </View>
-                        </View>
-
-                        <View style={styles.timelineLine} />
-
-                        <View style={styles.timelineItem}>
-                            <View style={[
-                                styles.timelineCircle, 
-                                order.status === 'delivered' && styles.timelineCircleActive
-                            ]}>
-                                {order.status === 'delivered' && (
-                                    <Ionicons name="checkmark" size={16} color="#FFF" />
-                                )}
-                            </View>
-                            <View style={styles.timelineContent}>
-                                <Text style={styles.timelineTitle}>Delivered</Text>
-                                <Text style={styles.timelineDate}>
-                                    {order.deliveredAt ? formatDate(order.deliveredAt) : 'Pending'}
-                                </Text>
-                            </View>
-                        </View>
-                    </View>
-                </View>
-
                 {/* Items Details */}
                 <View style={styles.sectionCard}>
                     <Text style={styles.sectionTitle}>Items ({order.items.length})</Text>
-                    {order.items.map((item: any, index: number) => (
-                        <View key={index} style={styles.itemRow}>
-                            <View style={styles.itemIconContainer}>
-                                <Ionicons name="shirt-outline" size={24} color={colors.brandColor} />
+                    {order.items.map((item: any, index: number) => {
+                        // Handle both item structures from backend
+                        const itemName = item.name || item.itemName || item.type || 'Unknown Item';
+                        const itemQuantity = item.quantity || item.count || 1;
+                        const itemPrice = item.price || item.totalPrice || item.cost || 0;
+                        
+                        return (
+                            <View key={index} style={styles.itemRow}>
+                                <View style={styles.itemIconContainer}>
+                                    <Ionicons name="shirt-outline" size={24} color={colors.brandColor} />
+                                </View>
+                                <View style={styles.itemDetails}>
+                                    <Text style={styles.itemName}>{itemName}</Text>
+                                    <Text style={styles.itemQuantity}>Quantity: {itemQuantity}</Text>
+                                </View>
+                                <Text style={styles.itemPrice}>${itemPrice}</Text>
                             </View>
-                            <View style={styles.itemDetails}>
-                                <Text style={styles.itemName}>{item.name}</Text>
-                                <Text style={styles.itemQuantity}>Quantity: {item.quantity}</Text>
-                            </View>
-                            <Text style={styles.itemPrice}>₹{item.price}</Text>
-                        </View>
-                    ))}
+                        );
+                    })}
                     
                     <View style={styles.divider} />
                     
                     <View style={styles.totalRow}>
                         <Text style={styles.totalLabel}>Total Amount</Text>
-                        <Text style={styles.totalAmount}>₹{order.totalAmount}</Text>
+                        <Text style={styles.totalAmount}>${order.totalAmount}</Text>
                     </View>
                 </View>
 
@@ -454,7 +442,7 @@ const OrderDetails = () => {
                     <Text style={styles.addressText}>{order.pickupAddress}</Text>
                     <View style={styles.timeSlot}>
                         <Ionicons name="time-outline" size={18} color={colors.gray} />
-                        <Text style={styles.timeSlotText}>{order.pickupTime}</Text>
+                        <Text style={styles.timeSlotText}>{formatDateTime(order.pickupTime)}</Text>
                     </View>
                 </View>
 
@@ -467,9 +455,46 @@ const OrderDetails = () => {
                     <Text style={styles.addressText}>{order.deliveryAddress}</Text>
                     <View style={styles.timeSlot}>
                         <Ionicons name="time-outline" size={18} color={colors.gray} />
-                        <Text style={styles.timeSlotText}>{order.deliveryTime}</Text>
+                        <Text style={styles.timeSlotText}>{formatDateTime(order.deliveryTime)}</Text>
                     </View>
                 </View>
+
+                {/* Dry Cleaner Info */}
+                {order.dryCleaner && (
+                    <View style={styles.sectionCard}>
+                        <View style={styles.sectionHeader}>
+                            <Ionicons name="storefront-outline" size={24} color={colors.brandColor} />
+                            <Text style={styles.sectionTitle}>Dry Cleaner</Text>
+                        </View>
+                        <Text style={styles.shopName}>{order.dryCleaner.shopname}</Text>
+                        {order.dryCleaner.phoneNumber && (
+                            <Text style={styles.contactText}>
+                                📞 {order.dryCleaner.phoneNumber}
+                            </Text>
+                        )}
+                        {order.dryCleaner.address && (
+                            <Text style={styles.addressText}>{order.dryCleaner.address}</Text>
+                        )}
+                    </View>
+                )}
+
+                {/* Driver Info */}
+                {order.driver && (
+                    <View style={styles.sectionCard}>
+                        <View style={styles.sectionHeader}>
+                            <Ionicons name="car-outline" size={24} color={colors.brandColor} />
+                            <Text style={styles.sectionTitle}>Driver</Text>
+                        </View>
+                        <Text style={styles.shopName}>
+                            {order.driver.firstName} {order.driver.lastName}
+                        </Text>
+                        {order.driver.phoneNumber && (
+                            <Text style={styles.contactText}>
+                                📞 {order.driver.phoneNumber}
+                            </Text>
+                        )}
+                    </View>
+                )}
 
                 {/* Additional Information */}
                 {order.specialInstructions && (
@@ -501,6 +526,12 @@ const OrderDetails = () => {
                             { color: order.paymentStatus === 'paid' ? '#4CAF50' : '#FFA500' }
                         ]}>
                             {order.paymentStatus === 'paid' ? 'Paid' : 'Pending'}
+                        </Text>
+                    </View>
+                    <View style={styles.paymentRow}>
+                        <Text style={styles.paymentLabel}>Total Amount</Text>
+                        <Text style={[styles.paymentValue, { color: colors.brandColor, fontWeight: 'bold' }]}>
+                            ${order.totalAmount}
                         </Text>
                     </View>
                 </View>
@@ -679,46 +710,6 @@ const styles = StyleSheet.create({
         color: colors.black,
         marginLeft: 10,
     },
-    timeline: {
-        marginTop: 10,
-    },
-    timelineItem: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-    },
-    timelineCircle: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
-        backgroundColor: '#E0E0E0',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 15,
-    },
-    timelineCircleActive: {
-        backgroundColor: colors.brandColor,
-    },
-    timelineContent: {
-        flex: 1,
-        paddingBottom: 5,
-    },
-    timelineTitle: {
-        fontSize: 15,
-        fontWeight: '600',
-        color: colors.black,
-        marginBottom: 3,
-    },
-    timelineDate: {
-        fontSize: 13,
-        color: colors.gray,
-    },
-    timelineLine: {
-        width: 2,
-        height: 30,
-        backgroundColor: '#E0E0E0',
-        marginLeft: 15,
-        marginVertical: 5,
-    },
     itemRow: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -793,6 +784,17 @@ const styles = StyleSheet.create({
         color: colors.gray,
         marginLeft: 8,
         fontWeight: '500',
+    },
+    shopName: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: colors.black,
+        marginBottom: 8,
+    },
+    contactText: {
+        fontSize: 14,
+        color: colors.gray,
+        marginBottom: 8,
     },
     instructionsText: {
         fontSize: 14,

@@ -10,9 +10,12 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
+  Modal,
+  Share,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useSelector } from 'react-redux';
+import QRCode from 'react-native-qrcode-svg';
 import colors from '../../assets/color';
 import { useRouter } from 'expo-router';
 
@@ -34,6 +37,10 @@ const DriverHistory = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [hasMore, setHasMore] = useState(true);
+  
+  // QR Modal state
+  const [showQRModal, setShowQRModal] = useState(false);
+  const [selectedBooking, setSelectedBooking] = useState(null);
 
   // Check authentication on component mount
   useEffect(() => {
@@ -111,7 +118,7 @@ const DriverHistory = () => {
       }
 
       // Replace with your actual API URL
-      const historyEndpoint = `https://vervoer-backend2.onrender.com/api/users/driver/history?page=${page}&limit=10`;
+      const historyEndpoint = `http://192.168.29.162:5000/api/users/driver/history?page=${page}&limit=10`;
       const result = await makeApiCall(historyEndpoint, 'GET');
 
       if (result.success && result.data.success) {
@@ -176,6 +183,67 @@ const DriverHistory = () => {
   const handleLoadMore = () => {
     if (!loadingMore && hasMore && currentPage < totalPages) {
       fetchDriverHistory(currentPage + 1, true);
+    }
+  };
+
+  // Generate QR Code Data
+  const generateQRData = (booking) => {
+    if (!booking) return '';
+    
+    const qrData = {
+      bookingId: booking._id || booking.id,
+      orderNumber: booking.orderNumber,
+      trackingId: booking.Tracking_ID,
+      driver: {
+        name: `${user.firstName} ${user.lastName}`.trim() || user.fullName,
+        id: user._id,
+        phone: user.phoneNumber || user.phone,
+      },
+      customer: {
+        name: `${booking.user?.firstName} ${booking.user?.lastName}`.trim(),
+        phone: booking.user?.phoneNumber,
+      },
+      service: {
+        dryCleaner: booking.dryCleaner?.shopname || 'Dry Cleaning Service',
+      },
+      route: {
+        pickup: booking.pickupAddress,
+        dropoff: booking.dropoffAddress,
+        distance: booking.distance,
+        time: booking.time,
+      },
+      payment: {
+        deliveryCharge: booking.deliveryCharge || booking.pricing?.deliveryCharge,
+        items: booking.totalItems || booking.orderItems?.length || 0,
+      },
+      date: formatDate(booking.completedAt || booking.startedAt || booking.createdAt),
+      time: formatTime(booking.completedAt || booking.startedAt || booking.createdAt),
+      status: booking.status,
+      verifyUrl: `https://yourapp.com/verify/${booking.Tracking_ID}`,
+    };
+    
+    return JSON.stringify(qrData);
+  };
+
+  // Show QR Modal
+  const handleShowQR = (booking) => {
+    setSelectedBooking(booking);
+    setShowQRModal(true);
+  };
+
+  // Share QR Data
+  const handleShareQR = async () => {
+    if (!selectedBooking) return;
+    
+    try {
+      const qrText = `Order #${selectedBooking.orderNumber}\nTracking: ${selectedBooking.Tracking_ID}\nStatus: ${getStatusText(selectedBooking.status)}\nVerify: https://yourapp.com/verify/${selectedBooking.Tracking_ID}`;
+      
+      await Share.share({
+        message: qrText,
+        title: 'Delivery Details',
+      });
+    } catch (error) {
+      console.error('Share error:', error);
     }
   };
 
@@ -256,10 +324,8 @@ const DriverHistory = () => {
   const renderBookingItem = ({ item }) => (
     <TouchableOpacity 
       style={styles.bookingCard}
-      onPress={() => {
-        // Navigate to booking details if needed
-        // router.push(`/order-details/${item._id}`);
-      }}
+      onPress={() => handleShowQR(item)}
+      activeOpacity={0.7}
     >
       {/* Header */}
       <View style={styles.bookingHeader}>
@@ -267,8 +333,16 @@ const DriverHistory = () => {
           <Text style={styles.orderNumber}>Order: {item.orderNumber}</Text>
           <Text style={styles.trackingId}>ID: {item.Tracking_ID}</Text>
         </View>
-        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
-          <Text style={styles.statusText}>{getStatusText(item.status)}</Text>
+        <View style={styles.headerRight}>
+          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
+            <Text style={styles.statusText}>{getStatusText(item.status)}</Text>
+          </View>
+          <TouchableOpacity 
+            style={styles.qrButton}
+            onPress={() => handleShowQR(item)}
+          >
+            <MaterialCommunityIcons name="qrcode" size={20} color={colors.brandColor} />
+          </TouchableOpacity>
         </View>
       </View>
 
@@ -335,6 +409,12 @@ const DriverHistory = () => {
         <Text style={styles.dateText}>
           {formatDate(item.completedAt || item.startedAt || item.createdAt)} at {formatTime(item.completedAt || item.startedAt || item.createdAt)}
         </Text>
+      </View>
+
+      {/* Tap to view QR hint */}
+      <View style={styles.qrHint}>
+        <MaterialCommunityIcons name="qrcode-scan" size={14} color="#999" />
+        <Text style={styles.qrHintText}>Tap to view QR Code</Text>
       </View>
     </TouchableOpacity>
   );
@@ -437,6 +517,103 @@ const DriverHistory = () => {
           />
         </>
       )}
+
+      {/* QR Code Modal */}
+      <Modal
+        visible={showQRModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowQRModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <View style={styles.modalTitleContainer}>
+                <MaterialCommunityIcons name="qrcode" size={28} color={colors.brandColor} />
+                <Text style={styles.modalTitle}>Delivery QR Code</Text>
+              </View>
+              <TouchableOpacity 
+                onPress={() => setShowQRModal(false)}
+                style={styles.closeButton}
+              >
+                <MaterialCommunityIcons name="close" size={28} color="#666" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Order Info */}
+            {selectedBooking && (
+              <>
+                <View style={styles.modalOrderInfo}>
+                  <Text style={styles.modalOrderNumber}>Order: {selectedBooking.orderNumber}</Text>
+                  <Text style={styles.modalTrackingId}>Tracking: {selectedBooking.Tracking_ID}</Text>
+                  <View style={[styles.modalStatusBadge, { backgroundColor: getStatusColor(selectedBooking.status) }]}>
+                    <Text style={styles.modalStatusText}>{getStatusText(selectedBooking.status)}</Text>
+                  </View>
+                </View>
+
+                {/* QR Code */}
+                <View style={styles.modalQRContainer}>
+                  <View style={styles.qrWrapper}>
+                    <QRCode
+                      value={generateQRData(selectedBooking)}
+                      size={220}
+                      color="#000000"
+                      backgroundColor="#FFFFFF"
+                    />
+                  </View>
+                  <Text style={styles.modalQRLabel}>Scan to verify delivery details</Text>
+                </View>
+
+                {/* Delivery Details Summary */}
+                <View style={styles.modalDetails}>
+                  <View style={styles.modalDetailRow}>
+                    <MaterialCommunityIcons name="account" size={18} color="#666" />
+                    <Text style={styles.modalDetailText}>
+                      {selectedBooking.user?.firstName} {selectedBooking.user?.lastName}
+                    </Text>
+                  </View>
+                  <View style={styles.modalDetailRow}>
+                    <MaterialCommunityIcons name="map-marker-distance" size={18} color="#666" />
+                    <Text style={styles.modalDetailText}>
+                      {selectedBooking.distance || 'N/A'} km • {selectedBooking.time || 'N/A'} min
+                    </Text>
+                  </View>
+                  <View style={styles.modalDetailRow}>
+                    <MaterialCommunityIcons name="cash" size={18} color="#666" />
+                    <Text style={styles.modalDetailText}>
+                      {formatCurrency(selectedBooking.deliveryCharge || selectedBooking.pricing?.deliveryCharge)}
+                    </Text>
+                  </View>
+                  <View style={styles.modalDetailRow}>
+                    <MaterialCommunityIcons name="calendar" size={18} color="#666" />
+                    <Text style={styles.modalDetailText}>
+                      {formatDate(selectedBooking.completedAt || selectedBooking.startedAt || selectedBooking.createdAt)}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Action Buttons */}
+                <View style={styles.modalActions}>
+                  <TouchableOpacity 
+                    style={styles.shareQRButton}
+                    onPress={handleShareQR}
+                  >
+                    <MaterialCommunityIcons name="share-variant" size={20} color="#FFFFFF" />
+                    <Text style={styles.shareQRButtonText}>Share Details</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={styles.closeModalButton}
+                    onPress={() => setShowQRModal(false)}
+                  >
+                    <Text style={styles.closeModalButtonText}>Close</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -530,6 +707,11 @@ const styles = StyleSheet.create({
     color: '#666666',
     marginTop: 2,
   },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   statusBadge: {
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -539,6 +721,14 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  qrButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   customerSection: {
     flexDirection: 'row',
@@ -625,11 +815,26 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#F0F0F0',
     paddingTop: 8,
+    marginBottom: 8,
   },
   dateText: {
     fontSize: 12,
     color: '#999999',
     textAlign: 'right',
+  },
+  qrHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
+    gap: 6,
+  },
+  qrHintText: {
+    fontSize: 11,
+    color: '#999999',
+    fontStyle: 'italic',
   },
   loadingContainer: {
     flex: 1,
@@ -692,6 +897,154 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '500',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    maxHeight: '90%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#000000',
+  },
+  closeButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F5F5F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalOrderInfo: {
+    backgroundColor: '#F8F8F8',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 20,
+    alignItems: 'center',
+  },
+  modalOrderNumber: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#000000',
+    marginBottom: 4,
+  },
+  modalTrackingId: {
+    fontSize: 14,
+    color: '#666666',
+    marginBottom: 12,
+  },
+  modalStatusBadge: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  modalStatusText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
+  },
+  modalQRContainer: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  qrWrapper: {
+    padding: 20,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 3,
+    borderColor: colors.brandColor,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  modalQRLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#666',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  modalDetails: {
+    backgroundColor: '#F8F8F8',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 20,
+    gap: 12,
+  },
+  modalDetailRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  modalDetailText: {
+    fontSize: 14,
+    color: '#333',
+    fontWeight: '500',
+    flex: 1,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  shareQRButton: {
+    flex: 1,
+    flexDirection: 'row',
+    height: 50,
+    backgroundColor: colors.brandColor,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    shadowColor: colors.brandColor,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  shareQRButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  closeModalButton: {
+    flex: 1,
+    height: 50,
+    backgroundColor: '#E0E0E0',
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  closeModalButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#333333',
   },
 });
 

@@ -133,145 +133,174 @@ const MerchantParkingOrderHistory = () => {
         }
     };
 
-    const fetchParkingBookings = async (): Promise<BookingItem[]> => {
-        try {
-            const response = await axiosInstance.get<BookingResponse>('/merchants/parkinglot/booking', {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                },
-                params: {
-                    page: 1,
-                    limit: 100,
-                }
-            });
-
-            console.log('Parking bookings response:', response.data);
-
-            if (response.data.success) {
-                const data = response.data.data as any;
-                const bookings = data?.bookings || data || [];
-                
-                return bookings.map((booking: any) => ({
-                    _id: booking._id || booking.bookingId,
-                    bookingId: booking.bookingId || booking._id,
-                    orderNumber: booking.bookingNumber || `PARK${(booking._id || '').slice(-6).toUpperCase()}`,
-                    status: booking.status || 'pending',
-                    createdAt: booking.createdAt || new Date().toISOString(),
-                    vehicleNumber: booking.vehicleNumber || 'N/A',
-                    totalAmount: booking.totalAmount || booking.totalPrice || 0,
-                    bookingPeriod: booking.bookingPeriod,
-                    placeInfo: booking.placeInfo || {
-                        name: booking.lot?.parkingName || 'Parking Lot',
-                        address: booking.lot?.address || 'N/A',
-                        phoneNo: booking.lot?.contactNumber || 'N/A'
-                    },
-                    slot: booking.slot,
-                    type: 'parking' as BookingType,
-                    lot: booking.lot,
-                    paymentMethod: booking.paymentMethod,
-                    paymentStatus: booking.paymentStatus,
-                    user: booking.user
-                }));
+   const fetchParkingBookings = async (): Promise<BookingItem[]> => {
+    try {
+        const response = await axiosInstance.get<BookingResponse>('/merchants/parkinglot/booking', {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+            },
+            params: {
+                page: 1,
+                limit: 100,
             }
-            return [];
-        } catch (error: any) {
-            console.error('Error fetching parking bookings:', error);
-            return [];
-        }
-    };
+        });
+
+        console.log('Parking bookings response:', response.data);
+
+        if (!response.data.success) return [];
+
+        const data = response.data.data;
+        const bookings = data?.bookings || [];
+
+        return bookings.map((b: any) => {
+            const bookingId = b._id;
+
+            return {
+                _id: bookingId,
+                bookingId,
+                orderNumber: `PARK${String(bookingId).slice(-6).toUpperCase()}`,
+
+                status: b.paymentDetails?.status || 'PENDING',
+                createdAt: b.createdAt,
+
+                vehicleNumber: b.vehicleNumber || "N/A",
+
+                totalAmount: b.paymentDetails?.totalAmount || 0,
+
+                bookingPeriod: b.bookingPeriod,
+
+                placeInfo: {
+                    name: b.lot?.name || b.lot?.parkingName || "Parking Lot",
+                    address: b.lot?.address || "N/A",
+                    phoneNo: b.lot?.contactNumber || "N/A",
+                },
+
+                slot: b.bookedSlot || null,
+
+                type: "parking",
+
+                lot: b.lot,
+
+                paymentMethod: b.paymentDetails?.method || "N/A",
+                paymentStatus: b.paymentDetails?.status || "N/A",
+
+                user: b.customer || null
+            };
+        });
+
+    } catch (error) {
+        console.error('Error fetching parking bookings:', error);
+        return [];
+    }
+};
 
     const fetchGarageBookings = async (): Promise<BookingItem[]> => {
-        try {
-            const response = await axiosInstance.get<BookingResponse>('/merchants/garage/booking', {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                },
-                params: {
-                    page: 1,
-                    limit: 100,
-                }
-            });
-
-            console.log('Garage bookings response:', response.data);
-
-            if (response.data.success) {
-                const data = response.data.data as any;
-                const bookings = data?.bookings || data || [];
-                
-                return bookings.map((booking: any) => ({
-                    _id: booking._id || booking.bookingId,
-                    bookingId: booking.bookingId || booking._id,
-                    orderNumber: booking.bookingNumber || `GAR${(booking._id || '').slice(-6).toUpperCase()}`,
-                    status: booking.status || 'pending',
-                    createdAt: booking.createdAt || new Date().toISOString(),
-                    vehicleNumber: booking.vehicleNumber || 'N/A',
-                    totalAmount: booking.totalAmount || booking.totalPrice || 0,
-                    bookingPeriod: booking.bookingPeriod,
-                    placeInfo: booking.placeInfo || {
-                        name: booking.garage?.garageName || 'Garage',
-                        address: booking.garage?.address || 'N/A',
-                        phoneNo: booking.garage?.contactNumber || 'N/A'
-                    },
-                    slot: booking.slot,
-                    type: 'garage' as BookingType,
-                    garage: booking.garage,
-                    paymentMethod: booking.paymentMethod,
-                    paymentStatus: booking.paymentStatus,
-                    user: booking.user
-                }));
+    try {
+        const response = await axiosInstance.get<BookingResponse>('/merchants/garage/booking', {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+            },
+            params: {
+                page: 1,
+                limit: 100,
             }
-            return [];
-        } catch (error: any) {
-            console.error('Error fetching garage bookings:', error);
-            return [];
-        }
-    };
+        });
 
-    const fetchResidenceBookings = async (): Promise<BookingItem[]> => {
-        try {
-            const response = await axiosInstance.get<BookingResponse>('/merchants/residence/booking', {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
+        console.log('Garage bookings response:', response.data);
+
+        if (!response.data.success) return [];
+
+        const data = response.data.data;
+        const bookings = data?.bookings || [];
+
+        return bookings.map((b: any) => {
+            const bookingId = b._id;
+
+            return {
+                _id: bookingId,
+                bookingId,
+                orderNumber: `GAR${String(bookingId).slice(-6).toUpperCase()}`,
+
+                status: b.paymentDetails?.status || 'PENDING',
+                createdAt: b.createdAt,
+
+                vehicleNumber: b.vehicleNumber || "N/A",
+
+                totalAmount: b.paymentDetails?.totalAmount || 0,
+
+                bookingPeriod: b.bookingPeriod,
+
+                placeInfo: {
+                    name: b.garage?.name || b.garage?.garageName || "Garage",
+                    address: b.garage?.address || "N/A",
+                    phoneNo: b.garage?.contactNumber || "N/A",
                 },
-                params: {
-                    page: 1,
-                    limit: 100,
-                }
-            });
 
-            console.log('Residence bookings response:', response.data);
+                slot: b.bookedSlot || null,
 
-            if (response.data.success) {
-                const data = response.data.data as any;
-                const bookings = data?.bookings || data || [];
-                
-                return bookings.map((booking: any) => ({
-                    _id: booking._id || booking.bookingId,
-                    bookingId: booking.bookingId || booking._id,
-                    orderNumber: booking.bookingNumber || `RES${(booking._id || '').slice(-6).toUpperCase()}`,
-                    status: booking.status || 'pending',
-                    createdAt: booking.createdAt || new Date().toISOString(),
-                    vehicleNumber: booking.vehicleNumber || 'N/A',
-                    totalAmount: booking.totalAmount || booking.totalPrice || 0,
-                    bookingPeriod: booking.bookingPeriod,
-                    placeInfo: booking.placeInfo || {
-                        name: booking.residence?.residenceName || 'Residence',
-                        address: booking.residence?.address || 'N/A',
-                        phoneNo: booking.residence?.contactNumber || 'N/A'
-                    },
-                    type: 'residence' as BookingType,
-                    residence: booking.residence,
-                    paymentMethod: booking.paymentMethod,
-                    paymentStatus: booking.paymentStatus,
-                    user: booking.user
-                }));
+                type: "garage",
+
+                garage: b.garage,
+
+                paymentMethod: b.paymentDetails?.method || "N/A",
+                paymentStatus: b.paymentDetails?.status || "N/A",
+
+                user: b.customer || null
+            };
+        });
+
+    } catch (error) {
+        console.error('Error fetching garage bookings:', error);
+        return [];
+    }
+};
+
+   const fetchResidenceBookings = async (): Promise<BookingItem[]> => {
+    try {
+        const response = await axiosInstance.get<BookingResponse>('/merchants/residence/booking', {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+            },
+            params: {
+                page: 1,
+                limit: 100,
             }
-            return [];
-        } catch (error: any) {
-            console.error('Error fetching residence bookings:', error);
-            return [];
+        });
+
+        console.log('Residence bookings response:', response.data);
+
+        if (response.data.success) {
+            const data = response.data.data as any;
+            const bookings = data?.bookings || data || [];
+
+            return bookings.map((booking: any) => ({
+                _id: booking._id || booking.bookingId,
+                bookingId: booking.bookingId || booking._id,
+                orderNumber: booking.bookingNumber || `RES${(booking._id || '').slice(-6).toUpperCase()}`,
+                status: booking.status || 'pending',
+                createdAt: booking.createdAt || new Date().toISOString(),
+                vehicleNumber: booking.vehicleNumber || 'N/A',
+                totalAmount: booking.totalAmount || booking.totalPrice || 0,
+                bookingPeriod: booking.bookingPeriod,
+                placeInfo: booking.placeInfo || {
+                    name: booking.residence?.residenceName || 'Residence',
+                    address: booking.residence?.address || 'N/A',
+                    phoneNo: booking.residence?.contactNumber || 'N/A'
+                },
+                type: 'residence' as BookingType,
+                residence: booking.residence,
+                paymentMethod: booking.paymentMethod,
+                paymentStatus: booking.paymentStatus,
+                user: booking.user
+            }));
         }
-    };
+
+        return [];
+    } catch (error: any) {
+        console.error('Error fetching residence bookings:', error);
+        return [];
+    }
+};
 
     const onRefresh = () => {
         setRefreshing(true);

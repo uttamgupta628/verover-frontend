@@ -1,15 +1,18 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View , Image } from 'react-native';
 import { COLORS } from '../constants/colors';
+import { images } from "../assets/images/images";
 
 export default function SplashScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.logoContainer}>
-        <View style={styles.logoBox}>
-          <Text style={styles.logoText}>V</Text>
-        </View>
-        <Text style={styles.brandText}>ERVOVER</Text>
+        <Image
+          source={images.Vlogo}
+          style={styles.logoImage}
+          resizeMode="contain"
+        />
+        <Text style={styles.brandText}>ERVOER</Text>
       </View>
     </View>
   );
@@ -25,25 +28,20 @@ const styles = StyleSheet.create({
   logoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  logoBox: {
-    width: 60,
-    height: 60,
-    backgroundColor: COLORS.primary,
-    borderRadius: 12,
-    alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 10,
+    padding: 0,
   },
-  logoText: {
-    fontSize: 36,
-    fontWeight: 'bold',
-    color: COLORS.white,
+  logoImage: {
+    width: 100,
+    height: 100,
+    marginRight: -10,
   },
   brandText: {
-    fontSize: 32,
+    fontSize: 80,
     fontWeight: 'bold',
     color: COLORS.text,
+    marginBottom:15,
     letterSpacing: 2,
   },
 });
+

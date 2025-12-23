@@ -1,4 +1,3 @@
-// src/components/MenuGrid/MenuGrid.tsx
 import { useRouter } from "expo-router";
 import React from "react";
 import { StyleSheet, View } from "react-native";
@@ -15,11 +14,11 @@ const MenuGrid: React.FC = () => {
         onPress={() => router.push("/parkingUser/FindParking")}
       />
 
-      <MenuItem
+      {/* <MenuItem
         icon="clock"
         label="Live Session"
         onPress={() => router.push("/parkingUser/LiveSessionScreen")}
-      />
+      /> */}
 
       <MenuItem
         icon="history"

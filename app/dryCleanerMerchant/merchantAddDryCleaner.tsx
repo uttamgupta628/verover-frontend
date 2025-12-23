@@ -24,6 +24,12 @@ import { useSelector } from "react-redux";
 import { RootState } from "../../components/redux/store";
 import colors from "../../assets/color";
 import { Image } from "expo-image";
+import { Picker } from "@react-native-picker/picker";
+
+// NOTE: If you get an error about @react-native-picker/picker, install it with:
+// npm install @react-native-picker/picker
+// or
+// yarn add @react-native-picker/picker
 
 const { width, height } = Dimensions.get("window");
 const responsiveWidth = (percentage: number) => (width * percentage) / 100;
@@ -52,12 +58,25 @@ interface HoursOfOperation {
 
 interface Service {
   name: string;
-  category: string;
+  category: "Shirts" | "Pants" | "Suits" | "Dresses" | "Coats" | "Blankets" | "Comforters" | "Curtains" | "Other";
   strachLevel: number;
   washOnly: boolean;
   additionalservice: "zipper" | "button" | "wash/fold";
   price: number;
 }
+
+// Valid categories from backend enum
+const SERVICE_CATEGORIES = [
+  "Shirts",
+  "Pants",
+  "Suits",
+  "Dresses",
+  "Coats",
+  "Blankets",
+  "Comforters",
+  "Curtains",
+  "Other"
+] as const;
 
 interface SelectedImage {
   uri: string;
@@ -104,18 +123,18 @@ const DryClean: React.FC = () => {
     contactPerson: "",
     phoneNumber: "",
     hoursOfOperation: [
-      { day: "Monday", open: "09:00 AM", close: "07:00 PM" },
-      { day: "Tuesday", open: "09:00 AM", close: "07:00 PM" },
-      { day: "Wednesday", open: "09:00 AM", close: "07:00 PM" },
-      { day: "Thursday", open: "09:00 AM", close: "07:00 PM" },
-      { day: "Friday", open: "09:00 AM", close: "07:00 PM" },
-      { day: "Saturday", open: "09:00 AM", close: "05:00 PM" },
-      { day: "Sunday", open: "10:00 AM", close: "04:00 PM" },
+      { day: "Monday", open: "09:00", close: "19:00" },
+      { day: "Tuesday", open: "09:00", close: "19:00" },
+      { day: "Wednesday", open: "09:00", close: "19:00" },
+      { day: "Thursday", open: "09:00", close: "19:00" },
+      { day: "Friday", open: "09:00", close: "19:00" },
+      { day: "Saturday", open: "09:00", close: "17:00" },
+      { day: "Sunday", open: "10:00", close: "16:00" },
     ],
     services: [
       {
         name: "Shirt Cleaning",
-        category: "Clothes",
+        category: "Shirts",
         strachLevel: 3,
         washOnly: false,
         additionalservice: "zipper" as const,
@@ -219,7 +238,7 @@ const DryClean: React.FC = () => {
     }));
   };
 
-  // Search for address using Google Places API (you'll need to set up your API key)
+  // Search for address using Google Places API
   const searchAddress = async () => {
     if (!searchQuery.trim()) return;
 
@@ -357,7 +376,7 @@ const DryClean: React.FC = () => {
         ...prev.services,
         {
           name: "",
-          category: "",
+          category: "Shirts" as const,
           strachLevel: 3,
           washOnly: false,
           additionalservice: "zipper" as const,
@@ -378,7 +397,6 @@ const DryClean: React.FC = () => {
   // Handle contact person image selection
   const handleContactImagePick = async (): Promise<void> => {
     try {
-      // Request permissions
       const permissionResult =
         await ImagePicker.requestMediaLibraryPermissionsAsync();
 
@@ -417,7 +435,6 @@ const DryClean: React.FC = () => {
   // Handle shop images selection
   const handleShopImagesPick = async (): Promise<void> => {
     try {
-      // Request permissions
       const permissionResult =
         await ImagePicker.requestMediaLibraryPermissionsAsync();
 
@@ -465,84 +482,173 @@ const DryClean: React.FC = () => {
         !formData.phoneNumber
       ) {
         Alert.alert("Error", "Please fill in all required fields");
+        setLoading(false);
         return;
       }
 
       // Validate address
       if (!formData.address.latitude || !formData.address.longitude) {
         Alert.alert("Error", "Please select your shop location using the map");
+        setLoading(false);
         return;
       }
+
+      // Ensure address has all required fields
+      if (!formData.address.street || !formData.address.city) {
+        Alert.alert(
+          "Incomplete Address",
+          "Please ensure all address fields are filled. Try selecting the location on the map again."
+        );
+        setLoading(false);
+        return;
+      }
+
+      // Validate services
+      const hasValidService = formData.services.some(
+        (service) => service.name && service.category && service.price > 0
+      );
+      
+      if (!hasValidService) {
+        Alert.alert(
+          "Invalid Services",
+          "Please add at least one service with name, category, and price."
+        );
+        setLoading(false);
+        return;
+      }
+
+      console.log("📤 Starting form submission...");
+      
+      // Log the data being sent for debugging
+      const dataToSend = {
+        shopname: formData.shopname,
+        contactPerson: formData.contactPerson,
+        phoneNumber: formData.phoneNumber,
+        about: formData.about,
+        address: formData.address,
+        hoursOfOperation: formData.hoursOfOperation,
+        services: formData.services,
+      };
+      
+      console.log("Form Data to send:", JSON.stringify(dataToSend, null, 2));
 
       // Create FormData
       const submitData = new FormData();
 
-      // Add text fields
+      // Add text fields (matching backend schema)
       submitData.append("shopname", formData.shopname);
-      submitData.append("address", JSON.stringify(formData.address));
-      submitData.append("about", formData.about);
       submitData.append("contactPerson", formData.contactPerson);
       submitData.append("phoneNumber", formData.phoneNumber);
+      submitData.append("about", formData.about || "");
+      
+      // Address as JSON string (backend will parse it)
+      submitData.append("address", JSON.stringify(formData.address));
+      
+      // Hours of operation as JSON string
       submitData.append(
         "hoursOfOperation",
         JSON.stringify(formData.hoursOfOperation)
       );
+      
+      // Services as JSON string
       submitData.append("services", JSON.stringify(formData.services));
 
       // Add contact person image
       if (images.contactPersonImg) {
         const { uri, type, fileName } = images.contactPersonImg;
-        const imageName = fileName || "contact.jpg";
+        const imageName = fileName || `contact_${Date.now()}.jpg`;
         const imageType = type || "image/jpeg";
 
-        // For React Native, we need to create a proper FormData object
-        const imageData = {
-          uri,
+        const imageFile = {
+          uri: uri,
           type: imageType,
           name: imageName,
         };
-        submitData.append("contactPersonImg", imageData as any);
+        
+        console.log("📷 Adding contact image:", imageName);
+        submitData.append("contactPersonImg", imageFile as any);
       }
 
       // Add shop images
-      images.shopImages.forEach((image, index) => {
-        const { uri, type, fileName } = image;
-        const imageName = fileName || `shop_${index}.jpg`;
-        const imageType = type || "image/jpeg";
+      if (images.shopImages.length > 0) {
+        images.shopImages.forEach((image, index) => {
+          const { uri, type, fileName } = image;
+          const imageName = fileName || `shop_${Date.now()}_${index}.jpg`;
+          const imageType = type || "image/jpeg";
 
-        const imageData = {
-          uri,
-          type: imageType,
-          name: imageName,
-        };
-        submitData.append("shopimage", imageData as any);
-      });
+          const imageFile = {
+            uri: uri,
+            type: imageType,
+            name: imageName,
+          };
+          
+          console.log(`📷 Adding shop image ${index + 1}:`, imageName);
+          submitData.append("shopimage", imageFile as any);
+        });
+      }
 
-      // Make API call - Update with your actual backend URL
+      console.log("🚀 Sending request to server...");
+
       const response = await fetch(
-        "https://vervoer-backend2.onrender.com/api/users/dry-cleaner",
+        "http://192.168.29.162:5000/api/users/dry-cleaner",
         {
           method: "POST",
           headers: {
             Authorization: `Bearer ${authToken}`,
-            "Content-Type": "multipart/form-data",
+            // Don't set Content-Type for FormData - let fetch set it automatically with boundary
           },
           body: submitData,
         }
       );
 
-      const result = await response.json();
+      console.log("📡 Response status:", response.status);
+
+      let result;
+      const responseText = await response.text();
+      console.log("📥 Response text:", responseText.substring(0, 500));
+
+      try {
+        result = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error("❌ JSON parse error:", parseError);
+        throw new Error(`Server returned invalid response: ${responseText.substring(0, 100)}`);
+      }
 
       if (response.ok) {
+        console.log("✅ Registration successful!");
+        console.log("Response data:", result);
+        
+        // Update token if provided
+        if (result.data?.token) {
+          console.log("🔑 New token received");
+          // You might want to update Redux store here with new token
+        }
+        
         Alert.alert("Success", "Dry Cleaner registered successfully!", [
           { text: "OK", onPress: () => router.back() },
         ]);
       } else {
-        Alert.alert("Error", result.message || "Registration failed");
+        console.error("❌ Registration failed:", result);
+        
+        // More detailed error message
+        let errorMessage = "Registration failed";
+        if (result.message) {
+          errorMessage = result.message;
+        } else if (result.error) {
+          errorMessage = result.error;
+        } else if (result.errors && Array.isArray(result.errors)) {
+          // Handle Zod validation errors
+          errorMessage = result.errors.map((e: any) => e.message).join("\n");
+        }
+        
+        Alert.alert("Registration Failed", errorMessage);
       }
-    } catch (error) {
-      console.error("Registration error:", error);
-      Alert.alert("Error", "Something went wrong. Please try again.");
+    } catch (error: any) {
+      console.error("❌ Registration error:", error);
+      Alert.alert(
+        "Error", 
+        error.message || "Something went wrong. Please check your connection and try again."
+      );
     } finally {
       setLoading(false);
     }
@@ -646,7 +752,7 @@ const DryClean: React.FC = () => {
               <View style={styles.locationInfo}>
                 <Ionicons name="checkmark-circle" size={20} color="#4CAF50" />
                 <Text style={styles.locationText}>
-                  Location Selected: {formData.address.formattedAddress}
+                  {formData.address.formattedAddress}
                 </Text>
               </View>
               <TouchableOpacity onPress={() => setMapModalVisible(true)}>
@@ -659,7 +765,7 @@ const DryClean: React.FC = () => {
             </Text>
           )}
 
-          {/* Address Fields (Read-only from map selection) */}
+          {/* Address Fields */}
           <Text style={styles.label}>Street Address</Text>
           <TextInput
             style={styles.input}
@@ -728,8 +834,8 @@ const DryClean: React.FC = () => {
             </View>
           </View>
 
-          {/* Coordinates (hidden but stored) */}
-          {formData.address.latitude && formData.address.longitude && (
+          {/* Coordinates */}
+          {formData.address.latitude !== 0 && formData.address.longitude !== 0 && (
             <View style={styles.coordinates}>
               <Text style={styles.coordinateText}>
                 Latitude: {formData.address.latitude.toFixed(6)}
@@ -776,7 +882,7 @@ const DryClean: React.FC = () => {
             />
             <Text style={styles.buttonText}>
               {images.shopImages.length > 0
-                ? `${images.shopImages.length} Shop Images Selected`
+                ? `${images.shopImages.length} Shop Image${images.shopImages.length > 1 ? 's' : ''} Selected`
                 : "Select Shop Images (Max 4)"}
             </Text>
           </TouchableOpacity>
@@ -861,15 +967,19 @@ const DryClean: React.FC = () => {
               />
 
               <Text style={styles.label}>Category</Text>
-              <TextInput
-                style={styles.input}
-                value={service.category}
-                onChangeText={(value) =>
-                  handleServiceChange(index, "category", value)
-                }
-                placeholder="e.g., Clothes"
-                placeholderTextColor={colors.gray}
-              />
+              <View style={styles.pickerContainer}>
+                <Picker
+                  selectedValue={service.category}
+                  onValueChange={(value) =>
+                    handleServiceChange(index, "category", value)
+                  }
+                  style={styles.picker}
+                >
+                  {SERVICE_CATEGORIES.map((cat) => (
+                    <Picker.Item key={cat} label={cat} value={cat} />
+                  ))}
+                </Picker>
+              </View>
 
               <View style={styles.row}>
                 <View style={styles.halfInput}>
@@ -1054,10 +1164,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.lightGray,
     zIndex: 10,
-    marginTop: "-10%",
+    marginTop: -40,
   },
   headerTitle: {
-    fontSize: responsiveFontSize(15),
+    fontSize: responsiveFontSize(18),
     color: colors.black,
     fontWeight: "bold",
   },
@@ -1074,7 +1184,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   sectionTitle: {
-    fontSize: responsiveFontSize(15),
+    fontSize: responsiveFontSize(16),
     fontWeight: "bold",
     color: colors.black,
     marginBottom: responsiveHeight(1.5),
@@ -1086,7 +1196,7 @@ const styles = StyleSheet.create({
     marginBottom: responsiveHeight(1.5),
   },
   label: {
-    fontSize: responsiveFontSize(15),
+    fontSize: responsiveFontSize(14),
     color: colors.black,
     marginBottom: responsiveHeight(0.5),
     marginTop: responsiveHeight(1),
@@ -1099,11 +1209,11 @@ const styles = StyleSheet.create({
     borderColor: colors.lightGray,
     paddingVertical: responsiveHeight(1.2),
     paddingHorizontal: responsiveWidth(3),
-    fontSize: responsiveFontSize(15),
+    fontSize: responsiveFontSize(14),
     color: colors.black,
   },
   textArea: {
-    height: responsiveHeight(8),
+    height: responsiveHeight(10),
     textAlignVertical: "top",
   },
   row: {
@@ -1113,7 +1223,6 @@ const styles = StyleSheet.create({
   halfInput: {
     width: "48%",
   },
-  // Location Section Styles
   locationButtons: {
     flexDirection: "row",
     gap: 10,
@@ -1131,7 +1240,7 @@ const styles = StyleSheet.create({
   },
   locationButtonText: {
     color: "#FFF",
-    fontSize: responsiveFontSize(15),
+    fontSize: responsiveFontSize(13),
     fontWeight: "600",
   },
   mapButton: {
@@ -1146,7 +1255,7 @@ const styles = StyleSheet.create({
   },
   mapButtonText: {
     color: "#FFF",
-    fontSize: responsiveFontSize(15),
+    fontSize: responsiveFontSize(13),
     fontWeight: "600",
   },
   selectedLocation: {
@@ -1165,17 +1274,17 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   locationText: {
-    fontSize: responsiveFontSize(15),
+    fontSize: responsiveFontSize(13),
     color: colors.black,
     flex: 1,
   },
   changeLocationText: {
     color: colors.brandColor,
-    fontSize: responsiveFontSize(15),
+    fontSize: responsiveFontSize(13),
     fontWeight: "600",
   },
   locationPrompt: {
-    fontSize: responsiveFontSize(15),
+    fontSize: responsiveFontSize(13),
     color: colors.gray,
     fontStyle: "italic",
     marginBottom: 15,
@@ -1190,7 +1299,6 @@ const styles = StyleSheet.create({
   coordinateText: {
     fontSize: responsiveFontSize(12),
     color: colors.gray,
-    fontFamily: "monospace",
   },
   imageButton: {
     backgroundColor: colors.brandColor,
@@ -1204,12 +1312,12 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: "#FFF",
-    fontSize: responsiveFontSize(15),
+    fontSize: responsiveFontSize(14),
     fontWeight: "600",
   },
   previewImage: {
-    width: responsiveWidth(20),
-    height: responsiveWidth(20),
+    width: responsiveWidth(30),
+    height: responsiveWidth(30),
     borderRadius: 10,
     marginTop: responsiveHeight(1),
     alignSelf: "center",
@@ -1219,12 +1327,12 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     marginTop: responsiveHeight(1),
     justifyContent: "center",
+    gap: 8,
   },
   shopPreviewImage: {
-    width: responsiveWidth(18),
-    height: responsiveWidth(18),
+    width: responsiveWidth(20),
+    height: responsiveWidth(20),
     borderRadius: 8,
-    margin: responsiveWidth(1),
   },
   hourRow: {
     flexDirection: "row",
@@ -1234,9 +1342,9 @@ const styles = StyleSheet.create({
     paddingVertical: responsiveHeight(0.5),
   },
   dayText: {
-    fontSize: responsiveFontSize(15),
+    fontSize: responsiveFontSize(14),
     color: colors.black,
-    width: responsiveWidth(20),
+    width: responsiveWidth(25),
     fontWeight: "500",
   },
   timeInputs: {
@@ -1252,15 +1360,15 @@ const styles = StyleSheet.create({
     borderColor: colors.lightGray,
     paddingVertical: responsiveHeight(0.8),
     paddingHorizontal: responsiveWidth(2),
-    fontSize: responsiveFontSize(15),
+    fontSize: responsiveFontSize(12),
     color: colors.black,
-    width: responsiveWidth(22),
+    width: responsiveWidth(24),
     textAlign: "center",
   },
   toText: {
     marginHorizontal: responsiveWidth(2),
     color: colors.gray,
-    fontSize: responsiveFontSize(15),
+    fontSize: responsiveFontSize(13),
   },
   addButton: {
     backgroundColor: colors.brandColor,
@@ -1273,7 +1381,7 @@ const styles = StyleSheet.create({
   },
   addButtonText: {
     color: "#FFF",
-    fontSize: responsiveFontSize(15),
+    fontSize: responsiveFontSize(13),
     fontWeight: "600",
   },
   serviceCard: {
@@ -1295,6 +1403,17 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: colors.black,
   },
+  pickerContainer: {
+    backgroundColor: "#F5F5F5",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.lightGray,
+    overflow: "hidden",
+  },
+  picker: {
+    height: 50,
+    width: "100%",
+  },
   submitButton: {
     backgroundColor: colors.brandColor,
     flexDirection: "row",
@@ -1314,13 +1433,12 @@ const styles = StyleSheet.create({
   },
   submitButtonText: {
     color: "#FFF",
-    fontSize: responsiveFontSize(15),
+    fontSize: responsiveFontSize(16),
     fontWeight: "bold",
   },
   disabledButton: {
     opacity: 0.6,
   },
-  // Modal Styles
   modalContainer: {
     flex: 1,
     backgroundColor: "#FFFFFF",
@@ -1352,7 +1470,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
   },
-  // Search Styles
   searchContainer: {
     padding: 15,
     backgroundColor: "#FFFFFF",
@@ -1387,7 +1504,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "600",
   },
-  // Map Styles
   map: {
     flex: 1,
     width: "100%",

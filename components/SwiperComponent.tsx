@@ -19,7 +19,7 @@ const SwiperComponent = () => {
       <View style={styles.slide}>
         <Text style={styles.text}>Rides, Parking,</Text>
         <Text style={styles.text}>Dry Cleaning</Text>
-        <Text style={styles.text}>in an Instant!</Text>
+        <Text style={styles.text}>and Delivery</Text>
       </View>
 
       <View style={styles.slide}>
