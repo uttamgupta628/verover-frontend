@@ -118,7 +118,7 @@ const DriverHistory = () => {
       }
 
       // Replace with your actual API URL
-      const historyEndpoint = `http://192.168.29.162:5000/api/users/driver/history?page=${page}&limit=10`;
+      const historyEndpoint = `https://vervoer-backend2.onrender.com/api/users/driver/history?page=${page}&limit=10`;
       const result = await makeApiCall(historyEndpoint, 'GET');
 
       if (result.success && result.data.success) {

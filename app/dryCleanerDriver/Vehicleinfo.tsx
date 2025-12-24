@@ -233,7 +233,7 @@ const VehicleInfoScreen: React.FC = () => {
     options: RequestInit = {}
   ) => {
     // Replace with your actual API URL
-    const API_BASE_URL = "http://192.168.29.162:5000/api";
+    const API_BASE_URL = "https://vervoer-backend2.onrender.com/api";
     const url = `${API_BASE_URL}${endpoint}`;
 
     const defaultHeaders: any = {

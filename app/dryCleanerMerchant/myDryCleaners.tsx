@@ -26,7 +26,7 @@ import { RootState } from '../../components/redux/store';
 import { Image } from 'expo-image';
 
 const { width: screenWidth } = Dimensions.get('window');
-const API_BASE_URL = 'http://192.168.29.162:5000/api/users';
+const API_BASE_URL = 'https://vervoer-backend2.onrender.com/api/users';
 // Define the DryCleaner type based on your backend model
 interface DryCleaner {
   _id: string;
@@ -2103,7 +2103,7 @@ const MyDryCleaners = () => {
       }
 
       const response = await axios.get(
-        'http://192.168.29.162:5000/api/users/get-own-drycleaner',
+        'https://vervoer-backend2.onrender.com/api/users/get-own-drycleaner',
         {
           headers: {
             'Content-Type': 'application/json',
@@ -2204,7 +2204,7 @@ const MyDryCleaners = () => {
       }
 
       const response = await axios.delete(
-        `http://192.168.29.162:5000/api/users/delete-own-drycleaner/${cleanerId}`,
+        `https://vervoer-backend2.onrender.com/api/users/delete-own-drycleaner/${cleanerId}`,
         {
           headers: {
             'Authorization': `Bearer ${authToken}`

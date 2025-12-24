@@ -58,7 +58,16 @@ interface HoursOfOperation {
 
 interface Service {
   name: string;
-  category: "Shirts" | "Pants" | "Suits" | "Dresses" | "Coats" | "Blankets" | "Comforters" | "Curtains" | "Other";
+  category:
+    | "Shirts"
+    | "Pants"
+    | "Suits"
+    | "Dresses"
+    | "Coats"
+    | "Blankets"
+    | "Comforters"
+    | "Curtains"
+    | "Other";
   strachLevel: number;
   washOnly: boolean;
   additionalservice: "zipper" | "button" | "wash/fold";
@@ -75,7 +84,7 @@ const SERVICE_CATEGORIES = [
   "Blankets",
   "Comforters",
   "Curtains",
-  "Other"
+  "Other",
 ] as const;
 
 interface SelectedImage {
@@ -507,7 +516,7 @@ const DryClean: React.FC = () => {
       const hasValidService = formData.services.some(
         (service) => service.name && service.category && service.price > 0
       );
-      
+
       if (!hasValidService) {
         Alert.alert(
           "Invalid Services",
@@ -518,7 +527,7 @@ const DryClean: React.FC = () => {
       }
 
       console.log("📤 Starting form submission...");
-      
+
       // Log the data being sent for debugging
       const dataToSend = {
         shopname: formData.shopname,
@@ -529,7 +538,7 @@ const DryClean: React.FC = () => {
         hoursOfOperation: formData.hoursOfOperation,
         services: formData.services,
       };
-      
+
       console.log("Form Data to send:", JSON.stringify(dataToSend, null, 2));
 
       // Create FormData
@@ -540,16 +549,16 @@ const DryClean: React.FC = () => {
       submitData.append("contactPerson", formData.contactPerson);
       submitData.append("phoneNumber", formData.phoneNumber);
       submitData.append("about", formData.about || "");
-      
+
       // Address as JSON string (backend will parse it)
       submitData.append("address", JSON.stringify(formData.address));
-      
+
       // Hours of operation as JSON string
       submitData.append(
         "hoursOfOperation",
         JSON.stringify(formData.hoursOfOperation)
       );
-      
+
       // Services as JSON string
       submitData.append("services", JSON.stringify(formData.services));
 
@@ -564,7 +573,7 @@ const DryClean: React.FC = () => {
           type: imageType,
           name: imageName,
         };
-        
+
         console.log("📷 Adding contact image:", imageName);
         submitData.append("contactPersonImg", imageFile as any);
       }
@@ -581,7 +590,7 @@ const DryClean: React.FC = () => {
             type: imageType,
             name: imageName,
           };
-          
+
           console.log(`📷 Adding shop image ${index + 1}:`, imageName);
           submitData.append("shopimage", imageFile as any);
         });
@@ -590,7 +599,7 @@ const DryClean: React.FC = () => {
       console.log("🚀 Sending request to server...");
 
       const response = await fetch(
-        "http://192.168.29.162:5000/api/users/dry-cleaner",
+        "https://vervoer-backend2.onrender.com/api/users/dry-cleaner",
         {
           method: "POST",
           headers: {
@@ -611,25 +620,27 @@ const DryClean: React.FC = () => {
         result = JSON.parse(responseText);
       } catch (parseError) {
         console.error("❌ JSON parse error:", parseError);
-        throw new Error(`Server returned invalid response: ${responseText.substring(0, 100)}`);
+        throw new Error(
+          `Server returned invalid response: ${responseText.substring(0, 100)}`
+        );
       }
 
       if (response.ok) {
         console.log("✅ Registration successful!");
         console.log("Response data:", result);
-        
+
         // Update token if provided
         if (result.data?.token) {
           console.log("🔑 New token received");
           // You might want to update Redux store here with new token
         }
-        
+
         Alert.alert("Success", "Dry Cleaner registered successfully!", [
           { text: "OK", onPress: () => router.back() },
         ]);
       } else {
         console.error("❌ Registration failed:", result);
-        
+
         // More detailed error message
         let errorMessage = "Registration failed";
         if (result.message) {
@@ -640,14 +651,15 @@ const DryClean: React.FC = () => {
           // Handle Zod validation errors
           errorMessage = result.errors.map((e: any) => e.message).join("\n");
         }
-        
+
         Alert.alert("Registration Failed", errorMessage);
       }
     } catch (error: any) {
       console.error("❌ Registration error:", error);
       Alert.alert(
-        "Error", 
-        error.message || "Something went wrong. Please check your connection and try again."
+        "Error",
+        error.message ||
+          "Something went wrong. Please check your connection and try again."
       );
     } finally {
       setLoading(false);
@@ -835,16 +847,17 @@ const DryClean: React.FC = () => {
           </View>
 
           {/* Coordinates */}
-          {formData.address.latitude !== 0 && formData.address.longitude !== 0 && (
-            <View style={styles.coordinates}>
-              <Text style={styles.coordinateText}>
-                Latitude: {formData.address.latitude.toFixed(6)}
-              </Text>
-              <Text style={styles.coordinateText}>
-                Longitude: {formData.address.longitude.toFixed(6)}
-              </Text>
-            </View>
-          )}
+          {formData.address.latitude !== 0 &&
+            formData.address.longitude !== 0 && (
+              <View style={styles.coordinates}>
+                <Text style={styles.coordinateText}>
+                  Latitude: {formData.address.latitude.toFixed(6)}
+                </Text>
+                <Text style={styles.coordinateText}>
+                  Longitude: {formData.address.longitude.toFixed(6)}
+                </Text>
+              </View>
+            )}
         </View>
 
         {/* Images */}
@@ -882,7 +895,9 @@ const DryClean: React.FC = () => {
             />
             <Text style={styles.buttonText}>
               {images.shopImages.length > 0
-                ? `${images.shopImages.length} Shop Image${images.shopImages.length > 1 ? 's' : ''} Selected`
+                ? `${images.shopImages.length} Shop Image${
+                    images.shopImages.length > 1 ? "s" : ""
+                  } Selected`
                 : "Select Shop Images (Max 4)"}
             </Text>
           </TouchableOpacity>
