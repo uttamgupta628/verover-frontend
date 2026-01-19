@@ -1,18 +1,30 @@
 {
   "expo": {
     "scheme": "vervoer",
-    "name": "verover",
-    "slug": "verover",
-    "version": "1.0.0",
+    "name": "vervoer",
+    "slug": "vervoer",
+    "version": "1.4.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "splash": {
+      "image": "./assets/images/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "userInterfaceStyle": "light",
     "extra": {
       "GOOGLE_MAPS_API_KEY": "AIzaSyBn5c5hk6ko6gEwZ3IyWK6AkU4_U_tp_4g",
       "STRIPE_PUBLISHABLE_KEY": "pk_live_51JMswHFm9rZFXSdEZjdpcRUqm1OYGtvj9PiHgBbqVPVl8UXztcGkGQCKmwOiH6kakl8tnq12kJk3DlVMkXrvcpDw00ddHHR7AD",
+      "router": {},
       "eas": {
-        "projectId": "18dc5699-c25d-497d-91be-e4d48b0769b4"
+        "projectId": "a1899d77-9ff0-4368-a7ef-22448679cebb"
       }
     },
     "ios": {
+      "bundleIdentifier": "com.vervoerAppReact",
+      "buildNumber": "2",
       "supportsTablet": true,
+      "requireFullScreen": false,
       "config": {
         "googleMapsApiKey": "AIzaSyBn5c5hk6ko6gEwZ3IyWK6AkU4_U_tp_4g"
       },
@@ -21,7 +33,18 @@
         "NSLocationAlwaysAndWhenInUseUsageDescription": "This app needs access to your location to find nearby parking spots and dry cleaners.",
         "NSCameraUsageDescription": "This app needs access to your camera to take photos of your shop and contact person.",
         "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to select images for your shop.",
-        "NSMicrophoneUsageDescription": "This app needs access to your microphone for video capture."
+        "NSMicrophoneUsageDescription": "This app needs access to your microphone for video capture.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "privacyManifests": {
+        "NSPrivacyAccessedAPITypes": [
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
+            "NSPrivacyAccessedAPITypeReasons": [
+              "CA92.1"
+            ]
+          }
+        ]
       }
     },
     "android": {
@@ -34,10 +57,10 @@
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION"
       ],
-      "package": "com.arnab_007.verover"
+      "package": "com.vervoer.vervoerApp"
     },
     "plugins": [
-      
+      "expo-router"
     ]
   }
 }
