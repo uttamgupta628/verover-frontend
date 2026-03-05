@@ -213,27 +213,41 @@ const MerchantResidenceForm = () => {
   };
 
   const handleImageUpload = async () => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsMultipleSelection: true,
-        quality: 0.8,
-        selectionLimit: 10 - images.length,
-      });
+  try {
+    // Request permission before opening the gallery
+    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
-      if (result.canceled || !result.assets) return;
-
-      const newImages = result.assets.map((asset) => ({
-        uri: asset.uri || "",
-        name: asset.uri.split("/").pop() || `image_${Date.now()}.jpg`,
-        type: "image/jpeg",
-      }));
-      setImages((prev) => [...prev, ...newImages]);
-    } catch (error) {
-      console.error("Image picker error:", error);
-      Alert.alert("Error", "Failed to select images");
+    if (!granted) {
+      Alert.alert(
+        "Permission Required",
+        "You need to grant permission to access photos."
+      );
+      return;
     }
-  };
+
+    // Open image library
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsMultipleSelection: true,
+      quality: 0.8,
+      selectionLimit: Math.max(1, 10 - images.length), // prevent crash if value becomes 0
+    });
+
+    if (result.canceled || !result.assets) return;
+
+    const newImages = result.assets.map((asset) => ({
+      uri: asset.uri ?? "",
+      name: asset.uri?.split("/").pop() || `image_${Date.now()}.jpg`,
+      type: asset.mimeType || "image/jpeg",
+    }));
+
+    setImages((prev) => [...prev, ...newImages]);
+  } catch (error) {
+    console.error("Image picker error:", error);
+    Alert.alert("Error", "Failed to select images");
+  }
+};
+
 
   const removeImage = (index: number) => {
     setImages((prevImages) => prevImages.filter((_, i) => i !== index));

@@ -17,20 +17,20 @@ const SwiperComponent = () => {
       paginationStyle={styles.pagination}
     >
       <View style={styles.slide}>
-        <Text style={styles.text}>Rides, Parking,</Text>
+        <Text style={styles.text}>Parking,</Text>
         <Text style={styles.text}>Dry Cleaning</Text>
         <Text style={styles.text}>and Delivery</Text>
       </View>
 
-      <View style={styles.slide}>
+      {/* <View style={styles.slide}>
         <Text style={styles.text}>Book Your Ride</Text>
         <Text style={styles.text}>Anytime, Anywhere</Text>
-      </View>
+      </View> */}
 
-      <View style={styles.slide}>
+      {/* <View style={styles.slide}>
         <Text style={styles.text}>Easy Parking</Text>
         <Text style={styles.text}>Solutions</Text>
-      </View>
+      </View> */}
     </Swiper>
   );
 };

@@ -44,8 +44,11 @@ interface CheckOutData {
     priceRate?: number;
     basePrice: number;
     discount: number;
+    serviceFee: number;          // ✅ Added
+    transactionFee: number;      // ✅ Added
+    estimatedTaxes: number;      // ✅ Added
     couponApplied: boolean;
-    couponDetails: null;
+    couponDetails: null | string;
     totalAmount: number;
   };
   stripeDetails?: {
@@ -1184,66 +1187,136 @@ const Confirmation = () => {
                 </View>
               )}
 
-              <View style={styles.fareSection}>
-                <TouchableOpacity 
-                  style={styles.walletButton}
-                  onPress={() => setShowPaymentMethodSelector(true)}
-                >
-                  <Text style={styles.methodIcon}>
-                    {paymentMethod === "CASH" ? "💵" : 
-                     paymentMethod === "CARD" ? "💳" : "📱"}
-                  </Text>
-                  <View style={styles.walletContent}>
-                    <Text style={styles.walletText}>
-                      {paymentMethod === "CASH" ? "Cash Payment" : 
-                       paymentMethod === "CARD" ? "Credit/Debit Card" : 
-                       "UPI Payment"}
-                    </Text>
-                    {paymentMethod === "CARD" && (
-                      <Text style={styles.cardInfo}>
-                        {savedCard ? `•••• ${savedCard.cardNumber.slice(-4)}` : "Enter card details"}
-                      </Text>
-                    )}
-                  </View>
-                  <Icon source="chevron-right" size={24} color="#000000" />
-                </TouchableOpacity>
+             <View style={styles.fareSection}>
+  <TouchableOpacity
+    style={styles.walletButton}
+    onPress={() => setShowPaymentMethodSelector(true)}
+  >
+    <Text style={styles.methodIcon}>
+      {paymentMethod === "CASH" ? "💵" :
+       paymentMethod === "CARD" ? "💳" : "📱"}
+    </Text>
+    <View style={styles.walletContent}>
+      <Text style={styles.walletText}>
+        {paymentMethod === "CASH" ? "Cash Payment" :
+         paymentMethod === "CARD" ? "Credit/Debit Card" :
+         "UPI Payment"}
+      </Text>
+      {paymentMethod === "CARD" && (
+        <Text style={styles.cardInfo}>
+          {savedCard ? `•••• ${savedCard.cardNumber.slice(-4)}` : "Enter card details"}
+        </Text>
+      )}
+    </View>
+    <Icon source="chevron-right" size={24} color="#000000" />
+  </TouchableOpacity>
 
-                <View style={styles.totalFareContainer}>
-                  <View style={styles.fareDetails}>
-                    <View>
-                      <Text style={styles.totalFareLabel}>
-                        Total Fare (*approx)
-                      </Text>
-                      <Text style={styles.totalFareAmount}>
-                        {data
-                          ? `₹${data.pricing.totalAmount.toFixed(2)}`
-                          : "..."}
-                      </Text>
-                    </View>
-                    <TouchableOpacity
-                      style={[
-                        styles.confirmButton,
-                        (!data || paymentLoading) && styles.disabledButton,
-                      ]}
-                      onPress={handleConfirmBooking}
-                      disabled={!data || paymentLoading}
-                    >
-                      {paymentLoading ? (
-                        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                          <ActivityIndicator size="small" color="#FFFFFF" />
-                          <Text style={[styles.confirmButtonText, { marginLeft: 8 }]}>
-                            Processing...
-                          </Text>
-                        </View>
-                      ) : (
-                        <Text style={styles.confirmButtonText}>
-                          {paymentMethod === "CARD" ? "Pay Now" : "Confirm Booking"}
-                        </Text>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </View>
+  {/* ✅ Price Breakdown Card */}
+  {data && (
+    <View style={styles.priceBreakdownCard}>
+      <Text style={styles.priceBreakdownTitle}>Price Breakdown</Text>
+
+      {/* Base Price */}
+      <View style={styles.priceRow}>
+        <Text style={styles.priceRowLabel}>
+          Base Price
+          {data.pricing.priceRate
+            ? ` (₹${data.pricing.priceRate}/hr)`
+            : ""}
+        </Text>
+        <Text style={styles.priceRowValue}>
+          ₹{data.pricing.basePrice.toFixed(2)}
+        </Text>
+      </View>
+
+      {/* Service Fee */}
+      <View style={styles.priceRow}>
+        <Text style={styles.priceRowLabel}>Service Fee (5%)</Text>
+        <Text style={styles.priceRowValue}>
+          ₹{data.pricing.serviceFee?.toFixed(2) ?? "0.00"}
+        </Text>
+      </View>
+
+      {/* Transaction Fee */}
+      <View style={styles.priceRow}>
+        <Text style={styles.priceRowLabel}>Transaction Fee</Text>
+        <Text style={styles.priceRowValue}>
+          ₹{data.pricing.transactionFee?.toFixed(2) ?? "0.50"}
+        </Text>
+      </View>
+
+      {/* Estimated Taxes */}
+      <View style={styles.priceRow}>
+        <Text style={styles.priceRowLabel}>
+          Estimated Taxes (15%)
+        </Text>
+        <Text style={styles.priceRowValue}>
+          ₹{data.pricing.estimatedTaxes?.toFixed(2) ?? "0.00"}
+        </Text>
+      </View>
+
+      {/* Discount - only show if applied */}
+      {data.pricing.discount > 0 && (
+        <View style={styles.priceRow}>
+          <Text style={[styles.priceRowLabel, styles.discountLabel]}>
+            Discount
+            {data.pricing.couponApplied && data.pricing.couponDetails
+              ? ` (${data.pricing.couponDetails})`
+              : ""}
+          </Text>
+          <Text style={[styles.priceRowValue, styles.discountValue]}>
+            - ₹{data.pricing.discount.toFixed(2)}
+          </Text>
+        </View>
+      )}
+
+      {/* Divider */}
+      <View style={styles.priceDivider} />
+
+      {/* Total */}
+      <View style={styles.priceRow}>
+        <Text style={styles.priceTotalLabel}>Total</Text>
+        <Text style={styles.priceTotalValue}>
+          ₹{data.pricing.totalAmount.toFixed(2)}
+        </Text>
+      </View>
+
+      <Text style={styles.taxNote}>* Estimated taxes may vary</Text>
+    </View>
+  )}
+
+  <View style={styles.totalFareContainer}>
+    <View style={styles.fareDetails}>
+      <View>
+        <Text style={styles.totalFareLabel}>Total Fare (*approx)</Text>
+        <Text style={styles.totalFareAmount}>
+          {data ? `₹${data.pricing.totalAmount.toFixed(2)}` : "..."}
+        </Text>
+      </View>
+      <TouchableOpacity
+        style={[
+          styles.confirmButton,
+          (!data || paymentLoading) && styles.disabledButton,
+        ]}
+        onPress={handleConfirmBooking}
+        disabled={!data || paymentLoading}
+      >
+        {paymentLoading ? (
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <ActivityIndicator size="small" color="#FFFFFF" />
+            <Text style={[styles.confirmButtonText, { marginLeft: 8 }]}>
+              Processing...
+            </Text>
+          </View>
+        ) : (
+          <Text style={styles.confirmButtonText}>
+            {paymentMethod === "CARD" ? "Pay Now" : "Confirm Booking"}
+          </Text>
+        )}
+      </TouchableOpacity>
+    </View>
+  </View>
+</View>
             </View>
           </ScrollView>
         </>
@@ -1275,6 +1348,67 @@ const styles = StyleSheet.create({
     right: 0,
     zIndex: 1,
   },
+  priceBreakdownCard: {
+  backgroundColor: "#FFFFFF",
+  borderRadius: 12,
+  padding: 16,
+  marginBottom: 16,
+  shadowColor: "#000",
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.08,
+  shadowRadius: 4,
+  elevation: 2,
+},
+priceBreakdownTitle: {
+  fontSize: 16,
+  fontWeight: "700",
+  color: "#333",
+  marginBottom: 12,
+},
+priceRow: {
+  flexDirection: "row",
+  justifyContent: "space-between",
+  alignItems: "center",
+  paddingVertical: 6,
+},
+priceRowLabel: {
+  fontSize: 14,
+  color: "#666",
+  flex: 1,
+},
+priceRowValue: {
+  fontSize: 14,
+  color: "#333",
+  fontWeight: "500",
+},
+discountLabel: {
+  color: "#2E7D32",
+},
+discountValue: {
+  color: "#2E7D32",
+  fontWeight: "600",
+},
+priceDivider: {
+  height: 1,
+  backgroundColor: "#EEEEEE",
+  marginVertical: 8,
+},
+priceTotalLabel: {
+  fontSize: 16,
+  fontWeight: "700",
+  color: "#000",
+},
+priceTotalValue: {
+  fontSize: 18,
+  fontWeight: "700",
+  color: colors.primary,
+},
+taxNote: {
+  fontSize: 11,
+  color: "#999",
+  marginTop: 8,
+  fontStyle: "italic",
+},
   headerTitle: {
     fontSize: 20,
     fontWeight: "500",

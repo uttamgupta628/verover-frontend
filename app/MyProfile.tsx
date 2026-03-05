@@ -144,40 +144,31 @@ const MyProfile = () => {
   }, [token, dispatch, baseUrl]);
 
   const handleImagePick = async () => {
-    try {
-      await Haptics.selectionAsync();
+  try {
+    await Haptics.selectionAsync();
 
-      // Request permission
-      const permissionResult =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
+   
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+      allowsMultipleSelection: false,
+    });
 
-      if (!permissionResult.granted) {
-        Alert.alert(
-          "Permission Required",
-          "Please allow access to your photos to change your profile picture."
-        );
-        return;
-      }
+    if (!result.canceled && result.assets?.length > 0) {
+      setLocalProfileImage(result.assets[0].uri);
 
-      // Launch image picker
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        setLocalProfileImage(result.assets[0].uri);
-        await Haptics.notificationAsync(
-          Haptics.NotificationFeedbackType.Success
-        );
-      }
-    } catch (error) {
-      console.error("Image picker error:", error);
-      Alert.alert("Error", "Failed to pick image");
+      await Haptics.notificationAsync(
+        Haptics.NotificationFeedbackType.Success
+      );
     }
-  };
+  } catch (error) {
+    console.error("Image picker error:", error);
+    Alert.alert("Error", "Failed to pick image");
+  }
+};
+
 
   const handleSave = async () => {
     if (!token) {

@@ -226,38 +226,40 @@ const MerchantGarageForm = () => {
   };
 
   const handleImageUpload = async () => {
-    try {
-      const { status } =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert("Permission Denied", "Camera roll permission is required");
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsMultipleSelection: true,
-        quality: 0.8,
-        selectionLimit: 5 - images.length,
-      });
-
-      if (result.canceled) {
-        return;
-      }
-
-      if (result.assets && result.assets.length > 0) {
-        const newImages = result.assets.map((asset) => ({
-          uri: asset.uri,
-          name: asset.uri.split("/").pop() || `image_${Date.now()}.jpg`,
-          type: "image/jpeg",
-        }));
-        setImages((prev) => [...prev, ...newImages]);
-      }
-    } catch (error) {
-      console.error("Image picker error:", error);
-      Alert.alert("Error", "Failed to select images");
+  try {
+    // Request permission
+    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!granted) {
+      Alert.alert("Permission Denied", "Camera roll permission is required");
+      return;
     }
-  };
+
+    // Open gallery
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsMultipleSelection: true,
+      quality: 0.8,
+      selectionLimit: Math.max(0, 5 - images.length), // prevents negative crash
+    });
+
+    if (result.canceled) return;
+
+    // Convert picked images
+    if (result.assets?.length) {
+      const newImages = result.assets.map((asset) => ({
+        uri: asset.uri,
+        name: asset.uri?.split("/").pop() || `image_${Date.now()}.jpg`,
+        type: asset.mimeType || "image/jpeg",
+      }));
+
+      setImages((prev) => [...prev, ...newImages]);
+    }
+  } catch (error) {
+    console.error("Image picker error:", error);
+    Alert.alert("Error", "Failed to select images");
+  }
+};
+
 
   const handleChange = (field: keyof GarageFormData, value: any) => {
     setFormData((prev) => ({

@@ -1220,7 +1220,7 @@ export default function OrderSummaryApp() {
 
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>
-                Service Fees (
+                Estimated taxes (
                 {((globalPricing?.serviceCharge ?? 0.15) * 100).toFixed(0)}%)
               </Text>
               <Text style={styles.summaryValue}>

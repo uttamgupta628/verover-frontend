@@ -283,32 +283,33 @@ const MerchantGarageDetails = () => {
     }));
   };
 
-  const handleImagePickerForEdit = async () => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsMultipleSelection: true,
-        quality: 0.8,
-        selectionLimit: 5 - localImages.length,
-      });
+ const handleImagePickerForEdit = async () => {
+  try {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsMultipleSelection: true,
+      quality: 0.8,
+      selectionLimit: 5 - localImages.length,
+    });
 
-      if (result.canceled) {
-        return;
-      }
-
-      if (result.assets && result.assets.length > 0) {
-        const newImages = result.assets.map((asset) => ({
-          uri: asset.uri,
-          name: asset.uri.split("/").pop() || `image_${Date.now()}.jpg`,
-          type: "image/jpeg",
-        }));
-        setLocalImages((prev) => [...prev, ...newImages]);
-      }
-    } catch (error) {
-      console.error("Image picker error:", error);
-      Alert.alert("Error", "Failed to select images");
+    if (result.canceled) {
+      return;
     }
-  };
+
+    if (result.assets && result.assets.length > 0) {
+      const newImages = result.assets.map((asset) => ({
+        uri: asset.uri,
+        name: asset.uri.split("/").pop() || `image_${Date.now()}.jpg`,
+        type: "image/jpeg",
+      }));
+
+      setLocalImages((prev) => [...prev, ...newImages]);
+    }
+  } catch (error) {
+    console.error("Image picker error:", error);
+    Alert.alert("Error", "Failed to select images");
+  }
+};
 
   const removeLocalImage = (index: number) => {
     const newImages = [...localImages];

@@ -214,18 +214,8 @@ const VehicleInfoScreen: React.FC = () => {
   }, [isAuthenticated, token]);
 
   // Request permissions for image picker
-  useEffect(() => {
-    (async () => {
-      const { status } =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (status !== "granted") {
-        Alert.alert(
-          "Permission required",
-          "Sorry, we need camera roll permissions to upload images."
-        );
-      }
-    })();
-  }, []);
+  useEffect(() => {}, []);
+
 
   // API helper function
   const makeApiRequest = async (
@@ -290,27 +280,29 @@ const VehicleInfoScreen: React.FC = () => {
 
   // Handle image picking with Expo ImagePicker
   const handleImagePick = async (type: keyof UploadedImages) => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.8,
-        base64: false,
-      });
+  try {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.8,
+      base64: false,
+    });
 
-      if (!result.canceled && result.assets && result.assets.length > 0) {
-        const asset = result.assets[0];
-        setUploadedImages((prev) => ({
-          ...prev,
-          [type]: [asset.uri],
-        }));
-      }
-    } catch (error) {
-      console.error("ImagePicker Error:", error);
-      Alert.alert("Error", "Failed to select image. Please try again.");
+    if (!result.canceled && result.assets && result.assets.length > 0) {
+      const asset = result.assets[0];
+
+      setUploadedImages((prev) => ({
+        ...prev,
+        [type]: [asset.uri],
+      }));
     }
-  };
+  } catch (error) {
+    console.error("ImagePicker Error:", error);
+    Alert.alert("Error", "Failed to select image. Please try again.");
+  }
+};
+
 
   // Handle image deletion
   const handleDeleteImage = (type: keyof UploadedImages, index: number) => {

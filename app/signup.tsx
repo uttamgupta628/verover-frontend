@@ -152,7 +152,7 @@ export default function Signup() {
           [
             { text: "Cancel", style: "cancel" },
             { text: "Go to Login", onPress: () => router.replace("/login") },
-          ]
+          ],
         );
       } else {
         Alert.alert("Registration Error", errorMessage);
@@ -162,10 +162,10 @@ export default function Signup() {
     }
   };
 
-  // const handleUserTypeSelect = (type: string) => {
-  //   setSelectedUserType(type);
-  //   setValue('userType', type);
-  // };
+  const handleUserTypeSelect = (type: string) => {
+    setSelectedUserType(type);
+    setValue("userType", type);
+  };
 
   return (
     <KeyboardAvoidingView
@@ -450,7 +450,7 @@ export default function Signup() {
                 },
                 pattern: {
                   value:
-                    /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/,
+                    /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/,
                   message:
                     "Password must include uppercase, lowercase, number, and special character",
                 },

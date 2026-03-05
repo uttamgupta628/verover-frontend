@@ -462,27 +462,10 @@ const ProfileEditModal = ({
   }
 };
 
-// In ProfileEditModal - openGallery function
 const openGallery = async () => {
   try {
     console.log('Opening gallery...');
-    
-    // Request media library permission from ImagePicker
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    console.log('Gallery permission status:', status);
-    
-    if (status !== 'granted') {
-      Alert.alert(
-        'Permission Denied', 
-        'Gallery permission is required to select photos.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Try Again', onPress: () => openGallery() }
-        ]
-      );
-      return;
-    }
-    
+
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       allowsEditing: true,
@@ -492,9 +475,8 @@ const openGallery = async () => {
 
     console.log('Gallery result:', result);
 
-    if (!result.canceled && result.assets && result.assets[0]) {
+    if (!result.canceled && result.assets?.[0]) {
       const asset = result.assets[0];
-      console.log('Image selected:', asset.uri);
       setSelectedImageUri(asset.uri);
       setSelectedImageData(asset);
     }
@@ -503,6 +485,7 @@ const openGallery = async () => {
     Alert.alert('Error', 'Failed to select image. Please try again.');
   }
 };
+
 
   // Remove image
   const removeImage = () => {
@@ -760,21 +743,38 @@ const ShopImageEditModal = ({
 };
 
   // Open camera
- const openCamera = async () => {
+const openCamera = async () => {
   try {
+    console.log('Opening camera...');
+
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    console.log('Camera permission status:', status);
+
+    if (status !== 'granted') {
+      Alert.alert(
+        'Permission Denied',
+        'Camera permission is required to take photos.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Try Again', onPress: () => openCamera() }
+        ]
+      );
+      return;
+    }
+
     const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images'], // FIXED
+      mediaTypes: ['images'],
       allowsEditing: true,
-      aspect: [4, 3],
+      aspect: [1, 1],
       quality: 0.8,
     });
 
-    if (!result.canceled && result.assets && result.assets[0]) {
-      const remainingSlots = 5 - (shopImages.length - deletedImages.length) - newImages.length;
-      if (remainingSlots <= 0) return;
-      
+    console.log('Camera result:', result);
+
+    if (!result.canceled && result.assets?.[0]) {
       const asset = result.assets[0];
-      setNewImages(prev => [...prev, asset]);
+      setSelectedImageUri(asset.uri);
+      setSelectedImageData(asset);
     }
   } catch (error) {
     console.error('Camera error:', error);
@@ -782,27 +782,33 @@ const ShopImageEditModal = ({
   }
 };
 
+
+
 //  openGallery function
 const openGallery = async () => {
   try {
-    const remainingSlots = 5 - (shopImages.length - deletedImages.length) - newImages.length;
-    const availableSlots = remainingSlots > 0 ? remainingSlots : 1;
-    
+    console.log('Opening gallery...');
+
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'], // FIXED
-      allowsMultipleSelection: true,
-      selectionLimit: availableSlots,
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
       quality: 0.8,
     });
 
-    if (!result.canceled && result.assets && result.assets.length > 0) {
-      setNewImages(prev => [...prev, ...result.assets]);
+    console.log('Gallery result:', result);
+
+    if (!result.canceled && result.assets?.[0]) {
+      const asset = result.assets[0];
+      setSelectedImageUri(asset.uri);
+      setSelectedImageData(asset);
     }
   } catch (error) {
     console.error('Gallery error:', error);
-    Alert.alert('Error', 'Failed to select images. Please try again.');
+    Alert.alert('Error', 'Failed to select image. Please try again.');
   }
 };
+
 
   // Remove existing image (mark for deletion)
   const removeExistingImage = (imageUrl: string) => {

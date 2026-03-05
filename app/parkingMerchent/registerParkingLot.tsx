@@ -234,40 +234,42 @@ const RegisterParkingLot = () => {
   };
 
   // Image handling functions - UPDATED WITH EXPO IMAGE PICKER
-  const handleImageUpload = async () => {
-    try {
-      // Request permissions first
-      const permissionResult =
-        await ImagePicker.requestMediaLibraryPermissionsAsync();
+ const handleImageUpload = async () => {
+  try {
+    // Request permission first
+    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
-      if (!permissionResult.granted) {
-        Alert.alert(
-          "Permission Required",
-          "You need to grant permission to access photos."
-        );
-        return;
-      }
-
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsMultipleSelection: true,
-        quality: 0.8,
-        selectionLimit: 5 - images.length,
-      });
-
-      if (result.canceled || !result.assets) return;
-
-      const newImages = result.assets.map((asset) => ({
-        uri: asset.uri || "",
-        name: asset.uri.split("/").pop() || `image_${Date.now()}.jpg`,
-        type: "image/jpeg",
-      }));
-      setImages((prev) => [...prev, ...newImages]);
-    } catch (error) {
-      console.error("Image picker error:", error);
-      Alert.alert("Error", "Failed to select images");
+    if (!granted) {
+      Alert.alert(
+        "Permission Required",
+        "You need to grant permission to access photos."
+      );
+      return;
     }
-  };
+
+    // Open gallery
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsMultipleSelection: true,
+      quality: 0.8,
+      selectionLimit: Math.max(1, 5 - images.length), // prevents crash if 5 images already exist
+    });
+
+    if (result.canceled || !result.assets) return;
+
+    const newImages = result.assets.map((asset) => ({
+      uri: asset.uri ?? "",
+      name: asset.uri?.split("/").pop() || `image_${Date.now()}.jpg`,
+      type: asset.mimeType || "image/jpeg",
+    }));
+
+    setImages((prev) => [...prev, ...newImages]);
+  } catch (error) {
+    console.error("Image picker error:", error);
+    Alert.alert("Error", "Failed to select images");
+  }
+};
+
 
   const removeImage = (index: number) => {
     setImages((prev) => prev.filter((_, i) => i !== index));
