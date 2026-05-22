@@ -187,7 +187,7 @@ const AvailabilitySlider = ({ schedule }: { schedule: any[] }) => {
 
   const currentItems = schedule.slice(
     currentIndex * itemsPerPage,
-    currentIndex * itemsPerPage + itemsPerPage
+    currentIndex * itemsPerPage + itemsPerPage,
   );
 
   return (
@@ -505,7 +505,7 @@ const DryCleanersList = () => {
   const [dryCleaners, setDryCleaners] = useState<DryCleaner[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedCleaner, setSelectedCleaner] = useState<DryCleaner | null>(
-    null
+    null,
   );
   const [modalVisible, setModalVisible] = useState(false);
   const [modalCleaner, setModalCleaner] = useState<DryCleaner | null>(null);
@@ -520,7 +520,7 @@ const DryCleanersList = () => {
           headers: {
             "Content-Type": "application/json",
           },
-        }
+        },
       );
 
       if (response.data.success && response.data.data.dryCleaners) {
@@ -540,12 +540,12 @@ const DryCleanersList = () => {
         } else if (status === 403) {
           Alert.alert(
             "Access Denied",
-            "You do not have permission to access this resource."
+            "You do not have permission to access this resource.",
           );
         } else if (status === 500) {
           Alert.alert(
             "Server Error",
-            "Internal server error. Please try again later."
+            "Internal server error. Please try again later.",
           );
         } else {
           Alert.alert("Error", message);
@@ -554,7 +554,7 @@ const DryCleanersList = () => {
         Alert.alert(
           "Network Error",
           "Unable to connect to the server. Please check your internet connection.",
-          [{ text: "OK" }]
+          [{ text: "OK" }],
         );
       } else {
         Alert.alert("Error", "Failed to load dry cleaners. Please try again.", [
@@ -583,7 +583,7 @@ const DryCleanersList = () => {
     if (!selectedCleaner) {
       Alert.alert(
         "Please select a dry cleaner",
-        "You need to select a dry cleaner before continuing."
+        "You need to select a dry cleaner before continuing.",
       );
       return;
     }

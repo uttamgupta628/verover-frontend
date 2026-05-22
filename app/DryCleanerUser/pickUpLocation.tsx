@@ -89,7 +89,7 @@ const PickupLocation = () => {
   const [showDatePicker, setShowDatePicker] = useState<boolean>(false);
   const [showTimePicker, setShowTimePicker] = useState<boolean>(false);
   const [availableDrivers, setAvailableDrivers] = useState<AvailableDriver[]>(
-    []
+    [],
   );
   const [selectedDriverId, setSelectedDriverId] = useState<string>("");
   const [showDriverSelection, setShowDriverSelection] =
@@ -126,7 +126,7 @@ const PickupLocation = () => {
             hour: "numeric",
             minute: "2-digit",
             hour12: true,
-          }
+          },
         );
         slots.push({ value: time, label: displayTime });
       }
@@ -147,12 +147,12 @@ const PickupLocation = () => {
         i === 0
           ? "Today"
           : i === 1
-          ? "Tomorrow"
-          : date.toLocaleDateString("en-US", {
-              weekday: "short",
-              month: "short",
-              day: "numeric",
-            });
+            ? "Tomorrow"
+            : date.toLocaleDateString("en-US", {
+                weekday: "short",
+                month: "short",
+                day: "numeric",
+              });
 
       dates.push({ value: dateString, label: displayDate });
     }
@@ -212,7 +212,7 @@ const PickupLocation = () => {
 
         if (driverId) {
           const isDriverAvailable = data.data.drivers.some(
-            (driver: AvailableDriver) => driver._id === driverId
+            (driver: AvailableDriver) => driver._id === driverId,
           );
           if (isDriverAvailable) {
             setSelectedDriverId(driverId);
@@ -220,7 +220,7 @@ const PickupLocation = () => {
             Alert.alert(
               "Driver Unavailable",
               "The selected driver is not available at this time. Please choose another driver.",
-              [{ text: "OK" }]
+              [{ text: "OK" }],
             );
             setSelectedDriverId("");
           }
@@ -277,7 +277,7 @@ const PickupLocation = () => {
         console.log("Reset to new address form");
       }
     },
-    [savedAddresses]
+    [savedAddresses],
   );
 
   const saveAddress = useCallback(
@@ -307,7 +307,7 @@ const PickupLocation = () => {
         return false;
       }
     },
-    [address, city, state, zipCode, dispatch]
+    [address, city, state, zipCode, dispatch],
   );
 
   const createBookingRequest = useCallback(async () => {
@@ -358,7 +358,7 @@ const PickupLocation = () => {
             "Content-Type": "application/json",
           },
           body: JSON.stringify(bookingData),
-        }
+        },
       );
 
       const responseData = await response.json();
@@ -387,14 +387,14 @@ const PickupLocation = () => {
       } else {
         Alert.alert(
           "Error",
-          responseData.message || "Failed to create booking request"
+          responseData.message || "Failed to create booking request",
         );
       }
     } catch (error) {
       console.error("Error creating booking:", error);
       Alert.alert(
         "Error",
-        "Failed to create booking request. Please try again."
+        "Failed to create booking request. Please try again.",
       );
     } finally {
       setLoading(false);
@@ -465,7 +465,7 @@ const PickupLocation = () => {
             "Content-Type": "application/json",
           },
           body: JSON.stringify(bookingData),
-        }
+        },
       );
 
       const responseData = await response.json();
@@ -493,19 +493,19 @@ const PickupLocation = () => {
                 }
               },
             },
-          ]
+          ],
         );
       } else {
         Alert.alert(
           "Error",
-          responseData.message || "Failed to create scheduled booking request"
+          responseData.message || "Failed to create scheduled booking request",
         );
       }
     } catch (error) {
       console.error("Error creating scheduled booking:", error);
       Alert.alert(
         "Error",
-        "Failed to create scheduled booking request. Please try again."
+        "Failed to create scheduled booking request. Please try again.",
       );
     } finally {
       setLoading(false);
@@ -547,7 +547,7 @@ const PickupLocation = () => {
         if (!selectedDriverId) {
           Alert.alert(
             "Error",
-            "Please select a driver for your scheduled pickup"
+            "Please select a driver for your scheduled pickup",
           );
           return;
         }
@@ -594,7 +594,7 @@ const PickupLocation = () => {
         savedAddresses[type] && Object.keys(savedAddresses[type]!).length > 0
       );
     },
-    [savedAddresses]
+    [savedAddresses],
   );
 
   const handleGoBack = useCallback(() => {
@@ -614,7 +614,7 @@ const PickupLocation = () => {
       if (status !== "granted") {
         Alert.alert(
           "Permission Denied",
-          "Location permission is required to fetch your current location"
+          "Location permission is required to fetch your current location",
         );
         setFetchingLocation(false);
         return;
@@ -690,7 +690,7 @@ const PickupLocation = () => {
             <Text style={styles.bookingInfoText}>Distance: {distance} km</Text>
             <Text style={styles.bookingInfoText}>Time: {time} mins</Text>
             <Text style={styles.bookingInfoText}>
-              Price: ₹{distance ? Number(distance) * 10 : 0}
+              Price: ${distance ? Number(distance) * 10 : 0}
             </Text>
           </View>
         )}
@@ -793,11 +793,11 @@ const PickupLocation = () => {
                     <Text style={styles.dateTimeButtonText}>
                       {selectedDriverId
                         ? availableDrivers.find(
-                            (d) => d._id === selectedDriverId
+                            (d) => d._id === selectedDriverId,
                           )?.firstName +
                           " " +
                           availableDrivers.find(
-                            (d) => d._id === selectedDriverId
+                            (d) => d._id === selectedDriverId,
                           )?.lastName
                         : "Select Driver"}
                     </Text>
@@ -964,16 +964,16 @@ const PickupLocation = () => {
             )}
           </TouchableOpacity>
 
-          {/* Only show skip button if not in booking mode */}
+          {/* Only show skip button if not in booking mode
           {!dryCleanerId && !driverId && (
             <TouchableOpacity
               style={[styles.skipButton, loading && { opacity: 0.7 }]}
-              onPress={() => router.push("/DropLocation")}
+              onPress={() => router.push("/dryCleanerUser/pickUpTimeDate")}
               disabled={loading}
             >
               <Text style={styles.skipButtonText}>Skip This Step</Text>
             </TouchableOpacity>
-          )}
+          )} */}
         </View>
       </ScrollView>
 

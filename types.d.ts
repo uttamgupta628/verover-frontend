@@ -35,6 +35,8 @@ export interface ParkingLot {
   spacesList: { [key: string]: { price: number, count: number } };
   generalAvailable: GeneralAvailable[];
   is24x7: boolean;
+  monthlyChargeEnabled?: boolean;  // ← ADD
+  monthlyRate?: number;            
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -56,6 +58,8 @@ export interface GarageMerchantDetails {
   address: string;
   price: number;
   about: string;
+  monthlyChargeEnabled?: boolean;  // ← ADD
+  monthlyRate?: number;            
   spacesList: { [key: string]: { price: number, count: number } };
   generalAvailable: GeneralAvailable[];
   is24x7: boolean;
@@ -83,6 +87,8 @@ export interface Residence {
   generalAvailable: GeneralAvailable[];
   is24x7: boolean;
   isActive: boolean;
+  monthlyChargeEnabled?: boolean;  // ← ADD
+  monthlyRate?: number;            
   parking_pass?: boolean;
   transportationAvailable?: boolean;
   transportationTypes?: string[];

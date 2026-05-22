@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef } from "react";
 import {
   Alert,
   Animated,
@@ -14,13 +14,13 @@ import { logout } from "../components/redux/authSlice";
 import { useAppDispatch, useAppSelector } from "../components/redux/hooks";
 import { clearProfile } from "../components/redux/profileSlice";
 
-// EXPO-SPECIFIC IMPORTS
 import { Feather } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 interface ProfileDrawerProps {
   visible: boolean;
@@ -29,153 +29,79 @@ interface ProfileDrawerProps {
 
 const ProfileDrawer: React.FC<ProfileDrawerProps> = ({ visible, onClose }) => {
   const slideAnim = useRef(new Animated.Value(-300)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.95)).current;
-  const dispatch = useAppDispatch();
-  const insets = useSafeAreaInsets();
-  const router = useRouter();
-  
-  // Add state to track if navigation is ready
-  const [canNavigate, setCanNavigate] = useState(false);
 
-  const { user: authUser, isAuthenticated } = useAppSelector(
-    (state) => state.auth
-  );
+  const dispatch = useAppDispatch();
+  const insets   = useRouter();
+  const router   = useRouter();
+  const safeInsets = useSafeAreaInsets();
+
+  const { user: authUser } = useAppSelector((state) => state.auth);
+  const userType = authUser?.userType;
   const { firstName, lastName, profileImage } = useAppSelector(
     (state) => state.profile
   );
 
-  // Wait for component to be ready before allowing navigation
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setCanNavigate(true);
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, []);
-
+  // ── Drawer open/close animation ───────────────────────────────────────────
   useEffect(() => {
     if (visible) {
-      // Opening animation - smooth and polished
       Animated.parallel([
-        Animated.spring(slideAnim, {
-          toValue: 0,
-          tension: 65,
-          friction: 9,
-          useNativeDriver: true,
-        }),
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-        Animated.spring(scaleAnim, {
-          toValue: 1,
-          tension: 80,
-          friction: 10,
-          useNativeDriver: true,
-        }),
+        Animated.spring(slideAnim, { toValue: 0,    tension: 65, friction: 9,  useNativeDriver: true }),
+        Animated.timing(fadeAnim,  { toValue: 1,    duration: 300,              useNativeDriver: true }),
+        Animated.spring(scaleAnim, { toValue: 1,    tension: 80, friction: 10, useNativeDriver: true }),
       ]).start();
     } else {
-      // Closing animation - quick and responsive
       Animated.parallel([
-        Animated.timing(slideAnim, {
-          toValue: -300,
-          duration: 250,
-          useNativeDriver: true,
-        }),
-        Animated.timing(fadeAnim, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-        Animated.timing(scaleAnim, {
-          toValue: 0.95,
-          duration: 250,
-          useNativeDriver: true,
-        }),
+        Animated.timing(slideAnim, { toValue: -300, duration: 250,              useNativeDriver: true }),
+        Animated.timing(fadeAnim,  { toValue: 0,    duration: 200,              useNativeDriver: true }),
+        Animated.timing(scaleAnim, { toValue: 0.95, duration: 250,              useNativeDriver: true }),
       ]).start();
     }
   }, [visible]);
 
-  // REMOVED THE PROBLEMATIC useEffect THAT WAS CAUSING THE ERROR
-  // This navigation is handled by AuthGuard in _layout.tsx
-  // useEffect(() => {
-  //   if (!isAuthenticated) {
-  //     console.log("User is logged out, navigating to Login...");
-  //     router.replace("/login");
-  //   }
-  // }, [isAuthenticated, router]);
-
+  // ── Helpers ───────────────────────────────────────────────────────────────
   const handleCloseWithHaptic = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
   };
 
-  const menuItems = [
-    { icon: "home", label: "Home", route: "/userHome" },
-    { icon: "user", label: "My Profile", route: "/MyProfile" },
-    { icon: "credit-card", label: "Fare Card", route: "/drawer/fareCard" },
-    // { icon: "file-text", label: "Payment Methods", route: "/payment-methods" },
-    { icon: "message-circle", label: "Tips and Info", route: "/drawer/faq" },
-    { icon: "settings", label: "Settings", route: "/drawer/settings" },
-    { icon: "phone", label: "Contact Us", route: "/drawer/contact" },
-    { icon: "lock", label: "Reset Password", route: "/drawer/resetPassword" },
-  ];
-
   const handleNavigation = async (route: string) => {
-    if (!canNavigate) {
-      console.log('Navigation not ready yet');
-      return;
-    }
-
     try {
       await Haptics.selectionAsync();
-      router.push(route as any);
       onClose();
+      setTimeout(() => { router.push(route as any); }, 250);
     } catch (error) {
-      console.error('Navigation error:', error);
+      console.error("Navigation error:", error);
     }
   };
 
+  const handleEditProfileImage = async () => {
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onClose();
+    setTimeout(() => { router.push("/MyProfile" as any); }, 250);
+  };
+
+  // ── Logout ────────────────────────────────────────────────────────────────
   const handleLogout = () => {
     Alert.alert(
       "Logout",
       "Are you sure you want to logout?",
       [
-        {
-          text: "Cancel",
-          style: "cancel",
-          onPress: () => Haptics.selectionAsync(),
-        },
+        { text: "Cancel", style: "cancel", onPress: () => Haptics.selectionAsync() },
         {
           text: "Logout",
           style: "destructive",
           onPress: async () => {
-            if (!canNavigate) {
-              console.log('Navigation not ready yet');
-              return;
-            }
-
             try {
-              await Haptics.notificationAsync(
-                Haptics.NotificationFeedbackType.Warning
-              );
-              console.log("Logging out...");
-              
-              // Close drawer first
+              await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
               onClose();
-              
-              // Dispatch logout actions
+              await AsyncStorage.removeItem("loginKey");
               dispatch(logout());
               dispatch(clearProfile());
-              
-              // Wait a bit for state to update, then navigate
-              setTimeout(() => {
-                router.replace("/login");
-              }, 300);
+              setTimeout(() => { router.replace("/login"); }, 300);
             } catch (error) {
-              console.error('Logout navigation error:', error);
+              console.error("Logout error:", error);
             }
           },
         },
@@ -184,70 +110,105 @@ const ProfileDrawer: React.FC<ProfileDrawerProps> = ({ visible, onClose }) => {
     );
   };
 
-  if (!visible) return null;
-
-  // Get profile image with fallback
+  // ── Profile data ──────────────────────────────────────────────────────────
   const getProfileImageSource = () => {
-    if (profileImage) return { uri: profileImage };
-    if (authUser?.profileImage) return { uri: authUser.profileImage };
+    if (profileImage)              return { uri: profileImage };
+    if (authUser?.profileImage)    return { uri: authUser.profileImage };
     if (authUser?.driveProfileImage) return { uri: authUser.driveProfileImage };
     return null;
   };
 
-  const displayName =
-    firstName && lastName
-      ? `${firstName} ${lastName}`
-      : authUser?.name || "John Doe";
+  const displayName  = firstName && lastName ? `${firstName} ${lastName}` : authUser?.name || "User";
+  const displayEmail = authUser?.email || "";
+
+  // ── Menu items ────────────────────────────────────────────────────────────
+  // Common items for all user types
+  const commonItems = [
+    { icon: "home",           label: "Home",           route: "/userHome"             },
+    { icon: "user",           label: "My Profile",     route: "/MyProfile"            },
+    { icon: "credit-card",    label: "Fare Card",      route: "/drawer/fareCard"      },
+    { icon: "message-circle", label: "Tips and Info",  route: "/drawer/faq"           },
+    { icon: "settings",       label: "Settings",       route: "/drawer/settings"      },
+    { icon: "phone",          label: "Contact Us",     route: "/drawer/contact"       },
+    { icon: "lock",           label: "Reset Password", route: "/drawer/resetPassword" },
+  ];
+
+  // Merchant-only items
+  const merchantItems = userType === "merchant"
+    ? [
+        { icon: "users",    label: "Sub-Accounts",   route: "/drawer/subAccounts"   },
+        { icon: "dollar-sign", label: "Payment Setup", route: "/drawer/Stripepayouts" },
+      ]
+    : [];
+
+  const menuItems = [...commonItems, ...merchantItems];
+
+  if (!visible) return null;
+
+  const imageSource = getProfileImageSource();
 
   return (
     <Modal
       visible={visible}
       transparent
-      animationType="fade"
+      animationType="none"
       onRequestClose={handleCloseWithHaptic}
       statusBarTranslucent
     >
       <View style={styles.modalOverlay}>
-        {/* Drawer - now on the left */}
+        {/* ── Drawer ── */}
         <Animated.View
           style={[
             styles.drawer,
             {
               transform: [{ translateX: slideAnim }, { scale: scaleAnim }],
-              opacity: fadeAnim,
-              paddingTop: insets.top,
+              opacity:   fadeAnim,
+              paddingTop: safeInsets.top,
             },
           ]}
         >
-          {/* Header Section */}
+          {/* Header / Profile Section */}
           <View style={styles.headerSection}>
-            <View style={styles.profileSection}>
-              {/* Profile Image */}
-              <View style={styles.profileImageContainer}>
-                {getProfileImageSource() ? (
-                  <Image
-                    source={getProfileImageSource()}
-                    style={styles.profileImage}
-                    contentFit="cover"
-                  />
-                ) : (
-                  <View style={styles.profileImagePlaceholder}>
-                    <Text style={styles.profileInitials}>
-                      {displayName.charAt(0).toUpperCase()}
-                    </Text>
-                  </View>
-                )}
-                {/* Edit icon badge */}
-                <View style={styles.editBadge}>
-                  <Feather name="edit-2" size={12} color="#FFFFFF" />
+            <TouchableOpacity
+              style={styles.profileImageWrapper}
+              onPress={handleEditProfileImage}
+              activeOpacity={0.85}
+            >
+              {imageSource ? (
+                <Image
+                  source={imageSource}
+                  style={styles.profileImage}
+                  contentFit="cover"
+                />
+              ) : (
+                <View style={styles.profileImagePlaceholder}>
+                  <Text style={styles.profileInitials}>
+                    {displayName.charAt(0).toUpperCase()}
+                  </Text>
                 </View>
+              )}
+              <View style={styles.editBadge}>
+                <Feather name="edit-2" size={12} color="#FFFFFF" />
               </View>
+            </TouchableOpacity>
 
-              {/* User Info */}
-              <Text style={styles.profileName} numberOfLines={1}>
-                {displayName}
-              </Text>
-            </View>
+            <Text style={styles.profileName} numberOfLines={1}>{displayName}</Text>
+            {!!displayEmail && (
+              <Text style={styles.profileEmail} numberOfLines={1}>{displayEmail}</Text>
+            )}
+
+            {/* ── Merchant payout status pill ── */}
+            {userType === "merchant" && (
+              <TouchableOpacity
+                style={styles.payoutPill}
+                onPress={() => handleNavigation("/drawer/stripePayouts")}
+                activeOpacity={0.8}
+              >
+                <Feather name="dollar-sign" size={11} color="#FFFFFF" />
+                <Text style={styles.payoutPillText}>Manage Payouts</Text>
+                <Feather name="chevron-right" size={11} color="rgba(255,255,255,0.7)" />
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* Menu Items */}
@@ -262,7 +223,6 @@ const ProfileDrawer: React.FC<ProfileDrawerProps> = ({ visible, onClose }) => {
                 onPress={() => handleNavigation(item.route)}
                 style={styles.menuItem}
                 activeOpacity={0.7}
-                disabled={!canNavigate}
               >
                 <View style={styles.menuIconContainer}>
                   <Feather
@@ -279,17 +239,17 @@ const ProfileDrawer: React.FC<ProfileDrawerProps> = ({ visible, onClose }) => {
                 >
                   {item.label}
                 </Text>
+                <Feather name="chevron-right" size={16} color="#D1D5DB" />
               </TouchableOpacity>
             ))}
           </ScrollView>
 
-          {/* Logout Button */}
-          <View style={styles.logoutContainer}>
+          {/* Logout */}
+          <View style={[styles.logoutContainer, { paddingBottom: safeInsets.bottom + 12 }]}>
             <TouchableOpacity
               onPress={handleLogout}
               style={styles.logoutButton}
               activeOpacity={0.7}
-              disabled={!canNavigate}
             >
               <View style={styles.menuIconContainer}>
                 <Feather name="log-out" size={20} color="#FF6B6B" />
@@ -299,18 +259,14 @@ const ProfileDrawer: React.FC<ProfileDrawerProps> = ({ visible, onClose }) => {
           </View>
         </Animated.View>
 
-        {/* Blur overlay - clickable to close - now after drawer */}
+        {/* Blur overlay — tap to close */}
         <TouchableOpacity
           style={styles.blurOverlay}
           activeOpacity={1}
           onPress={handleCloseWithHaptic}
         >
           <Animated.View style={{ flex: 1, opacity: fadeAnim }}>
-            <BlurView
-              intensity={20}
-              tint="dark"
-              style={StyleSheet.absoluteFill}
-            />
+            <BlurView intensity={20} tint="dark" style={StyleSheet.absoluteFill} />
           </Animated.View>
         </TouchableOpacity>
       </View>
@@ -324,9 +280,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "flex-start",
   },
-  blurOverlay: {
-    flex: 1,
-  },
+  blurOverlay: { flex: 1 },
   drawer: {
     width: 280,
     backgroundColor: "#FFFFFF",
@@ -337,39 +291,38 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 16,
   },
+
+  // ── Header ──
   headerSection: {
-    backgroundColor: "#FF8C00",
-    paddingVertical: 30,
+    backgroundColor: colors.primary,
+    paddingVertical: 28,
     paddingHorizontal: 20,
-    borderBottomLeftRadius: 0,
-    borderBottomRightRadius: 0,
-  },
-  profileSection: {
     alignItems: "center",
+    gap: 4,
   },
-  profileImageContainer: {
+  profileImageWrapper: {
     position: "relative",
-    marginBottom: 12,
+    marginBottom: 8,
   },
   profileImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 84,
+    height: 84,
+    borderRadius: 42,
     borderWidth: 3,
     borderColor: "#FFFFFF",
   },
   profileImagePlaceholder: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: "rgba(255, 255, 255, 0.3)",
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: "rgba(255,255,255,0.25)",
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 3,
     borderColor: "#FFFFFF",
   },
   profileInitials: {
-    fontSize: 32,
+    fontSize: 34,
     fontWeight: "700",
     color: "#FFFFFF",
   },
@@ -380,7 +333,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: "#FF8C00",
+    backgroundColor: colors.primary,
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 2,
@@ -393,13 +346,35 @@ const styles = StyleSheet.create({
     textAlign: "center",
     maxWidth: "100%",
   },
-  menuContainer: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
+  profileEmail: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.75)",
+    textAlign: "center",
+    maxWidth: "100%",
   },
-  menuContent: {
-    paddingVertical: 8,
+
+  // ── Payout pill (merchant only) ──
+  payoutPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.3)",
   },
+  payoutPillText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#FFFFFF",
+  },
+
+  // ── Menu ──
+  menuContainer: { flex: 1, backgroundColor: "#FFFFFF" },
+  menuContent:   { paddingVertical: 8 },
   menuItem: {
     flexDirection: "row",
     alignItems: "center",
@@ -411,7 +386,7 @@ const styles = StyleSheet.create({
   menuIconContainer: {
     width: 32,
     alignItems: "center",
-    marginRight: 16,
+    marginRight: 14,
   },
   menuText: {
     flex: 1,
@@ -423,11 +398,12 @@ const styles = StyleSheet.create({
     color: colors.primary,
     fontWeight: "600",
   },
+
+  // ── Logout ──
   logoutContainer: {
     borderTopWidth: 1,
     borderTopColor: "#F0F0F0",
     backgroundColor: "#FAFAFA",
-    paddingBottom: 20,
   },
   logoutButton: {
     flexDirection: "row",

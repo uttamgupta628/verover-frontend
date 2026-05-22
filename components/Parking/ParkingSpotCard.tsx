@@ -1,7 +1,6 @@
 import React from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { Icon } from "react-native-paper";
-import { useRouter } from "expo-router";
 import colors from "../../assets/color";
 
 interface ParkingSpotCardProps {
@@ -15,6 +14,8 @@ interface ParkingSpotCardProps {
   selected: boolean;
   onSelect: () => void;
   onClick?: () => void;
+  isMonthly?: boolean;
+  monthlyRate?: number;
 }
 
 const ParkingSpotCard: React.FC<ParkingSpotCardProps> = ({
@@ -28,8 +29,10 @@ const ParkingSpotCard: React.FC<ParkingSpotCardProps> = ({
   selected,
   onSelect,
   onClick,
+  isMonthly,
+  monthlyRate,
 }) => {
-  const router = useRouter();
+  const showMonthly = isMonthly && monthlyRate && monthlyRate > 0;
 
   return (
     <TouchableOpacity
@@ -37,29 +40,38 @@ const ParkingSpotCard: React.FC<ParkingSpotCardProps> = ({
       onPress={onSelect}
     >
       <View style={styles.cardContent}>
-        <View
-          style={[styles.typeIndicator, { backgroundColor: colors.primary }]}
-        >
+        <View style={[styles.typeIndicator, { backgroundColor: colors.primary }]}>
           <Text style={styles.typeText}>{type}</Text>
         </View>
-
         <View style={styles.cardDetails}>
           <Text style={styles.cardTitle}>{title}</Text>
           <Text style={styles.cardAddress}>{address}</Text>
-
           <View style={styles.cardFooter}>
             <View style={styles.cardMetrics}>
               <Icon source="clock-outline" size={16} color="#333" />
               <Text style={styles.durationText}>{duration}</Text>
-
               <View style={styles.ratingContainer}>
                 <Icon source="star" size={16} color={colors.primary} />
                 <Text style={styles.ratingText}> {rating}</Text>
               </View>
             </View>
-
-            <Text style={styles.priceText}>${price}/H</Text>
+            <View style={styles.priceContainer}>
+              {showMonthly ? (
+                <>
+                  <Text style={styles.priceText}>${monthlyRate}/mo</Text>
+                  <Text style={styles.priceSubText}>${price}/hr</Text>
+                </>
+              ) : (
+                <Text style={styles.priceText}>${price}/hr</Text>
+              )}
+            </View>
           </View>
+          {/* Monthly badge */}
+          {showMonthly && (
+            <View style={styles.monthlyBadge}>
+              <Text style={styles.monthlyBadgeText}>📅 Monthly plan available</Text>
+            </View>
+          )}
         </View>
       </View>
     </TouchableOpacity>
@@ -130,13 +142,34 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#666666",
   },
+  priceContainer: {
+    alignItems: "flex-end",
+  },
   priceText: {
     fontSize: 16,
     fontWeight: "600",
     color: colors.primary,
   },
+  priceSubText: {
+    fontSize: 12,
+    color: "#999",
+    marginTop: 2,
+  },
+  monthlyBadge: {
+    marginTop: 8,
+    backgroundColor: colors.primary + "18",
+    borderRadius: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderColor: colors.primary + "44",
+  },
+  monthlyBadgeText: {
+    fontSize: 12,
+    color: colors.primary,
+    fontWeight: "500",
+  },
 });
 
 export default ParkingSpotCard;
-
-

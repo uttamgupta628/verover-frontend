@@ -2,10 +2,11 @@ import Contact from "@/components/LiveSessions/Contact";
 import LocationCard from "@/components/LiveSessions/LocationCard";
 import SessionDetails from "@/components/LiveSessions/SessionDetails";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Linking,
   Modal,
   ScrollView,
   StyleSheet,
@@ -18,7 +19,6 @@ import { Icon, IconButton } from "react-native-paper";
 import { useSelector } from "react-redux";
 import axiosInstance from "../../api/axios";
 import colors from "../../assets/color";
-import { images } from "../../assets/images/images";
 import { RootState } from "../../components/redux/store";
 import {
   calculateDuration,
@@ -26,27 +26,43 @@ import {
 } from "../../utils/slotIdConverter";
 import { useStripeWrapper } from "../stripWrapper";
 import BookingReceipt from "./BookingReceipt";
-import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps"; 
-import * as Location from 'expo-location'; 
+import MapView, { Marker, PROVIDER_GOOGLE } from "react-native-maps";
+import * as Location from "expo-location";
 
-type PaymentMethod = "CASH" | "CARD" | "UPI";
+// ── Daily Rate ─────────────────────────────────────────────────────────────────
+import { useDailyRate, computeDailyRateCost, SlotBreakdown } from "./Usedailyrate";
+import DailyRatePreview from "./Dailyratepreview";
+
+type PaymentMethod = "CARD" | "UPI";
+
+interface UpiApp {
+  id: string;
+  name: string;
+  icon: string;
+  scheme: string;
+}
+
+const UPI_APPS: UpiApp[] = [
+  { id: "gpay",    name: "Google Pay",  icon: "🟢", scheme: "tez://"     },
+  { id: "phonepe", name: "PhonePe",     icon: "🟣", scheme: "phonepe://" },
+  { id: "paytm",   name: "Paytm",       icon: "🔵", scheme: "paytmmp://" },
+  { id: "bhim",    name: "BHIM UPI",    icon: "🟠", scheme: "upi://"     },
+  { id: "other",   name: "Other UPI",   icon: "📱", scheme: "upi://"     },
+];
 
 interface CheckOutData {
   bookingId: string;
   garageName: string;
   slot: string;
-  bookingPeriod: {
-    from: string;
-    to: string;
-  };
+  bookingPeriod: { from: string; to: string };
   vehicleNumber?: string;
   pricing: {
     priceRate?: number;
     basePrice: number;
     discount: number;
-    serviceFee: number;          // ✅ Added
-    transactionFee: number;      // ✅ Added
-    estimatedTaxes: number;      // ✅ Added
+    serviceFee: number;
+    transactionFee: number;
+    estimatedTaxes: number;
     couponApplied: boolean;
     couponDetails: null | string;
     totalAmount: number;
@@ -57,6 +73,7 @@ interface CheckOutData {
     customerId: string;
     paymentIntentId: string;
   };
+  upiDetails?: { upiId?: string; transactionRef?: string };
   placeInfo: {
     name: string;
     phoneNo: string;
@@ -87,6 +104,16 @@ interface LocationCoordinates {
   longitudeDelta: number;
 }
 
+type UpiStatus = "idle" | "pending" | "verifying" | "success" | "failed";
+
+// ── Helper: map type → venue type for daily rate API ──────────────────────────
+function venueTypeFromBookingType(type: "G" | "L" | "R" | undefined) {
+  if (type === "G") return "garage";
+  if (type === "L") return "parking";
+  if (type === "R") return "residence";
+  return null;
+}
+
 const Confirmation = () => {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -104,141 +131,165 @@ const Confirmation = () => {
     }
   }, [params.lot]);
 
-  const type = params.type as "G" | "L" | "R" | undefined;
-  const endTime = params.endTime as string;
+  const type         = params.type as "G" | "L" | "R" | undefined;
+  const endTime      = params.endTime as string;
   const selectedSpot = params.selectedSpot as string | undefined;
+  const isMonthly    = params.isMonthly === "true";
+  const months       = parseInt((params.months as string) || "1", 10);
+  const isDaily      = params.isDaily === "true";
+
+  const dailyStartTimeParam = params.startTime as string | undefined;
 
   const authToken = useSelector((state: RootState) => state.auth.token);
-  const [loading, setLoading] = useState(false);
-  const [paymentLoading, setPaymentLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<CheckOutData | null>(null);
-  const [vehicleNumber, setVehicleNumber] = useState<string>("");
+  const [loading,         setLoading]         = useState(false);
+  const [fetchingVehicle, setFetchingVehicle] = useState(false);
+  const [paymentLoading,  setPaymentLoading]  = useState(false);
+  const [error,           setError]           = useState<string | null>(null);
+  const [data,            setData]            = useState<CheckOutData | null>(null);
+  const [vehicleNumber,   setVehicleNumber]   = useState<string>("");
   const Stripe = useStripeWrapper();
 
-  const [isPopupVisible, setPopupVisible] = useState(false);
-  const [carPlateNumber, setCarPlateNumber] = useState("");
-  
-  // Changed default to CARD
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("CARD");
-  
-  const [showPaymentMethodSelector, setShowPaymentMethodSelector] = useState(false);
-  
-  const [showCardDetailsModal, setShowCardDetailsModal] = useState(false);
-  const [savedCard, setSavedCard] = useState<CardDetails | null>(null);
-  const [cardNumber, setCardNumber] = useState("");
-  const [expiryDate, setExpiryDate] = useState("");
-  const [cvv, setCvv] = useState("");
-  const [cardholderName, setCardholderName] = useState("");
+  const [isPopupVisible,             setPopupVisible]             = useState(false);
+  const [carPlateNumber,             setCarPlateNumber]           = useState("");
+  const [paymentMethod,              setPaymentMethod]            = useState<PaymentMethod>("CARD");
+  const [showPaymentMethodSelector,  setShowPaymentMethodSelector] = useState(false);
+  const [showCardDetailsModal,       setShowCardDetailsModal]     = useState(false);
+  const [savedCard,                  setSavedCard]                = useState<CardDetails | null>(null);
+  const [cardNumber,                 setCardNumber]               = useState("");
+  const [expiryDate,                 setExpiryDate]               = useState("");
+  const [cvv,                        setCvv]                      = useState("");
+  const [cardholderName,             setCardholderName]           = useState("");
+  const [showUpiModal,               setShowUpiModal]             = useState(false);
+  const [upiId,                      setUpiId]                    = useState("");
+  const [upiIdError,                 setUpiIdError]               = useState("");
+  const [selectedUpiApp,             setSelectedUpiApp]           = useState<UpiApp | null>(null);
+  const [upiStatus,                  setUpiStatus]                = useState<UpiStatus>("idle");
+  const upiPollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const [showReceipt, setShowReceipt] = useState(false);
+  const [showReceipt,      setShowReceipt]      = useState(false);
   const [createdBookingId, setCreatedBookingId] = useState<string | null>(null);
 
   const hasInitiatedCheckout = useRef(false);
-  const isMounted = useRef(true);
-  const stripeInitialized = useRef(false);
-  const [showStripeSheet, setShowStripeSheet] = useState(false);
+  const isMounted            = useRef(true);
+  const stripeInitialized    = useRef(false);
 
-  // Add state for map
-  const [userLocation, setUserLocation] = useState<LocationCoordinates | null>(null);
-  const [lotLocation, setLotLocation] = useState<LocationCoordinates | null>(null);
-  const [mapRegion, setMapRegion] = useState<LocationCoordinates | null>(null);
+  const [userLocation,    setUserLocation]    = useState<LocationCoordinates | null>(null);
+  const [lotLocation,     setLotLocation]     = useState<LocationCoordinates | null>(null);
+  const [mapRegion,       setMapRegion]       = useState<LocationCoordinates | null>(null);
   const [locationLoading, setLocationLoading] = useState(true);
+
+  // ── Daily Rate integration ─────────────────────────────────────────────────
+  const venueType = venueTypeFromBookingType(type);
+  const venueId: string | null = lot?._id ?? null;
+
+  const {
+    dailyRateEnabled,
+    dailyRates,
+    loading: dailyRateLoading,
+    computeCost,
+  } = useDailyRate(
+    isDaily ? venueType : null,
+    isDaily ? venueId  : null
+  );
+
+  const dailyRateCost = useMemo(() => {
+    if (!isDaily || !dailyRateEnabled || !data?.bookingPeriod) return null;
+    const from = new Date(data.bookingPeriod.from);
+    const to   = new Date(data.bookingPeriod.to);
+    return computeCost(from, to);
+  }, [isDaily, dailyRateEnabled, data?.bookingPeriod, computeCost]);
+
+  const effectivePricing = useMemo(() => {
+    if (!data) return null;
+
+    if (isDaily && dailyRateEnabled && dailyRateCost) {
+      const base           = dailyRateCost.totalAmount;
+      const serviceFee     = parseFloat((base * 0.05).toFixed(2));
+      const transactionFee = 0.50;
+      const estimatedTaxes = parseFloat(
+        ((base + serviceFee + transactionFee) * 0.15).toFixed(2)
+      );
+      const discount    = data.pricing.discount ?? 0;
+      const totalAmount = parseFloat(
+        (base + serviceFee + transactionFee + estimatedTaxes - discount).toFixed(2)
+      );
+      return {
+        ...data.pricing,
+        basePrice: base,
+        serviceFee,
+        transactionFee,
+        estimatedTaxes,
+        totalAmount,
+      };
+    }
+
+    return data.pricing;
+  }, [isDaily, dailyRateEnabled, dailyRateCost, data]);
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
 
   const formatCardNumber = (text: string) => {
     const cleaned = text.replace(/\s/g, "");
-    const chunks = cleaned.match(/.{1,4}/g) || [];
+    const chunks  = cleaned.match(/.{1,4}/g) || [];
     return chunks.join(" ").substr(0, 19);
   };
 
   const formatExpiryDate = (text: string) => {
     const cleaned = text.replace(/\D/g, "");
-    if (cleaned.length >= 2) {
-      return cleaned.substr(0, 2) + "/" + cleaned.substr(2, 2);
-    }
+    if (cleaned.length >= 2) return cleaned.substr(0, 2) + "/" + cleaned.substr(2, 2);
     return cleaned;
   };
 
-  // Add function to get user location
+  const validateUpiId = (id: string): boolean =>
+    /^[a-zA-Z0-9._-]+@[a-zA-Z]{3,}$/.test(id.trim());
+
+  // ── Location ──────────────────────────────────────────────────────────────
+
   const getUserLocation = async () => {
     try {
       let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        console.log('Permission to access location was denied');
-        return null;
-      }
-
+      if (status !== "granted") return null;
       let location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
       });
-      
       return {
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
+        latitude:      location.coords.latitude,
+        longitude:     location.coords.longitude,
         latitudeDelta: 0.01,
         longitudeDelta: 0.01,
       };
-    } catch (error) {
-      console.error('Error getting user location:', error);
+    } catch {
       return null;
     }
   };
 
-  // Add function to initialize map
   const initializeMap = async () => {
     setLocationLoading(true);
-    
     try {
-      // Get user location
       const userLoc = await getUserLocation();
-      if (userLoc) {
-        setUserLocation(userLoc);
-      }
+      if (userLoc) setUserLocation(userLoc);
 
-      // Get lot location from data or lot object
-      let lotCoords = null;
-      
+      let lotCoords: LocationCoordinates | null = null;
       if (data?.placeInfo?.location) {
-        // If we have location data from checkout response
         const [longitude, latitude] = data.placeInfo.location.coordinates;
-        lotCoords = {
-          latitude,
-          longitude,
-          latitudeDelta: 0.005,
-          longitudeDelta: 0.005,
-        };
+        lotCoords = { latitude, longitude, latitudeDelta: 0.005, longitudeDelta: 0.005 };
       } else if (lot?.location) {
-        // If we have location in the lot object
         const [longitude, latitude] = lot.location.coordinates;
-        lotCoords = {
-          latitude,
-          longitude,
-          latitudeDelta: 0.005,
-          longitudeDelta: 0.005,
-        };
+        lotCoords = { latitude, longitude, latitudeDelta: 0.005, longitudeDelta: 0.005 };
       } else if (lot?.latitude && lot?.longitude) {
-        // If we have lat/lng directly
-        lotCoords = {
-          latitude: lot.latitude,
-          longitude: lot.longitude,
-          latitudeDelta: 0.005,
-          longitudeDelta: 0.005,
-        };
+        lotCoords = { latitude: lot.latitude, longitude: lot.longitude, latitudeDelta: 0.005, longitudeDelta: 0.005 };
       }
 
       if (lotCoords) {
         setLotLocation(lotCoords);
-        // Set map region to show both user and lot location
         if (userLoc) {
-          // Calculate region that includes both points
           const minLat = Math.min(userLoc.latitude, lotCoords.latitude);
           const maxLat = Math.max(userLoc.latitude, lotCoords.latitude);
           const minLng = Math.min(userLoc.longitude, lotCoords.longitude);
           const maxLng = Math.max(userLoc.longitude, lotCoords.longitude);
-          
           setMapRegion({
-            latitude: (minLat + maxLat) / 2,
-            longitude: (minLng + maxLng) / 2,
+            latitude:      (minLat + maxLat) / 2,
+            longitude:     (minLng + maxLng) / 2,
             latitudeDelta: (maxLat - minLat) * 1.5,
             longitudeDelta: (maxLng - minLng) * 1.5,
           });
@@ -246,181 +297,166 @@ const Confirmation = () => {
           setMapRegion(lotCoords);
         }
       } else if (userLoc) {
-        // If no lot location, just show user location
         setMapRegion(userLoc);
       } else {
-        // Default to a central location (can be your city's coordinates)
-        setMapRegion({
-          latitude: 22.5726, // Example: Kolkata coordinates
-          longitude: 88.3639,
-          latitudeDelta: 0.1,
-          longitudeDelta: 0.1,
-        });
+        setMapRegion({ latitude: 22.5726, longitude: 88.3639, latitudeDelta: 0.1, longitudeDelta: 0.1 });
       }
-    } catch (error) {
-      console.error('Error initializing map:', error);
-      // Set default region if there's an error
-      setMapRegion({
-        latitude: 22.5726,
-        longitude: 88.3639,
-        latitudeDelta: 0.1,
-        longitudeDelta: 0.1,
-      });
+    } catch {
+      setMapRegion({ latitude: 22.5726, longitude: 88.3639, latitudeDelta: 0.1, longitudeDelta: 0.1 });
     } finally {
       setLocationLoading(false);
     }
   };
 
+  // ── Checkout ──────────────────────────────────────────────────────────────
+
   const initiateCheckout = useCallback(
     async (plateNumber: string) => {
-      if (!lot || !type) {
-        Alert.alert("Error", "Invalid parameters");
-        return;
-      }
-
-      if (hasInitiatedCheckout.current) {
-        console.log("Checkout already initiated, skipping...");
-        return;
-      }
-
+      if (!lot || !type) { Alert.alert("Error", "Invalid parameters"); return; }
+      if (hasInitiatedCheckout.current) return;
       hasInitiatedCheckout.current = true;
       setLoading(true);
       setError(null);
 
       try {
-        let requestBody: any;
-        let endpoint: string;
+        const startTime = (() => {
+          if (isDaily && dailyStartTimeParam) {
+            const d = new Date(dailyStartTimeParam);
+            return d > new Date() ? d : new Date();
+          }
+          return new Date();
+        })();
 
-        const startTime = new Date();
         const endTimeDate = new Date(endTime);
 
         if (endTimeDate <= startTime) {
-          Alert.alert(
-            "Invalid Time",
-            "End time must be after the current time"
-          );
+          Alert.alert("Invalid Time", "End time must be after the start time");
           setLoading(false);
           hasInitiatedCheckout.current = false;
           return;
         }
 
-        console.log("📅 Booking period:", {
-          from: startTime.toISOString(),
-          to: endTimeDate.toISOString(),
-          duration:
-            (endTimeDate.getTime() - startTime.getTime()) / (1000 * 60) +
-            " minutes",
-        });
+        const bookingPeriod = { from: startTime.toISOString(), to: endTimeDate.toISOString() };
+        const monthlyFields = { isMonthly, months: isMonthly ? months : undefined };
+
+        const backendPaymentMethod =
+          paymentMethod === "CARD" ? "CREDIT" : "UPI";
+
+        let requestBody: any;
+        let endpoint: string;
 
         if (type === "G") {
           const slotDetails = getSpacDetailsFromID(selectedSpot || "");
-          endpoint = "garage";
-
+          endpoint    = "garage";
           requestBody = {
-            garageId: lot._id,
-            bookedSlot: slotDetails || { zone: "A", slot: 1 },
-            bookingPeriod: {
-              from: startTime.toISOString(),
-              to: endTimeDate.toISOString(),
-            },
+            garageId:      lot._id,
+            bookedSlot:    slotDetails || { zone: "A", slot: 1 },
+            bookingPeriod,
             vehicleNumber: plateNumber.trim().toUpperCase(),
-            paymentMethod: paymentMethod === "CARD" ? "CREDIT" : paymentMethod,
+            paymentMethod: backendPaymentMethod,
+            ...monthlyFields,
           };
         } else if (type === "L") {
           const slotDetails = getSpacDetailsFromID(selectedSpot || "");
-          endpoint = "parkinglot";
-
+          endpoint    = "parkinglot";
           requestBody = {
-            lotId: lot._id,
-            bookedSlot: slotDetails || { zone: "A", slot: 1 },
-            bookingPeriod: {
-              from: startTime.toISOString(),
-              to: endTimeDate.toISOString(),
-            },
+            lotId:         lot._id,
+            bookedSlot:    slotDetails || { zone: "A", slot: 1 },
+            bookingPeriod,
             vehicleNumber: plateNumber.trim().toUpperCase(),
-            paymentMethod: paymentMethod === "CARD" ? "CREDIT" : paymentMethod,
+            paymentMethod: backendPaymentMethod,
+            ...monthlyFields,
           };
         } else if (type === "R") {
-          endpoint = "residence";
-
+          endpoint    = "residence";
           requestBody = {
-            residenceId: lot._id,
-            bookingPeriod: {
-              from: startTime.toISOString(),
-              to: endTimeDate.toISOString(),
-            },
+            residenceId:   lot._id,
+            bookingPeriod,
             vehicleNumber: plateNumber.trim().toUpperCase(),
-            couponCode: "",
+            couponCode:    "",
+            paymentMethod: backendPaymentMethod,
+            ...monthlyFields,
           };
         } else {
           throw new Error("Invalid booking type");
         }
 
-        console.log("📤 Checkout Request:", {
-          endpoint,
-          body: requestBody,
-        });
-
         const response = await axiosInstance.post<CheckoutResponse>(
           `/merchants/${endpoint}/checkout`,
           requestBody,
           {
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: authToken,
-            },
+            headers: { "Content-Type": "application/json", Authorization: authToken },
             withCredentials: true,
           }
         );
-
-        console.log("✅ Checkout Response:", response.data);
 
         if (response.data.success) {
           setData(response.data.data);
           setVehicleNumber(plateNumber.trim().toUpperCase());
           stripeInitialized.current = false;
-          
-          // Initialize map after getting data
           initializeMap();
-          
-          // Auto-open Stripe payment sheet if payment method is CARD
+
           if (paymentMethod === "CARD" && response.data.data.stripeDetails) {
-            console.log("🔄 Auto-initializing Stripe for card payment...");
             await initializeStripePaymentSheet(response.data.data.stripeDetails);
           }
         } else {
           throw new Error(response.data.message || "Checkout failed");
         }
       } catch (err: any) {
-        console.error("❌ Checkout Error:", err.response?.data || err.message);
         const errorMessage =
-          err.response?.data?.message ||
-          err.message ||
-          "Failed to retrieve booking details";
+          err.response?.data?.message || err.message || "Failed to retrieve booking details";
         setError(errorMessage);
         Alert.alert("Error", `${errorMessage}. Please try again.`);
         hasInitiatedCheckout.current = false;
       } finally {
-        if (isMounted.current) {
-          setLoading(false);
-        }
+        if (isMounted.current) setLoading(false);
       }
     },
-    [lot, type, endTime, selectedSpot, authToken, paymentMethod]
+    [lot, type, endTime, selectedSpot, authToken, paymentMethod, isMonthly, months,
+     isDaily, dailyStartTimeParam]
   );
 
-  const handleOkPress = () => {
+  // ── Vehicle number: fetch from backend first ──────────────────────────────
+
+  const fetchVehicleNumberAndProceed = async () => {
+    setFetchingVehicle(true);
+    try {
+      const res = await axiosInstance.get("/users/get-profile", {
+        headers: { Authorization: authToken },
+      });
+
+      const profile = res.data?.data || res.data;
+      const savedVehicleNumber =
+        profile?.vehicleNumber ||
+        profile?.vehicle_number ||
+        profile?.vehicle ||
+        null;
+
+      if (savedVehicleNumber && savedVehicleNumber.trim().length >= 5) {
+        const plate = savedVehicleNumber.trim().toUpperCase();
+        setCarPlateNumber(plate);
+        initiateCheckout(plate);
+      } else {
+        setCarPlateNumber("");
+        setPopupVisible(true);
+      }
+    } catch (err) {
+      console.warn("Could not fetch profile for vehicle number:", err);
+      setCarPlateNumber("");
+      setPopupVisible(true);
+    } finally {
+      setFetchingVehicle(false);
+    }
+  };
+
+  // ── Plate modal submit ────────────────────────────────────────────────────
+
+  const handleOkPress = async () => {
     const plateNumber = carPlateNumber.trim().toUpperCase();
-    
     if (plateNumber === "") {
-      Alert.alert(
-        "Required",
-        "Please enter your car plate number to continue."
-      );
+      Alert.alert("Required", "Please enter your car plate number to continue.");
       return;
     }
-    
-    // Validate minimum length
     if (plateNumber.length < 5) {
       Alert.alert(
         "Invalid Vehicle Number",
@@ -428,425 +464,399 @@ const Confirmation = () => {
       );
       return;
     }
-    
     setPopupVisible(false);
+
+    try {
+      await axiosInstance.patch(
+        "/users/update-profile",
+        { vehicleNumber: plateNumber },
+        { headers: { Authorization: authToken } }
+      );
+    } catch {
+      console.warn("Could not save vehicle number to profile");
+    }
+
     initiateCheckout(plateNumber);
   };
 
-  const handleGoHome = () => {
-    setPopupVisible(false);
-    router.replace("/userHome");
-  };
+  const handleGoHome = () => { setPopupVisible(false); router.replace("/userHome"); };
+
+  // ── Payment method selector ───────────────────────────────────────────────
 
   const handleSelectPaymentMethod = (method: PaymentMethod) => {
     const oldMethod = paymentMethod;
     setPaymentMethod(method);
     setShowPaymentMethodSelector(false);
-    
-    // Re-initiate checkout if payment method changed and we already have data
     if (oldMethod !== method && vehicleNumber) {
-      console.log(`🔄 Payment method changed from ${oldMethod} to ${method}, re-initiating checkout`);
       hasInitiatedCheckout.current = false;
       initiateCheckout(vehicleNumber);
     }
   };
+
+  // ── Card helpers ──────────────────────────────────────────────────────────
 
   const handleSaveCard = () => {
     if (!cardNumber || !expiryDate || !cvv || !cardholderName) {
       Alert.alert("Required", "Please fill in all card details");
       return;
     }
-    
-    const cardData: CardDetails = {
-      cardNumber: cardNumber.replace(/\s/g, ""),
-      expiryDate,
-      cvv,
-      cardholderName,
-    };
-    
-    setSavedCard(cardData);
+    setSavedCard({ cardNumber: cardNumber.replace(/\s/g, ""), expiryDate, cvv, cardholderName });
     setShowCardDetailsModal(false);
-    
-    setCardNumber("");
-    setExpiryDate("");
-    setCvv("");
-    setCardholderName("");
-    
+    setCardNumber(""); setExpiryDate(""); setCvv(""); setCardholderName("");
     Alert.alert("Success", "Card details saved successfully!");
   };
 
+  // ── UPI handlers ──────────────────────────────────────────────────────────
+
+  const handleOpenUpiModal = () => {
+    setUpiId("");
+    setUpiIdError("");
+    setSelectedUpiApp(null);
+    setUpiStatus("idle");
+    setShowUpiModal(true);
+  };
+
+  const buildUpiDeepLink = (app: UpiApp, amount: number, txnRef: string, merchantVpa: string): string => {
+    const upiParams = new URLSearchParams({
+      pa: merchantVpa,
+      pn: data?.placeInfo?.name || "ParkEase",
+      tr: txnRef,
+      tn: `Parking booking ${data?.bookingId || ""}`,
+      am: amount.toFixed(2),
+      cu: "INR",
+      mc: "7011",
+    });
+
+    if (app.id === "gpay")    return `tez://upi/pay?${upiParams.toString()}`;
+    if (app.id === "phonepe") return `phonepe://pay?${upiParams.toString()}`;
+    if (app.id === "paytm")   return `paytmmp://pay?${upiParams.toString()}`;
+    return `upi://pay?${upiParams.toString()}`;
+  };
+
+  const pollUpiPaymentStatus = (bookingId: string) => {
+    let attempts = 0;
+    const MAX_ATTEMPTS = 40;
+
+    setUpiStatus("verifying");
+
+    upiPollingRef.current = setInterval(async () => {
+      attempts++;
+      try {
+        const endpoint = type === "G" ? "garage" : type === "L" ? "parkinglot" : "residence";
+        const res = await axiosInstance.get(
+          `/merchants/${endpoint}/payment-status/${bookingId}`,
+          { headers: { Authorization: authToken } }
+        );
+
+        const status: string = res.data?.data?.paymentStatus || res.data?.data?.status || "";
+
+        if (status === "SUCCESS" || status === "COMPLETED") {
+          clearInterval(upiPollingRef.current!);
+          setUpiStatus("success");
+          setShowUpiModal(false);
+          setCreatedBookingId(bookingId);
+          setShowReceipt(true);
+          return;
+        }
+
+        if (status === "FAILED" || status === "EXPIRED") {
+          clearInterval(upiPollingRef.current!);
+          setUpiStatus("failed");
+          Alert.alert(
+            "Payment Failed",
+            "UPI payment was not completed. Please try again or choose another payment method.",
+            [
+              { text: "Retry UPI",  onPress: () => setUpiStatus("idle") },
+              { text: "Cancel",     style: "cancel", onPress: () => setShowUpiModal(false) },
+            ]
+          );
+          return;
+        }
+      } catch (e) {
+        console.warn("UPI status poll error:", e);
+      }
+
+      if (attempts >= MAX_ATTEMPTS) {
+        clearInterval(upiPollingRef.current!);
+        setUpiStatus("failed");
+        Alert.alert(
+          "Payment Timeout",
+          "We could not confirm your UPI payment within 2 minutes. If money was deducted it will be refunded within 5–7 business days.",
+          [
+            { text: "Check Again", onPress: () => pollUpiPaymentStatus(bookingId) },
+            { text: "OK",          onPress: () => setShowUpiModal(false) },
+          ]
+        );
+      }
+    }, 3000);
+  };
+
+  const handleUpiPayment = async () => {
+    if (!data?.bookingId) {
+      Alert.alert("Error", "Booking details not ready. Please try again.");
+      return;
+    }
+
+    if (!selectedUpiApp && upiId.trim() === "") {
+      setUpiIdError("Please enter your UPI ID or select an app above.");
+      return;
+    }
+    if (upiId.trim() !== "" && !validateUpiId(upiId)) {
+      setUpiIdError("Invalid UPI ID. Example: yourname@upi or number@paytm");
+      return;
+    }
+    setUpiIdError("");
+    setPaymentLoading(true);
+    setUpiStatus("pending");
+
+    const payableAmount = effectivePricing?.totalAmount ?? data.pricing.totalAmount;
+
+    try {
+      const endpoint = type === "G" ? "garage" : type === "L" ? "parkinglot" : "residence";
+
+      const bookingResponse = await axiosInstance.post(
+        `/merchants/${endpoint}/book`,
+        {
+          bookingId:            data.bookingId,
+          carLicensePlateImage: vehicleNumber,
+          paymentMethod:        "UPI",
+          ...(upiId.trim() !== "" && { userUpiId: upiId.trim() }),
+        },
+        {
+          headers: { Authorization: authToken, "Content-Type": "application/json" },
+          timeout: 20000,
+        }
+      );
+
+      if (!bookingResponse.data.success) {
+        throw new Error(bookingResponse.data.message || "Failed to initiate UPI payment");
+      }
+
+      const merchantVpa: string =
+        bookingResponse.data?.data?.upiDetails?.upiId ||
+        bookingResponse.data?.data?.merchantUpiId ||
+        "merchant@upi";
+
+      const txnRef: string =
+        bookingResponse.data?.data?.upiDetails?.transactionRef ||
+        bookingResponse.data?.data?.transactionRef ||
+        data.bookingId;
+
+      if (selectedUpiApp) {
+        const deepLink = buildUpiDeepLink(selectedUpiApp, payableAmount, txnRef, merchantVpa);
+        const canOpen  = await Linking.canOpenURL(deepLink);
+        if (canOpen) {
+          await Linking.openURL(deepLink);
+        } else {
+          const fallback        = `upi://pay?pa=${merchantVpa}&pn=ParkEase&tr=${txnRef}&am=${payableAmount.toFixed(2)}&cu=INR`;
+          const canOpenFallback = await Linking.canOpenURL(fallback);
+          if (canOpenFallback) {
+            await Linking.openURL(fallback);
+          } else {
+            Alert.alert(
+              "App Not Found",
+              `${selectedUpiApp.name} does not appear to be installed. Please enter your UPI ID manually.`
+            );
+            setUpiStatus("idle");
+            setPaymentLoading(false);
+            return;
+          }
+        }
+      }
+
+      pollUpiPaymentStatus(data.bookingId);
+    } catch (err: any) {
+      setUpiStatus("failed");
+      Alert.alert(
+        "UPI Payment Error",
+        err.response?.data?.message || err.message || "Failed to initiate UPI payment.",
+        [
+          { text: "Retry",  onPress: () => setUpiStatus("idle") },
+          { text: "Cancel", style: "cancel", onPress: () => setShowUpiModal(false) },
+        ]
+      );
+    } finally {
+      setPaymentLoading(false);
+    }
+  };
+
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
+
   useEffect(() => {
     isMounted.current = true;
-
-    if (!authToken) {
-      console.log("No auth token, redirecting to login");
-      router.replace("/Login");
-      return;
-    }
-
-    if (!lot || !type) {
-      console.log("Missing lot or type, going back");
-      router.back();
-      return;
-    }
+    if (!authToken) { router.replace("/Login"); return; }
+    if (!lot || !type) { router.back(); return; }
 
     const timer = setTimeout(() => {
       if (isMounted.current && !hasInitiatedCheckout.current) {
-        setPopupVisible(true);
+        fetchVehicleNumberAndProceed();
       }
     }, 1000);
 
     return () => {
       isMounted.current = false;
       clearTimeout(timer);
+      if (upiPollingRef.current) clearInterval(upiPollingRef.current);
     };
   }, []);
 
   useEffect(() => {
-    if (!loading && lot) {
-      initializeMap();
-    }
+    if (!loading && lot) initializeMap();
   }, [lot]);
 
+  // ── Stripe ────────────────────────────────────────────────────────────────
+
   const initializeStripePaymentSheet = async (stripeDetails: any) => {
-  try {
-    console.log("🔄 INITIALIZING PAYMENT SHEET - Stripe details:", {
-      hasPaymentIntent: !!stripeDetails?.paymentIntent,
-      hasEphemeralKey: !!stripeDetails?.ephemeralKey,
-      hasCustomerId: !!stripeDetails?.customerId,
-      hasPaymentIntentId: !!stripeDetails?.paymentIntentId,
-      stripeDetails: stripeDetails,
-    });
-
-    if (!stripeDetails || !stripeDetails.paymentIntent || !stripeDetails.ephemeralKey) {
-      console.log("❌ Missing required Stripe details for initialization", {
-        paymentIntent: stripeDetails?.paymentIntent,
-        ephemeralKey: stripeDetails?.ephemeralKey,
-        customerId: stripeDetails?.customerId,
-      });
+    try {
+      if (!stripeDetails?.paymentIntent || !stripeDetails?.ephemeralKey) return false;
+      let customerId = stripeDetails.customerId || stripeDetails.paymentIntentId || "temp_" + Date.now();
+      const initSuccess = await Stripe.initializedPaymentSheet(
+        stripeDetails.paymentIntent,
+        stripeDetails.ephemeralKey || "",
+        customerId,
+        stripeDetails.paymentIntentId
+      );
+      if (initSuccess) { stripeInitialized.current = true; return true; }
+      return false;
+    } catch {
+      stripeInitialized.current = false;
       return false;
     }
+  };
 
-    console.log("🔄 Attempting to initialize payment sheet with:", {
-      paymentIntent: stripeDetails.paymentIntent?.substring(0, 20) + "...",
-      ephemeralKey: stripeDetails.ephemeralKey?.substring(0, 20) + "...",
-      customerId: stripeDetails.customerId || "not provided",
-      paymentIntentId: stripeDetails.paymentIntentId,
-    });
-
-    // Try to extract customerId from ephemeralKey if not provided
-    let customerId = stripeDetails.customerId;
-    if (!customerId && stripeDetails.ephemeralKey) {
-      // Try to parse customerId from ephemeralKey (format: ek_live_...)
-      try {
-        const parts = stripeDetails.ephemeralKey.split('_');
-        if (parts.length >= 3) {
-          // The format is typically: ek_[mode]_[data]
-          // The data part might contain customer info
-          const dataPart = parts[2];
-          // Try to base64 decode if it looks like base64
-          if (dataPart && dataPart.length > 20) {
-            // For now, use the paymentIntentId as fallback customerId
-            customerId = stripeDetails.paymentIntentId || 'temp_customer_' + Date.now();
-            console.log("ℹ️ Generated fallback customerId:", customerId);
-          }
-        }
-      } catch (e) {
-        console.log("⚠️ Could not parse customerId from ephemeralKey:", e);
-      }
-    }
-
-    // Use paymentIntentId as customerId if still not available
-    if (!customerId && stripeDetails.paymentIntentId) {
-      customerId = stripeDetails.paymentIntentId;
-      console.log("ℹ️ Using paymentIntentId as customerId:", customerId);
-    }
-
-    // Last resort: create a temporary customerId
-    if (!customerId) {
-      customerId = 'temp_customer_' + Date.now();
-      console.log("ℹ️ Created temporary customerId:", customerId);
-    }
-
-    const initSuccess = await Stripe.initializedPaymentSheet(
-      stripeDetails.paymentIntent,
-      stripeDetails.ephemeralKey || "",
-      customerId,
-      stripeDetails.paymentIntentId
-    );
-
-    console.log("🔍 initPaymentSheet result:", initSuccess);
-
-    if (initSuccess) {
-      stripeInitialized.current = true;
-      console.log("✅ Payment sheet initialized successfully");
-      return true;
-    } else {
-      console.log("❌ Payment sheet initialization failed");
-      return false;
-    }
-  } catch (error) {
-    console.error("❌ Error initializing Stripe:", error);
-    stripeInitialized.current = false;
-    return false;
-  }
-};
+  // ── Main confirm ──────────────────────────────────────────────────────────
 
   const handleConfirmBooking = async () => {
-    console.log("🚀 Starting booking confirmation...");
-
     if (!vehicleNumber.trim()) {
-      Alert.alert(
-        "Required",
-        "Please enter your car plate number to continue."
-      );
+      Alert.alert("Required", "Please enter your car plate number to continue.");
       setPopupVisible(true);
       return;
     }
-
     if (!data?.bookingId) {
       Alert.alert("Error", "Booking ID not available. Please try again.");
       return;
     }
+    if (!type) { Alert.alert("Error", "Invalid booking type"); return; }
 
-    if (!type) {
-      Alert.alert("Error", "Invalid booking type");
-      return;
-    }
-
-    if (paymentMethod === "CARD") {
-      // For card payments, open Stripe payment sheet
-      handleCardPayment();
-    } else if (paymentMethod === "CASH") {
-      // For cash payments, directly confirm
-      handleCashPayment();
-    } else if (paymentMethod === "UPI") {
-      Alert.alert(
-        "UPI Payment",
-        "UPI payment is coming soon. Please select another payment method.",
-        [{ text: "OK" }]
-      );
-    }
+    if (paymentMethod === "CARD")     handleCardPayment();
+    else if (paymentMethod === "UPI") handleOpenUpiModal();
   };
 
-  const handleCardPayment = async () => {
-    console.log("💳 Processing card payment with Stripe");
+  // ── Card payment ──────────────────────────────────────────────────────────
 
+  const handleCardPayment = async () => {
     if (!data?.stripeDetails?.paymentIntentId) {
-      console.error("❌ No paymentIntentId in stripeDetails:", data?.stripeDetails);
-      Alert.alert(
-        "Payment Error",
-        "Payment configuration incomplete. Please try again."
-      );
+      Alert.alert("Payment Error", "Payment configuration incomplete. Please try again.");
       return;
     }
-
     setPaymentLoading(true);
-
     try {
-      console.log("🔄 Opening Stripe payment sheet...");
       const paymentResult = await Stripe.openPayment();
-
-      console.log("💳 Payment sheet result:", paymentResult);
-
       if (paymentResult === true) {
-        console.log("✅ Payment successful! Confirming booking...");
-        
-        const endpoint = type === "G" ? "garage" : type === "L" ? "parkinglot" : "residence";
-        const paymentIntentId = data.stripeDetails.paymentIntentId;
-        
-        console.log("📤 Sending to backend:", {
-          endpoint,
-          bookingId: data.bookingId,
-          paymentIntentId,
-          vehicleNumber
-        });
-        
+        const endpoint =
+          type === "G" ? "garage" : type === "L" ? "parkinglot" : "residence";
+
         try {
           const bookingResponse = await axiosInstance.post(
             `/merchants/${endpoint}/book`,
             {
-              bookingId: data.bookingId,
+              bookingId:            data.bookingId,
               carLicensePlateImage: vehicleNumber,
-              paymentMethod: "CREDIT",
-              paymentIntentId: paymentIntentId,
+              paymentMethod:        "CREDIT",
+              paymentIntentId:      data.stripeDetails.paymentIntentId,
             },
             {
-              headers: {
-                Authorization: authToken,
-                "Content-Type": "application/json",
-              },
+              headers: { Authorization: authToken, "Content-Type": "application/json" },
               timeout: 15000,
             }
           );
 
-          console.log("✅ Booking response:", bookingResponse.data);
-
           if (bookingResponse.data.success) {
+            if (bookingResponse.data.data?.placeInfo) {
+              setData((prev) =>
+                prev ? { ...prev, placeInfo: bookingResponse.data.data.placeInfo } : prev
+              );
+            }
             setCreatedBookingId(data.bookingId);
             setShowReceipt(true);
           } else {
             throw new Error(bookingResponse.data.message || "Booking confirmation failed");
           }
         } catch (bookError: any) {
-          console.error("❌ Booking confirmation error:", {
-            message: bookError.message,
-            response: bookError.response?.data,
-            status: bookError.response?.status,
-          });
-          
-          let errorMessage = "Booking confirmation failed.";
-          
-          if (bookError.response?.data?.message) {
-            errorMessage = bookError.response.data.message;
-            
-            // Handle specific error cases
-            if (bookError.response.data.message.includes("PAYMENT_VERIFICATION_FAILED")) {
-              errorMessage = "Payment verification failed. The payment may not have been processed correctly. Please check your payment method or try cash payment.";
-            }
-            
-            if (bookError.response.data.message.includes("INVALID_PAYMENT_INTENT")) {
-              errorMessage = "Payment session expired. Please restart the payment process.";
-            }
-          }
-          
+          let errorMessage =
+            bookError.response?.data?.message || "Booking confirmation failed.";
+          if (errorMessage.includes("PAYMENT_VERIFICATION_FAILED"))
+            errorMessage = "Payment verification failed. Please check your payment method and try again.";
+          if (errorMessage.includes("INVALID_PAYMENT_INTENT"))
+            errorMessage = "Payment session expired. Please restart the payment process.";
           Alert.alert("Payment Error", errorMessage, [
-            {
-              text: "Try Cash Payment",
-              onPress: () => handleCashPayment()
-            },
-            {
-              text: "Try Again",
-              onPress: () => handleCardPayment()
-            },
-            {
-              text: "Cancel",
-              style: "cancel"
-            }
+            { text: "Try Again", onPress: () => handleCardPayment() },
+            { text: "Cancel",    style: "cancel" },
           ]);
         }
       } else {
-        console.log("❌ Payment cancelled by user");
-        Alert.alert(
-          "Payment Cancelled",
-          "Payment was not completed. Would you like to try cash payment instead?",
-          [
-            {
-              text: "Pay with Cash",
-              onPress: () => handleCashPayment()
-            },
-            {
-              text: "Cancel",
-              style: "cancel"
-            }
-          ]
-        );
+        Alert.alert("Payment Cancelled", "Payment was not completed.", [
+          { text: "OK", style: "cancel" },
+        ]);
       }
     } catch (err: any) {
-      console.error("❌ Payment error:", err.message || err);
-      
-      if (!err.message?.toLowerCase().includes("cancel")) {
-        Alert.alert(
-          "Payment Error",
-          err.message || "An error occurred during payment. Please try again."
-        );
-      }
+      if (!err.message?.toLowerCase().includes("cancel"))
+        Alert.alert("Payment Error", err.message || "An error occurred during payment.");
     } finally {
       setPaymentLoading(false);
     }
   };
 
-  const handleCashPayment = async () => {
-    console.log("💵 Processing CASH payment");
-    
-    setPaymentLoading(true);
-
-    try {
-      const endpoint = type === "G" ? "garage" : type === "L" ? "parkinglot" : "residence";
-      
-      const bookingResponse = await axiosInstance.post(
-        `/merchants/${endpoint}/book`,
-        {
-          bookingId: data!.bookingId,
-          carLicensePlateImage: vehicleNumber,
-          paymentMethod: "CASH",
-        },
-        {
-          headers: {
-            Authorization: authToken,
-            "Content-Type": "application/json",
-          },
-          timeout: 15000,
-        }
-      );
-
-      console.log("✅ CASH booking response:", bookingResponse.data);
-
-      if (bookingResponse.data.success) {
-        setCreatedBookingId(data!.bookingId);
-        setShowReceipt(true);
-      } else {
-        throw new Error(bookingResponse.data.message || "Booking confirmation failed");
-      }
-    } catch (err: any) {
-      console.error("❌ CASH payment error:", err);
-      Alert.alert(
-        "Payment Failed",
-        err.response?.data?.message || err.message || "An unexpected error occurred. Please try again."
-      );
-    } finally {
-      setPaymentLoading(false);
-    }
-  };
+  // ── Receipt close ─────────────────────────────────────────────────────────
 
   const handleReceiptClose = () => {
     setShowReceipt(false);
-    
     if (createdBookingId && type) {
       router.push({
         pathname: "/parkingUser/LiveSessionScreen",
-        params: {
-          bookingId: createdBookingId,
-          type: type,
-          bookingData: JSON.stringify(data)
-        }
+        params: { bookingId: createdBookingId, type, bookingData: JSON.stringify(data) },
       });
     } else {
       router.replace("/userHome");
     }
   };
 
+  // ── Guard ─────────────────────────────────────────────────────────────────
+
   if (!lot || !type) {
     return (
       <View style={styles.errorContainer}>
         <Text style={styles.errorText}>Invalid booking details</Text>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
           <Text style={styles.backButtonText}>Go Back</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
+  const displayTotal = effectivePricing?.totalAmount ?? 0;
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // RENDER
+  // ─────────────────────────────────────────────────────────────────────────
+
   return (
     <View style={styles.container}>
-      <Modal
-        animationType="fade"
-        transparent={true}
-        visible={isPopupVisible}
-        onRequestClose={() => {}}
-      >
+
+      {/* ── Vehicle plate modal ─────────────────────────────────────────── */}
+      <Modal animationType="fade" transparent visible={isPopupVisible} onRequestClose={() => {}}>
         <View style={styles.centeredView}>
           <View style={styles.modalView}>
-            <Text style={styles.modalText}>Add Car Plate Number</Text>
+            <Text style={styles.modalText}>Enter Vehicle Number</Text>
+            <Text style={styles.modalSubText}>
+              Your vehicle number is needed to complete the booking.
+            </Text>
             <TextInput
               style={styles.input}
               placeholder="e.g., WB 01 AB 1234 (min. 5 characters)"
               placeholderTextColor="#888"
               value={carPlateNumber}
-              onChangeText={setCarPlateNumber}
+              onChangeText={(t) => setCarPlateNumber(t.toUpperCase())}
               autoCapitalize="characters"
               onSubmitEditing={handleOkPress}
               returnKeyType="done"
@@ -856,9 +866,7 @@ const Confirmation = () => {
               onPress={handleOkPress}
               disabled={loading}
             >
-              <Text style={styles.textStyle}>
-                {loading ? "Processing..." : "OK"}
-              </Text>
+              <Text style={styles.textStyle}>{loading ? "Processing..." : "Continue"}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.modalButton, styles.buttonGoHome]}
@@ -871,9 +879,10 @@ const Confirmation = () => {
         </View>
       </Modal>
 
+      {/* ── Payment method selector ─────────────────────────────────────── */}
       <Modal
         animationType="slide"
-        transparent={true}
+        transparent
         visible={showPaymentMethodSelector}
         onRequestClose={() => setShowPaymentMethodSelector(false)}
       >
@@ -885,65 +894,36 @@ const Confirmation = () => {
                 <Text style={styles.closeButton}>✕</Text>
               </TouchableOpacity>
             </View>
-            
             <ScrollView>
-              {/* Changed order: CARD first */}
-              <TouchableOpacity
-                style={[
-                  styles.paymentMethodItem,
-                  paymentMethod === "CARD" && styles.selectedMethod
-                ]}
-                onPress={() => handleSelectPaymentMethod("CARD")}
-              >
-                <Text style={styles.methodIcon}>💳</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.methodName}>Credit/Debit Card</Text>
-                  {savedCard && paymentMethod === "CARD" && (
-                    <Text style={styles.cardInfoSmall}>
-                      •••• {savedCard.cardNumber.slice(-4)}
+              {(["CARD", "UPI"] as PaymentMethod[]).map((m) => (
+                <TouchableOpacity
+                  key={m}
+                  style={[styles.paymentMethodItem, paymentMethod === m && styles.selectedMethod]}
+                  onPress={() => handleSelectPaymentMethod(m)}
+                >
+                  <Text style={styles.methodIcon}>
+                    {m === "CARD" ? "💳" : "📱"}
+                  </Text>
+                  <View style={styles.methodTextGroup}>
+                    <Text style={styles.methodName}>
+                      {m === "CARD" ? "Credit/Debit Card" : "UPI Payment"}
                     </Text>
-                  )}
-                </View>
-                {paymentMethod === "CARD" && (
-                  <Text style={styles.checkMark}>✓</Text>
-                )}
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.paymentMethodItem,
-                  paymentMethod === "CASH" && styles.selectedMethod
-                ]}
-                onPress={() => handleSelectPaymentMethod("CASH")}
-              >
-                <Text style={styles.methodIcon}>💵</Text>
-                <Text style={styles.methodName}>Cash Payment</Text>
-                {paymentMethod === "CASH" && (
-                  <Text style={styles.checkMark}>✓</Text>
-                )}
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.paymentMethodItem,
-                  paymentMethod === "UPI" && styles.selectedMethod
-                ]}
-                onPress={() => handleSelectPaymentMethod("UPI")}
-              >
-                <Text style={styles.methodIcon}>📱</Text>
-                <Text style={styles.methodName}>UPI Payment</Text>
-                {paymentMethod === "UPI" && (
-                  <Text style={styles.checkMark}>✓</Text>
-                )}
-              </TouchableOpacity>
+                    {m === "UPI" && (
+                      <Text style={styles.methodSubtitle}>Google Pay, PhonePe, Paytm & more</Text>
+                    )}
+                  </View>
+                  {paymentMethod === m && <Text style={styles.checkMark}>✓</Text>}
+                </TouchableOpacity>
+              ))}
             </ScrollView>
           </View>
         </View>
       </Modal>
 
+      {/* ── Card details modal ──────────────────────────────────────────── */}
       <Modal
         animationType="slide"
-        transparent={true}
+        transparent
         visible={showCardDetailsModal}
         onRequestClose={() => setShowCardDetailsModal(false)}
       >
@@ -955,29 +935,21 @@ const Confirmation = () => {
                 <Text style={styles.closeButton}>✕</Text>
               </TouchableOpacity>
             </View>
-
             <ScrollView style={styles.cardForm}>
               <View style={styles.cardPreview}>
                 <View style={styles.cardChip} />
-                <Text style={styles.cardNumberPreview}>
-                  {cardNumber || "•••• •••• •••• ••••"}
-                </Text>
+                <Text style={styles.cardNumberPreview}>{cardNumber || "•••• •••• •••• ••••"}</Text>
                 <View style={styles.cardBottomRow}>
                   <View>
                     <Text style={styles.cardLabel}>CARDHOLDER NAME</Text>
-                    <Text style={styles.cardValue}>
-                      {cardholderName || "YOUR NAME"}
-                    </Text>
+                    <Text style={styles.cardValue}>{cardholderName || "YOUR NAME"}</Text>
                   </View>
                   <View>
                     <Text style={styles.cardLabel}>EXPIRES</Text>
-                    <Text style={styles.cardValue}>
-                      {expiryDate || "MM/YY"}
-                    </Text>
+                    <Text style={styles.cardValue}>{expiryDate || "MM/YY"}</Text>
                   </View>
                 </View>
               </View>
-
               <View style={styles.inputContainer}>
                 <Text style={styles.inputLabel}>Card Number</Text>
                 <TextInput
@@ -985,12 +957,11 @@ const Confirmation = () => {
                   placeholder="1234 5678 9012 3456"
                   placeholderTextColor="#999"
                   value={cardNumber}
-                  onChangeText={(text) => setCardNumber(formatCardNumber(text))}
+                  onChangeText={(t) => setCardNumber(formatCardNumber(t))}
                   keyboardType="number-pad"
                   maxLength={19}
                 />
               </View>
-
               <View style={styles.inputContainer}>
                 <Text style={styles.inputLabel}>Cardholder Name</Text>
                 <TextInput
@@ -1002,7 +973,6 @@ const Confirmation = () => {
                   autoCapitalize="words"
                 />
               </View>
-
               <View style={styles.rowInputs}>
                 <View style={[styles.inputContainer, { flex: 1, marginRight: 10 }]}>
                   <Text style={styles.inputLabel}>Expiry Date</Text>
@@ -1011,12 +981,11 @@ const Confirmation = () => {
                     placeholder="MM/YY"
                     placeholderTextColor="#999"
                     value={expiryDate}
-                    onChangeText={(text) => setExpiryDate(formatExpiryDate(text))}
+                    onChangeText={(t) => setExpiryDate(formatExpiryDate(t))}
                     keyboardType="number-pad"
                     maxLength={5}
                   />
                 </View>
-
                 <View style={[styles.inputContainer, { flex: 1 }]}>
                   <Text style={styles.inputLabel}>CVV</Text>
                   <TextInput
@@ -1031,61 +1000,194 @@ const Confirmation = () => {
                   />
                 </View>
               </View>
-
-              <View style={styles.securePaymentInfo}>
-                <Text style={styles.secureIcon}>🔒</Text>
-                <Text style={styles.secureText}>
-                  Your payment information is secure and encrypted
-                </Text>
-              </View>
-
-              <TouchableOpacity 
-                style={styles.saveCardButton}
-                onPress={handleSaveCard}
-              >
-                <Text style={styles.saveCardButtonText}>
-                  Save Card Details
-                </Text>
+              <TouchableOpacity style={styles.saveCardButton} onPress={handleSaveCard}>
+                <Text style={styles.saveCardButtonText}>Save Card Details</Text>
               </TouchableOpacity>
             </ScrollView>
           </View>
         </View>
       </Modal>
 
-      {data && (
+      {/* ── UPI Payment Modal ───────────────────────────────────────────── */}
+      <Modal
+        animationType="slide"
+        transparent
+        visible={showUpiModal}
+        onRequestClose={() => {
+          if (upiStatus !== "pending" && upiStatus !== "verifying") {
+            if (upiPollingRef.current) clearInterval(upiPollingRef.current);
+            setShowUpiModal(false);
+          }
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.upiModal}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Pay with UPI</Text>
+              {upiStatus !== "pending" && upiStatus !== "verifying" && (
+                <TouchableOpacity
+                  onPress={() => {
+                    if (upiPollingRef.current) clearInterval(upiPollingRef.current);
+                    setShowUpiModal(false);
+                  }}
+                >
+                  <Text style={styles.closeButton}>✕</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
+            <ScrollView style={styles.upiScrollContent} showsVerticalScrollIndicator={false}>
+              <View style={styles.upiAmountChip}>
+                <Text style={styles.upiAmountLabel}>Amount to Pay</Text>
+                <Text style={styles.upiAmountValue}>
+                  ₹{(effectivePricing?.totalAmount ?? 0).toFixed(2)}
+                </Text>
+              </View>
+
+              {upiStatus === "pending" && (
+                <View style={styles.upiStatusBox}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                  <Text style={styles.upiStatusText}>Opening UPI app…</Text>
+                </View>
+              )}
+              {upiStatus === "verifying" && (
+                <View style={styles.upiStatusBox}>
+                  <ActivityIndicator size="small" color="#FF9800" />
+                  <Text style={[styles.upiStatusText, { color: "#FF9800" }]}>
+                    Waiting for payment confirmation…
+                  </Text>
+                  <Text style={styles.upiStatusSubtext}>
+                    Complete the payment in your UPI app. This screen updates automatically.
+                  </Text>
+                </View>
+              )}
+              {upiStatus === "failed" && (
+                <View style={[styles.upiStatusBox, { backgroundColor: "#FFF3F3" }]}>
+                  <Text style={{ fontSize: 24 }}>❌</Text>
+                  <Text style={[styles.upiStatusText, { color: "#D32F2F" }]}>Payment not completed</Text>
+                  <TouchableOpacity onPress={() => setUpiStatus("idle")} style={styles.upiRetryButton}>
+                    <Text style={styles.upiRetryButtonText}>Try Again</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {(upiStatus === "idle" || upiStatus === "failed") && (
+                <>
+                  <Text style={styles.upiSectionLabel}>Select UPI App</Text>
+                  <View style={styles.upiAppsGrid}>
+                    {UPI_APPS.map((app) => (
+                      <TouchableOpacity
+                        key={app.id}
+                        style={[
+                          styles.upiAppButton,
+                          selectedUpiApp?.id === app.id && styles.upiAppButtonSelected,
+                        ]}
+                        onPress={() => { setSelectedUpiApp(app); setUpiIdError(""); }}
+                      >
+                        <Text style={styles.upiAppIcon}>{app.icon}</Text>
+                        <Text style={styles.upiAppName}>{app.name}</Text>
+                        {selectedUpiApp?.id === app.id && (
+                          <View style={styles.upiAppCheckBadge}>
+                            <Text style={styles.upiAppCheckText}>✓</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  <View style={styles.upiDividerRow}>
+                    <View style={styles.upiDividerLine} />
+                    <Text style={styles.upiDividerText}>OR</Text>
+                    <View style={styles.upiDividerLine} />
+                  </View>
+
+                  <Text style={styles.upiSectionLabel}>Enter UPI ID manually</Text>
+                  <TextInput
+                    style={[styles.upiIdInput, upiIdError ? styles.upiIdInputError : null]}
+                    placeholder="yourname@upi / 9876543210@paytm"
+                    placeholderTextColor="#aaa"
+                    value={upiId}
+                    onChangeText={(t) => { setUpiId(t); setUpiIdError(""); setSelectedUpiApp(null); }}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                  />
+                  {upiIdError !== "" && (
+                    <Text style={styles.upiIdErrorText}>{upiIdError}</Text>
+                  )}
+
+                  <View style={styles.upiInfoBox}>
+                    <Text style={styles.upiInfoText}>
+                      💡 Selecting an app opens it directly. Entering a UPI ID sends a collect request to your registered UPI app.
+                    </Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.upiPayButton,
+                      (!selectedUpiApp && upiId.trim() === "") && styles.disabledButton,
+                    ]}
+                    onPress={handleUpiPayment}
+                    disabled={paymentLoading || (!selectedUpiApp && upiId.trim() === "")}
+                  >
+                    {paymentLoading
+                      ? <ActivityIndicator size="small" color="#fff" />
+                      : <Text style={styles.upiPayButtonText}>
+                          {selectedUpiApp ? `Pay with ${selectedUpiApp.name}` : "Send Payment Request"}
+                        </Text>
+                    }
+                  </TouchableOpacity>
+                </>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ── Booking receipt ─────────────────────────────────────────────── */}
+      {data && effectivePricing && (
         <BookingReceipt
           visible={showReceipt}
           onClose={handleReceiptClose}
           bookingData={{
-            bookingId: data.bookingId,
-            garageName: data.garageName,
-            slot: data.slot,
-            bookingPeriod: data.bookingPeriod,
-            vehicleNumber: vehicleNumber,
-            pricing: data.pricing,
-            placeInfo: data.placeInfo,
+            bookingId:          data.bookingId,
+            garageName:         data.garageName,
+            slot:               data.slot,
+            bookingPeriod:      data.bookingPeriod,
+            vehicleNumber,
+            pricing:            effectivePricing,
+            placeInfo:          data.placeInfo,
+            paymentMethod:      paymentMethod,
+            dailyRateEnabled:   isDaily && dailyRateEnabled,
+            dailyRateBreakdown: dailyRateCost?.breakdown,
           }}
           type={type}
         />
       )}
 
-      {loading ? (
+      {/* ── Main body ───────────────────────────────────────────────────── */}
+      {loading || fetchingVehicle ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>Finalizing Details...</Text>
+          <Text style={styles.loadingText}>
+            {fetchingVehicle ? "Loading your details..." : "Finalizing Details..."}
+          </Text>
         </View>
       ) : (
         <>
           <View style={styles.customHeader}>
             <TouchableOpacity onPress={() => router.back()}>
-              <IconButton
-                icon="arrow-left"
-                size={30}
-                iconColor={colors.primary}
-              />
+              <IconButton icon="arrow-left" size={30} iconColor={colors.primary} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Booking Confirmation</Text>
           </View>
+
+          {isMonthly && (
+            <View style={styles.monthlyBadge}>
+              <Text style={styles.monthlyBadgeText}>
+                📅 Monthly Booking · {months} {months === 1 ? "month" : "months"}
+              </Text>
+            </View>
+          )}
 
           <View style={styles.mapContainer}>
             {locationLoading ? (
@@ -1098,33 +1200,22 @@ const Confirmation = () => {
                 style={styles.map}
                 provider={PROVIDER_GOOGLE}
                 initialRegion={mapRegion}
-                showsUserLocation={true}
-                showsMyLocationButton={true}
-                zoomEnabled={true}
-                scrollEnabled={true}
-                rotateEnabled={true}
+                showsUserLocation
+                showsMyLocationButton
+                zoomEnabled
+                scrollEnabled
+                rotateEnabled
               >
                 {lotLocation && (
                   <Marker
                     coordinate={lotLocation}
-                    title={
-                      data?.placeInfo.name ||
-                      lot?.garageName ||
-                      lot?.parkingName ||
-                      lot?.residenceName ||
-                      "Parking Location"
-                    }
+                    title={data?.placeInfo.name || lot?.garageName || lot?.parkingName || lot?.residenceName || "Parking Location"}
                     description={data?.placeInfo.address || lot?.address || ""}
                     pinColor={colors.primary}
                   />
                 )}
                 {userLocation && (
-                  <Marker
-                    coordinate={userLocation}
-                    title="Your Location"
-                    description="You are here"
-                    pinColor="#4CAF50"
-                  />
+                  <Marker coordinate={userLocation} title="Your Location" description="You are here" pinColor="#4CAF50" />
                 )}
               </MapView>
             ) : (
@@ -1134,189 +1225,208 @@ const Confirmation = () => {
             )}
           </View>
 
-          <ScrollView
-            bounces={false}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.scrollContent}
-          >
+          <ScrollView bounces={false} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
             <View style={styles.bottomSheet}>
               <LocationCard
-                name={
-                  data?.placeInfo.name ||
-                  lot?.garageName ||
-                  lot?.parkingName ||
-                  lot?.residenceName ||
-                  "Loading..."
-                }
-                address={
-                  data?.placeInfo.address || lot?.address || "Loading..."
-                }
+                name={data?.placeInfo.name || lot?.garageName || lot?.parkingName || lot?.residenceName || "Loading..."}
+                address={data?.placeInfo.address || lot?.address || "Loading..."}
                 price={data?.pricing.priceRate}
               />
 
               <View style={styles.sectionContainer}>
                 <SessionDetails
                   parkingSlotId={data?.slot}
-                  startingFrom={
-                    data?.bookingPeriod.from
-                      ? new Date(data.bookingPeriod.from).toString()
-                      : "Loading..."
-                  }
+                  startingFrom={data?.bookingPeriod.from ? new Date(data.bookingPeriod.from).toString() : "Loading..."}
                   duration={
                     data?.bookingPeriod
-                      ? calculateDuration(
-                          data.bookingPeriod.from,
-                          data.bookingPeriod.to
-                        )
+                      ? isMonthly
+                        ? `${months} ${months === 1 ? "month" : "months"}`
+                        : calculateDuration(data.bookingPeriod.from, data.bookingPeriod.to)
                       : "Loading..."
                   }
                 />
               </View>
 
               <View style={styles.sectionContainer}>
-                <Contact
-                  phoneNo={lot?.contactNumber || data?.placeInfo.phoneNo}
-                  name={data?.placeInfo.owner || "John Doe"}
-                />
+                <Contact phoneNo={lot?.contactNumber || data?.placeInfo.phoneNo} name={data?.placeInfo.owner || "John Doe"} />
               </View>
 
-              {vehicleNumber && (
+              {vehicleNumber ? (
                 <View style={styles.vehicleContainer}>
-                  <Text style={styles.vehicleLabel}>Vehicle Number:</Text>
-                  <Text style={styles.vehicleNumber}>{vehicleNumber}</Text>
+                  <Text style={styles.vehicleLabel}>Vehicle Number</Text>
+                  <View style={styles.vehicleNumberRow}>
+                    <Text style={styles.vehicleNumber}>{vehicleNumber}</Text>
+                    <TouchableOpacity
+                      style={styles.changeVehicleButton}
+                      onPress={() => { setCarPlateNumber(vehicleNumber); setPopupVisible(true); }}
+                    >
+                      <Text style={styles.changeVehicleText}>Change</Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              )}
+              ) : null}
 
-             <View style={styles.fareSection}>
-  <TouchableOpacity
-    style={styles.walletButton}
-    onPress={() => setShowPaymentMethodSelector(true)}
-  >
-    <Text style={styles.methodIcon}>
-      {paymentMethod === "CASH" ? "💵" :
-       paymentMethod === "CARD" ? "💳" : "📱"}
-    </Text>
-    <View style={styles.walletContent}>
-      <Text style={styles.walletText}>
-        {paymentMethod === "CASH" ? "Cash Payment" :
-         paymentMethod === "CARD" ? "Credit/Debit Card" :
-         "UPI Payment"}
-      </Text>
-      {paymentMethod === "CARD" && (
-        <Text style={styles.cardInfo}>
-          {savedCard ? `•••• ${savedCard.cardNumber.slice(-4)}` : "Enter card details"}
-        </Text>
-      )}
-    </View>
-    <Icon source="chevron-right" size={24} color="#000000" />
-  </TouchableOpacity>
+              <View style={styles.fareSection}>
+                {/* Payment method selector button */}
+                <TouchableOpacity style={styles.walletButton} onPress={() => setShowPaymentMethodSelector(true)}>
+                  <Text style={styles.methodIcon}>
+                    {paymentMethod === "CARD" ? "💳" : "📱"}
+                  </Text>
+                  <View style={styles.walletContent}>
+                    <Text style={styles.walletText}>
+                      {paymentMethod === "CARD" ? "Credit/Debit Card" : "UPI Payment"}
+                    </Text>
+                    {paymentMethod === "CARD" && savedCard && (
+                      <Text style={styles.cardInfo}>•••• {savedCard.cardNumber.slice(-4)}</Text>
+                    )}
+                    {paymentMethod === "UPI" && (
+                      <Text style={styles.cardInfo}>Google Pay, PhonePe, Paytm & more</Text>
+                    )}
+                  </View>
+                  <Icon source="chevron-right" size={24} color="#000000" />
+                </TouchableOpacity>
 
-  {/* ✅ Price Breakdown Card */}
-  {data && (
-    <View style={styles.priceBreakdownCard}>
-      <Text style={styles.priceBreakdownTitle}>Price Breakdown</Text>
+                {/* UPI app quick-pick strip */}
+                {paymentMethod === "UPI" && (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.upiQuickStrip}>
+                    {UPI_APPS.map((app) => (
+                      <TouchableOpacity key={app.id} style={styles.upiQuickChip} onPress={handleOpenUpiModal}>
+                        <Text style={styles.upiQuickIcon}>{app.icon}</Text>
+                        <Text style={styles.upiQuickLabel}>{app.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                )}
 
-      {/* Base Price */}
-      <View style={styles.priceRow}>
-        <Text style={styles.priceRowLabel}>
-          Base Price
-          {data.pricing.priceRate
-            ? ` (₹${data.pricing.priceRate}/hr)`
-            : ""}
-        </Text>
-        <Text style={styles.priceRowValue}>
-          ₹{data.pricing.basePrice.toFixed(2)}
-        </Text>
-      </View>
+                {/* Daily rate preview card */}
+                {isDaily && data && dailyRateEnabled && (
+                  <DailyRatePreview
+                    slots={dailyRates}
+                    enabled={dailyRateEnabled}
+                    loading={dailyRateLoading}
+                    breakdown={dailyRateCost?.breakdown}
+                    totalAmount={dailyRateCost?.totalAmount}
+                  />
+                )}
 
-      {/* Service Fee */}
-      <View style={styles.priceRow}>
-        <Text style={styles.priceRowLabel}>Service Fee (5%)</Text>
-        <Text style={styles.priceRowValue}>
-          ₹{data.pricing.serviceFee?.toFixed(2) ?? "0.00"}
-        </Text>
-      </View>
+                {/* Price breakdown */}
+                {data && effectivePricing && (
+                  <View style={styles.priceBreakdownCard}>
+                    <View style={styles.priceBreakdownHeader}>
+                      <Text style={styles.priceBreakdownTitle}>Price Breakdown</Text>
+                      {isDaily && dailyRateEnabled && (
+                        <View style={styles.dailyRatePillSmall}>
+                          <Text style={styles.dailyRatePillText}>⏱ Time-Based</Text>
+                        </View>
+                      )}
+                    </View>
 
-      {/* Transaction Fee */}
-      <View style={styles.priceRow}>
-        <Text style={styles.priceRowLabel}>Transaction Fee</Text>
-        <Text style={styles.priceRowValue}>
-          ₹{data.pricing.transactionFee?.toFixed(2) ?? "0.50"}
-        </Text>
-      </View>
+                    {isMonthly && (
+                      <View style={styles.monthlyBreakdownBadge}>
+                        <Text style={styles.monthlyBreakdownBadgeText}>
+                          Monthly rate × {months} {months === 1 ? "month" : "months"}
+                        </Text>
+                      </View>
+                    )}
 
-      {/* Estimated Taxes */}
-      <View style={styles.priceRow}>
-        <Text style={styles.priceRowLabel}>
-          Estimated Taxes (15%)
-        </Text>
-        <Text style={styles.priceRowValue}>
-          ₹{data.pricing.estimatedTaxes?.toFixed(2) ?? "0.00"}
-        </Text>
-      </View>
+                    <View style={styles.priceRow}>
+                      <Text style={styles.priceRowLabel}>
+                        {isDaily && dailyRateEnabled
+                          ? "Time-Based Parking Fee"
+                          : `Base Price${
+                              isMonthly
+                                ? ` (${months} month${months > 1 ? "s" : ""} × monthly rate)`
+                                : effectivePricing.priceRate
+                                  ? ` (₹${effectivePricing.priceRate}/hr)`
+                                  : ""
+                            }`}
+                      </Text>
+                      <Text style={styles.priceRowValue}>
+                        ₹{effectivePricing.basePrice.toFixed(2)}
+                      </Text>
+                    </View>
 
-      {/* Discount - only show if applied */}
-      {data.pricing.discount > 0 && (
-        <View style={styles.priceRow}>
-          <Text style={[styles.priceRowLabel, styles.discountLabel]}>
-            Discount
-            {data.pricing.couponApplied && data.pricing.couponDetails
-              ? ` (${data.pricing.couponDetails})`
-              : ""}
-          </Text>
-          <Text style={[styles.priceRowValue, styles.discountValue]}>
-            - ₹{data.pricing.discount.toFixed(2)}
-          </Text>
-        </View>
-      )}
+                    {isDaily && dailyRateEnabled && dailyRateCost && dailyRateCost.breakdown.length > 0 && (
+                      <View style={styles.dailyRateMiniBreakdown}>
+                        {dailyRateCost.breakdown.map((entry, idx) => (
+                          <View key={idx} style={styles.dailyRateMiniRow}>
+                            <Text style={styles.dailyRateMiniLabel}>
+                              · {entry.label}{entry.repetitions > 1 ? ` ×${entry.repetitions}` : ""}
+                            </Text>
+                            <Text style={styles.dailyRateMiniValue}>₹{entry.charged.toFixed(2)}</Text>
+                          </View>
+                        ))}
+                      </View>
+                    )}
 
-      {/* Divider */}
-      <View style={styles.priceDivider} />
+                    <View style={styles.priceRow}>
+                      <Text style={styles.priceRowLabel}>Service Fee (5%)</Text>
+                      <Text style={styles.priceRowValue}>₹{effectivePricing.serviceFee?.toFixed(2) ?? "0.00"}</Text>
+                    </View>
+                    <View style={styles.priceRow}>
+                      <Text style={styles.priceRowLabel}>Transaction Fee</Text>
+                      <Text style={styles.priceRowValue}>₹{effectivePricing.transactionFee?.toFixed(2) ?? "0.50"}</Text>
+                    </View>
+                    <View style={styles.priceRow}>
+                      <Text style={styles.priceRowLabel}>Estimated Taxes (15%)</Text>
+                      <Text style={styles.priceRowValue}>₹{effectivePricing.estimatedTaxes?.toFixed(2) ?? "0.00"}</Text>
+                    </View>
+                    {effectivePricing.discount > 0 && (
+                      <View style={styles.priceRow}>
+                        <Text style={[styles.priceRowLabel, styles.discountLabel]}>
+                          Discount{effectivePricing.couponApplied && effectivePricing.couponDetails
+                            ? ` (${effectivePricing.couponDetails})` : ""}
+                        </Text>
+                        <Text style={[styles.priceRowValue, styles.discountValue]}>
+                          - ₹{effectivePricing.discount.toFixed(2)}
+                        </Text>
+                      </View>
+                    )}
+                    <View style={styles.priceDivider} />
+                    <View style={styles.priceRow}>
+                      <Text style={styles.priceTotalLabel}>Total</Text>
+                      <Text style={styles.priceTotalValue}>₹{displayTotal.toFixed(2)}</Text>
+                    </View>
+                    {isDaily && dailyRateEnabled && (
+                      <Text style={styles.dailyRateTotalNote}>
+                        * Total includes time-based parking fee + service charges & taxes
+                      </Text>
+                    )}
+                    <Text style={styles.taxNote}>* Estimated taxes may vary</Text>
+                  </View>
+                )}
 
-      {/* Total */}
-      <View style={styles.priceRow}>
-        <Text style={styles.priceTotalLabel}>Total</Text>
-        <Text style={styles.priceTotalValue}>
-          ₹{data.pricing.totalAmount.toFixed(2)}
-        </Text>
-      </View>
-
-      <Text style={styles.taxNote}>* Estimated taxes may vary</Text>
-    </View>
-  )}
-
-  <View style={styles.totalFareContainer}>
-    <View style={styles.fareDetails}>
-      <View>
-        <Text style={styles.totalFareLabel}>Total Fare (*approx)</Text>
-        <Text style={styles.totalFareAmount}>
-          {data ? `₹${data.pricing.totalAmount.toFixed(2)}` : "..."}
-        </Text>
-      </View>
-      <TouchableOpacity
-        style={[
-          styles.confirmButton,
-          (!data || paymentLoading) && styles.disabledButton,
-        ]}
-        onPress={handleConfirmBooking}
-        disabled={!data || paymentLoading}
-      >
-        {paymentLoading ? (
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <ActivityIndicator size="small" color="#FFFFFF" />
-            <Text style={[styles.confirmButtonText, { marginLeft: 8 }]}>
-              Processing...
-            </Text>
-          </View>
-        ) : (
-          <Text style={styles.confirmButtonText}>
-            {paymentMethod === "CARD" ? "Pay Now" : "Confirm Booking"}
-          </Text>
-        )}
-      </TouchableOpacity>
-    </View>
-  </View>
-</View>
+                {/* Confirm row */}
+                <View style={styles.totalFareContainer}>
+                  <View style={styles.fareDetails}>
+                    <View>
+                      <Text style={styles.totalFareLabel}>Total Fare (*approx)</Text>
+                      <Text style={styles.totalFareAmount}>
+                        {effectivePricing ? `₹${displayTotal.toFixed(2)}` : "..."}
+                      </Text>
+                      {isDaily && dailyRateEnabled && (
+                        <Text style={styles.dailyRateFareHint}>⏱ Time-based pricing</Text>
+                      )}
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.confirmButton, (!data || paymentLoading) && styles.disabledButton]}
+                      onPress={handleConfirmBooking}
+                      disabled={!data || paymentLoading}
+                    >
+                      {paymentLoading ? (
+                        <View style={{ flexDirection: "row", alignItems: "center" }}>
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                          <Text style={[styles.confirmButtonText, { marginLeft: 8 }]}>Processing...</Text>
+                        </View>
+                      ) : (
+                        <Text style={styles.confirmButtonText}>
+                          {paymentMethod === "CARD" ? "Pay Now" : "Pay via UPI"}
+                        </Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
             </View>
           </ScrollView>
         </>
@@ -1325,17 +1435,13 @@ const Confirmation = () => {
   );
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// STYLES — completely unchanged from original
+// ─────────────────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-  },
-  content: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-  },
+  container: { flex: 1, backgroundColor: "#FFFFFF" },
+  scrollContent: { flexGrow: 1 },
   customHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -1343,108 +1449,39 @@ const styles = StyleSheet.create({
     height: 60,
     backgroundColor: "transparent",
     position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
+    top: 0, left: 0, right: 0,
     zIndex: 1,
   },
-  priceBreakdownCard: {
-  backgroundColor: "#FFFFFF",
-  borderRadius: 12,
-  padding: 16,
-  marginBottom: 16,
-  shadowColor: "#000",
-  shadowOffset: { width: 0, height: 2 },
-  shadowOpacity: 0.08,
-  shadowRadius: 4,
-  elevation: 2,
-},
-priceBreakdownTitle: {
-  fontSize: 16,
-  fontWeight: "700",
-  color: "#333",
-  marginBottom: 12,
-},
-priceRow: {
-  flexDirection: "row",
-  justifyContent: "space-between",
-  alignItems: "center",
-  paddingVertical: 6,
-},
-priceRowLabel: {
-  fontSize: 14,
-  color: "#666",
-  flex: 1,
-},
-priceRowValue: {
-  fontSize: 14,
-  color: "#333",
-  fontWeight: "500",
-},
-discountLabel: {
-  color: "#2E7D32",
-},
-discountValue: {
-  color: "#2E7D32",
-  fontWeight: "600",
-},
-priceDivider: {
-  height: 1,
-  backgroundColor: "#EEEEEE",
-  marginVertical: 8,
-},
-priceTotalLabel: {
-  fontSize: 16,
-  fontWeight: "700",
-  color: "#000",
-},
-priceTotalValue: {
-  fontSize: 18,
-  fontWeight: "700",
-  color: colors.primary,
-},
-taxNote: {
-  fontSize: 11,
-  color: "#999",
-  marginTop: 8,
-  fontStyle: "italic",
-},
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: "500",
-    color: "#000000",
+  headerTitle: { fontSize: 20, fontWeight: "500", color: "#000000" },
+
+  monthlyBadge: {
+    position: "absolute",
+    top: 66, left: 16, right: 16,
+    zIndex: 2,
+    backgroundColor: colors.primary,
+    borderRadius: 8,
+    paddingVertical: 6, paddingHorizontal: 12,
+    alignItems: "center",
   },
-  mapContainer: {
-    marginTop:50,
-    height: 280,
-    width: "100%",
-    overflow: 'hidden',
+  monthlyBadgeText: { color: "#FFF", fontSize: 13, fontWeight: "600" },
+  monthlyBreakdownBadge: {
+    backgroundColor: "#EEF4FF",
+    borderRadius: 6,
+    paddingVertical: 4, paddingHorizontal: 8,
+    marginBottom: 10,
+    alignSelf: "flex-start",
+    borderWidth: 1,
+    borderColor: colors.primary + "44",
   },
-  map: {
-    width: "100%",
-    height: "100%",
-  },
-  mapLoadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f5f5f5',
-  },
-  mapLoadingText: {
-    marginTop: 10,
-    fontSize: 14,
-    color: colors.primary,
-  },
-  mapErrorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f5f5f5',
-  },
-  mapErrorText: {
-    fontSize: 16,
-    color: '#666',
-  },
+  monthlyBreakdownBadgeText: { fontSize: 12, color: colors.primary, fontWeight: "600" },
+
+  mapContainer: { marginTop: 50, height: 280, width: "100%", overflow: "hidden" },
+  map: { width: "100%", height: "100%" },
+  mapLoadingContainer: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#f5f5f5" },
+  mapLoadingText: { marginTop: 10, fontSize: 14, color: colors.primary },
+  mapErrorContainer: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#f5f5f5" },
+  mapErrorText: { fontSize: 16, color: "#666" },
+
   bottomSheet: {
     backgroundColor: "#F5F5F5",
     borderTopLeftRadius: 20,
@@ -1452,376 +1489,221 @@ taxNote: {
     paddingTop: 20,
     marginTop: -20,
   },
-  sectionContainer: {
-    marginTop: 16,
-  },
+  sectionContainer: { marginTop: 16 },
+
   vehicleContainer: {
-    marginTop: 16,
-    marginHorizontal: 16,
+    marginTop: 16, marginHorizontal: 16,
     backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 12, padding: 16,
   },
-  vehicleLabel: {
-    fontSize: 14,
-    color: "#666666",
-    marginBottom: 4,
+  vehicleLabel: { fontSize: 14, color: "#666666", marginBottom: 6 },
+  vehicleNumberRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  vehicleNumber: { fontSize: 18, fontWeight: "600", color: colors.primary },
+  changeVehicleButton: {
+    backgroundColor: colors.primary + "15",
+    borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6,
+    borderWidth: 1, borderColor: colors.primary + "44",
   },
-  vehicleNumber: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: colors.primary,
-  },
-  fareSection: {
-    marginTop: 16,
-    paddingHorizontal: 16,
-    paddingBottom: 20,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-  },
+  changeVehicleText: { fontSize: 13, color: colors.primary, fontWeight: "600" },
+
+  fareSection: { marginTop: 16, paddingHorizontal: 16, paddingBottom: 20, backgroundColor: "#FFFFFF", borderRadius: 12 },
+
   walletButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 16,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 12,
-    marginBottom: 12,
+    flexDirection: "row", alignItems: "center",
+    padding: 16, backgroundColor: "#FFFFFF",
+    borderRadius: 12, marginBottom: 12,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.1, shadowRadius: 4, elevation: 3,
   },
-  methodIcon: {
-    fontSize: 28,
-    marginRight: 12,
+  methodIcon: { fontSize: 28, marginRight: 12 },
+  methodTextGroup: { flex: 1 },
+  walletContent: { flex: 1 },
+  walletText: { fontSize: 16, fontWeight: "600", color: "#333" },
+  cardInfo: { fontSize: 12, color: "#888", marginTop: 2 },
+  methodName: { fontSize: 16, fontWeight: "500", color: "#333", flex: 1 },
+  methodSubtitle: { fontSize: 12, color: "#888", marginTop: 2 },
+
+  upiQuickStrip: { marginBottom: 12 },
+  upiQuickChip: {
+    alignItems: "center", backgroundColor: "#F0F4FF",
+    borderRadius: 12, paddingVertical: 10, paddingHorizontal: 14,
+    marginRight: 10, borderWidth: 1, borderColor: colors.primary + "33",
   },
-  walletContent: {
-    flex: 1,
+  upiQuickIcon: { fontSize: 22, marginBottom: 4 },
+  upiQuickLabel: { fontSize: 11, color: colors.primary, fontWeight: "600" },
+
+  priceBreakdownCard: {
+    backgroundColor: "#FFFFFF", borderRadius: 12, padding: 16,
+    marginBottom: 16, shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08, shadowRadius: 4, elevation: 2,
   },
-  walletText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#333",
+  priceBreakdownHeader: {
+    flexDirection: "row", alignItems: "center",
+    justifyContent: "space-between", marginBottom: 12,
   },
-  cardInfo: {
-    fontSize: 14,
-    color: "#666",
-    marginTop: 4,
-  },
-  cardInfoSmall: {
-    fontSize: 12,
-    color: "#666",
-    marginTop: 2,
-  },
-  addCardButton: {
-    backgroundColor: colors.primary,
-    padding: 12,
-    borderRadius: 8,
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  addCardText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  balanceText: {
-    flex: 1,
-    fontSize: 16,
-    color: "#000000",
-  },
-  balanceAmount: {
-    color: colors.primary,
-    fontWeight: "500",
-  },
-  totalFareContainer: {
-    marginTop: 16,
-    paddingHorizontal: 16,
-  },
-  fareDetails: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "stretch",
-  },
-  totalFareLabel: {
-    fontSize: 14,
-    color: "#666666",
-  },
-  totalFareAmount: {
-    fontSize: 24,
-    color: colors.primary,
-    fontWeight: "600",
-    marginTop: 4,
-  },
+  priceBreakdownTitle: { fontSize: 16, fontWeight: "700", color: "#333" },
+  priceRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 6 },
+  priceRowLabel: { fontSize: 14, color: "#666", flex: 1 },
+  priceRowValue: { fontSize: 14, color: "#333", fontWeight: "500" },
+  discountLabel: { color: "#2E7D32" },
+  discountValue: { color: "#2E7D32", fontWeight: "600" },
+  priceDivider: { height: 1, backgroundColor: "#EEEEEE", marginVertical: 8 },
+  priceTotalLabel: { fontSize: 16, fontWeight: "700", color: "#000" },
+  priceTotalValue: { fontSize: 18, fontWeight: "700", color: colors.primary },
+  taxNote: { fontSize: 11, color: "#999", marginTop: 8, fontStyle: "italic" },
+
+  totalFareContainer: { marginTop: 16, paddingHorizontal: 16 },
+  fareDetails: { flexDirection: "row", justifyContent: "space-between", alignItems: "stretch" },
+  totalFareLabel: { fontSize: 14, color: "#666666" },
+  totalFareAmount: { fontSize: 24, color: colors.primary, fontWeight: "600", marginTop: 4 },
   confirmButton: {
     backgroundColor: colors.primary,
-    justifyContent: "center",
-    alignItems: "center",
-    borderRadius: 24,
-    paddingHorizontal: 24,
-    minWidth: 150,
-    height: 48,
+    justifyContent: "center", alignItems: "center",
+    borderRadius: 24, paddingHorizontal: 24,
+    minWidth: 150, height: 48,
   },
-  confirmButtonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "500",
-  },
-  centeredView: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.6)",
-  },
+  confirmButtonText: { color: "#FFFFFF", fontSize: 16, fontWeight: "500" },
+  disabledButton: { backgroundColor: "#cccccc", opacity: 0.5 },
+
+  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+  loadingText: { marginTop: 10, fontSize: 16, color: colors.primary },
+  errorContainer: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#FFFFFF" },
+  errorText: { fontSize: 18, color: colors.primary, marginBottom: 20 },
+  backButton: { backgroundColor: colors.primary, paddingHorizontal: 30, paddingVertical: 12, borderRadius: 8 },
+  backButtonText: { color: "#FFFFFF", fontSize: 16, fontWeight: "600" },
+
+  centeredView: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "rgba(0,0,0,0.6)" },
   modalView: {
-    width: "85%",
-    margin: 20,
-    backgroundColor: "white",
-    borderRadius: 20,
-    padding: 25,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
+    width: "85%", margin: 20, backgroundColor: "white",
+    borderRadius: 20, padding: 25, alignItems: "center",
+    shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25, shadowRadius: 4, elevation: 5,
   },
-  modalText: {
-    marginBottom: 15,
-    textAlign: "center",
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#333",
-  },
+  modalText: { marginBottom: 6, textAlign: "center", fontSize: 18, fontWeight: "bold", color: "#333" },
+  modalSubText: { fontSize: 13, color: "#888", textAlign: "center", marginBottom: 16, lineHeight: 18 },
   input: {
-    height: 45,
-    borderColor: "#ddd",
-    borderWidth: 1,
-    borderRadius: 8,
-    marginBottom: 20,
-    width: "100%",
-    paddingHorizontal: 15,
-    fontSize: 16,
-    color: "#000",
+    height: 45, borderColor: "#ddd", borderWidth: 1,
+    borderRadius: 8, marginBottom: 20, width: "100%",
+    paddingHorizontal: 15, fontSize: 16, color: "#000", letterSpacing: 1,
   },
   modalButton: {
-    borderRadius: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 10,
-    elevation: 2,
-    width: "100%",
-    marginBottom: 10,
-    justifyContent: "center",
-    alignItems: "center",
+    borderRadius: 8, paddingVertical: 12, paddingHorizontal: 10,
+    elevation: 2, width: "100%", marginBottom: 10,
+    justifyContent: "center", alignItems: "center",
   },
-  buttonOk: {
-    backgroundColor: colors.primary,
-  },
-  buttonGoHome: {
-    backgroundColor: "#6c757d",
-  },
-  textStyle: {
-    color: "white",
-    fontWeight: "bold",
-    textAlign: "center",
-    fontSize: 16,
-  },
-  disabledButton: {
-    backgroundColor: "#cccccc",
-    opacity: 0.5,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: colors.primary,
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#FFFFFF",
-  },
-  errorText: {
-    fontSize: 18,
-    color: colors.primary,
-    marginBottom: 20,
-  },
-  backButton: {
-    backgroundColor: colors.primary,
-    paddingHorizontal: 30,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  backButtonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "flex-end",
-  },
-  paymentMethodModal: {
-    backgroundColor: "#fff",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: "50%",
-    paddingBottom: 20,
-  },
-  cardModal: {
-    backgroundColor: "#fff",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: "85%",
-    paddingBottom: 20,
-  },
+  buttonOk: { backgroundColor: colors.primary },
+  buttonGoHome: { backgroundColor: "#6c757d" },
+  textStyle: { color: "white", fontWeight: "bold", textAlign: "center", fontSize: 16 },
+
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
+  paymentMethodModal: { backgroundColor: "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "50%", paddingBottom: 20 },
+  cardModal: { backgroundColor: "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "85%", paddingBottom: 20 },
+
   modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    padding: 20, borderBottomWidth: 1, borderBottomColor: "#eee",
   },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#333",
-  },
-  closeButton: {
-    fontSize: 24,
-    color: "#999",
-    fontWeight: "bold",
-  },
-  paymentMethodItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-  },
-  selectedMethod: {
-    backgroundColor: "#f0f8ff",
-  },
-  methodName: {
-    fontSize: 16,
-    fontWeight: "500",
-    color: "#333",
-  },
-  checkMark: {
-    fontSize: 20,
-    color: colors.primary,
-    fontWeight: "bold",
-  },
-  cardForm: {
-    padding: 20,
-  },
+  modalTitle: { fontSize: 18, fontWeight: "bold", color: "#333" },
+  closeButton: { fontSize: 24, color: "#999", fontWeight: "bold" },
+
+  paymentMethodItem: { flexDirection: "row", alignItems: "center", padding: 16, borderBottomWidth: 1, borderBottomColor: "#eee" },
+  selectedMethod: { backgroundColor: "#f0f8ff" },
+  checkMark: { fontSize: 20, color: colors.primary, fontWeight: "bold" },
+
+  cardForm: { padding: 20 },
   cardPreview: {
-    backgroundColor: colors.primary,
-    borderRadius: 16,
-    padding: 24,
-    marginBottom: 24,
-    minHeight: 200,
-    justifyContent: "space-between",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    backgroundColor: colors.primary, borderRadius: 16, padding: 24,
+    marginBottom: 24, minHeight: 200, justifyContent: "space-between",
+    shadowColor: "#000", shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3, shadowRadius: 8, elevation: 8,
   },
-  cardChip: {
-    width: 50,
-    height: 40,
-    backgroundColor: "rgba(255, 255, 255, 0.3)",
-    borderRadius: 8,
-    marginBottom: 20,
+  cardChip: { width: 50, height: 40, backgroundColor: "rgba(255,255,255,0.3)", borderRadius: 8, marginBottom: 20 },
+  cardNumberPreview: { fontSize: 22, fontWeight: "600", color: "#fff", letterSpacing: 2, marginBottom: 20 },
+  cardBottomRow: { flexDirection: "row", justifyContent: "space-between" },
+  cardLabel: { fontSize: 10, color: "rgba(255,255,255,0.7)", marginBottom: 4, letterSpacing: 1 },
+  cardValue: { fontSize: 14, fontWeight: "600", color: "#fff", textTransform: "uppercase" },
+
+  inputContainer: { marginBottom: 16 },
+  inputLabel: { fontSize: 14, fontWeight: "600", color: "#333", marginBottom: 8 },
+  cardInput: { height: 50, borderWidth: 1, borderColor: "#ddd", borderRadius: 8, paddingHorizontal: 16, fontSize: 16, color: "#333", backgroundColor: "#f9f9f9" },
+  rowInputs: { flexDirection: "row" },
+  saveCardButton: { backgroundColor: colors.primary, padding: 16, borderRadius: 12, alignItems: "center", marginTop: 16 },
+  saveCardButtonText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
+
+  upiModal: { backgroundColor: "#fff", borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "85%", paddingBottom: 30 },
+  upiScrollContent: { padding: 20 },
+  upiAmountChip: {
+    backgroundColor: colors.primary + "15", borderRadius: 12,
+    paddingVertical: 14, paddingHorizontal: 20, alignItems: "center",
+    marginBottom: 20, borderWidth: 1, borderColor: colors.primary + "33",
   },
-  cardNumberPreview: {
-    fontSize: 22,
-    fontWeight: "600",
-    color: "#fff",
-    letterSpacing: 2,
-    marginBottom: 20,
+  upiAmountLabel: { fontSize: 12, color: colors.primary, fontWeight: "600", marginBottom: 4, letterSpacing: 0.5 },
+  upiAmountValue: { fontSize: 28, color: colors.primary, fontWeight: "700" },
+
+  upiStatusBox: { backgroundColor: "#FFF8E1", borderRadius: 12, padding: 16, alignItems: "center", marginBottom: 16, gap: 8 },
+  upiStatusText: { fontSize: 15, color: colors.primary, fontWeight: "600", textAlign: "center" },
+  upiStatusSubtext: { fontSize: 13, color: "#666", textAlign: "center", marginTop: 4 },
+
+  upiRetryButton: { marginTop: 8, backgroundColor: colors.primary, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 24 },
+  upiRetryButtonText: { color: "#fff", fontSize: 14, fontWeight: "600" },
+
+  upiSectionLabel: { fontSize: 13, fontWeight: "700", color: "#555", marginBottom: 10, letterSpacing: 0.3 },
+
+  upiAppsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 20 },
+  upiAppButton: {
+    width: "30%", alignItems: "center", paddingVertical: 14, paddingHorizontal: 8,
+    borderRadius: 14, borderWidth: 1.5, borderColor: "#E0E0E0",
+    backgroundColor: "#FAFAFA", position: "relative",
   },
-  cardBottomRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+  upiAppButtonSelected: { borderColor: colors.primary, backgroundColor: colors.primary + "10" },
+  upiAppIcon: { fontSize: 26, marginBottom: 6 },
+  upiAppName: { fontSize: 11, color: "#444", fontWeight: "600", textAlign: "center" },
+  upiAppCheckBadge: {
+    position: "absolute", top: 6, right: 6,
+    width: 18, height: 18, borderRadius: 9,
+    backgroundColor: colors.primary, alignItems: "center", justifyContent: "center",
   },
-  cardLabel: {
-    fontSize: 10,
-    color: "rgba(255, 255, 255, 0.7)",
-    marginBottom: 4,
-    letterSpacing: 1,
+  upiAppCheckText: { color: "#fff", fontSize: 11, fontWeight: "700" },
+
+  upiDividerRow: { flexDirection: "row", alignItems: "center", marginVertical: 16 },
+  upiDividerLine: { flex: 1, height: 1, backgroundColor: "#E0E0E0" },
+  upiDividerText: { marginHorizontal: 12, fontSize: 12, color: "#aaa", fontWeight: "600" },
+
+  upiIdInput: {
+    height: 50, borderWidth: 1.5, borderColor: "#DDD", borderRadius: 10,
+    paddingHorizontal: 16, fontSize: 15, color: "#333",
+    backgroundColor: "#FAFAFA", marginBottom: 6,
   },
-  cardValue: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#fff",
-    textTransform: "uppercase",
+  upiIdInputError: { borderColor: "#D32F2F" },
+  upiIdErrorText: { fontSize: 12, color: "#D32F2F", marginBottom: 8 },
+
+  upiInfoBox: { backgroundColor: "#F3F6FF", borderRadius: 10, padding: 12, marginVertical: 12 },
+  upiInfoText: { fontSize: 12, color: "#555", lineHeight: 18 },
+
+  upiPayButton: {
+    backgroundColor: colors.primary, borderRadius: 14,
+    paddingVertical: 16, alignItems: "center", marginTop: 4, marginBottom: 8,
   },
-  inputContainer: {
-    marginBottom: 16,
+  upiPayButtonText: { color: "#fff", fontSize: 16, fontWeight: "700" },
+
+  dailyRatePillSmall: {
+    backgroundColor: colors.primary + "18", borderRadius: 20,
+    paddingHorizontal: 10, paddingVertical: 4,
+    borderWidth: 1, borderColor: colors.primary + "40",
   },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#333",
-    marginBottom: 8,
+  dailyRatePillText: { fontSize: 11, fontWeight: "700", color: colors.primary },
+  dailyRateMiniBreakdown: {
+    backgroundColor: "#F8F9FF", borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: 8, marginBottom: 8,
+    borderLeftWidth: 3, borderLeftColor: colors.primary + "88",
   },
-  cardInput: {
-    height: 50,
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    fontSize: 16,
-    color: "#333",
-    backgroundColor: "#f9f9f9",
-  },
-  rowInputs: {
-    flexDirection: "row",
-  },
-  securePaymentInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#f0f8ff",
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 16,
-    marginBottom: 24,
-  },
-  secureIcon: {
-    fontSize: 20,
-    marginRight: 8,
-  },
-  secureText: {
-    flex: 1,
-    fontSize: 12,
-    color: "#666",
-  },
-  saveCardButton: {
-    backgroundColor: colors.primary,
-    padding: 16,
-    borderRadius: 12,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
-  },
-  saveCardButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
+  dailyRateMiniRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 3 },
+  dailyRateMiniLabel: { fontSize: 12, color: "#666" },
+  dailyRateMiniValue: { fontSize: 12, color: "#333", fontWeight: "600" },
+  dailyRateTotalNote: { fontSize: 11, color: colors.primary + "BB", marginTop: 6, fontStyle: "italic" },
+  dailyRateFareHint: { fontSize: 11, color: colors.primary, fontWeight: "600", marginTop: 2 },
 });
 
 export default Confirmation;

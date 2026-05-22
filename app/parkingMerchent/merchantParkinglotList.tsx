@@ -8,7 +8,6 @@ import {
     ActivityIndicator,
     FlatList,
     Dimensions,
-    Platform,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -22,6 +21,7 @@ import { ArrowLeft, Plus, Phone } from 'lucide-react-native';
 
 interface IParkingLot {
     _id: string;
+    owner: any;
     parkingName: string;
     address: string;
     images: string[];
@@ -31,6 +31,14 @@ interface IParkingLot {
     email?: string;
     is24x7: boolean;
 }
+
+// Helper to extract a flat array from any API response shape
+const extractList = (responseData: any): any[] => {
+    if (Array.isArray(responseData)) return responseData;
+    if (Array.isArray(responseData?.data)) return responseData.data;
+    if (responseData?.data && typeof responseData.data === 'object') return [responseData.data];
+    return [];
+};
 
 const MerchantParkinglotList = () => {
     const router = useRouter();
@@ -46,19 +54,17 @@ const MerchantParkinglotList = () => {
             setError(null);
 
             const response = await axiosInstance.get('/merchants/parkinglot/search', {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-                params: {
-                    owner: user?._id,
-                },
+                headers: { Authorization: `Bearer ${token}` },
+                params: { owner: user?._id },
             });
 
-            if (response.data && response.data.data) {
-                setParkingLots(response.data.data);
-            } else {
-                setParkingLots([]);
-            }
+            // Log full response to understand its structure
+            console.log('[ParkingLot] Full response:', JSON.stringify(response.data, null, 2));
+
+            const rawList = extractList(response.data);
+            console.log(`[ParkingLot] Parsed ${rawList.length} items from response`);
+
+            setParkingLots(rawList);
         } catch (err: any) {
             console.error('Error fetching parking lots:', err.response?.data || err.message);
             setError('Failed to load parking lots. ' + (err.response?.data?.message || ''));
@@ -74,9 +80,7 @@ const MerchantParkinglotList = () => {
         }, [fetchParkingLots])
     );
 
-    const handleRefresh = () => {
-        fetchParkingLots();
-    };
+    const handleRefresh = () => fetchParkingLots();
 
     const handleAddParkingLot = () => {
         router.push("/parkingMerchent/registerParkingLot");
@@ -90,20 +94,11 @@ const MerchantParkinglotList = () => {
                 parkingLotData: JSON.stringify(parkingLot),
             }
         });
-        console.log('Navigating to merchantParkingDetails for ID:', parkingLot._id);
     };
 
     const calculateTotalSlots = (spacesList: IParkingLot['spacesList']) => {
         return Object.values(spacesList || {}).reduce((sum, space) => sum + space.count, 0);
     };
-
-    if (isLoading) {
-        return (
-            <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={colors.brandColor} />
-            </View>
-        );
-    }
 
     const renderHeader = () => (
         <View style={styles.header}>
@@ -117,16 +112,21 @@ const MerchantParkinglotList = () => {
         </View>
     );
 
+    if (isLoading) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={colors.brandColor} />
+            </View>
+        );
+    }
+
     if (error) {
         return (
             <SafeAreaView style={styles.container}>
                 {renderHeader()}
                 <View style={styles.errorContainer}>
                     <Text style={styles.errorText}>{error}</Text>
-                    <TouchableOpacity
-                        style={styles.retryButton}
-                        onPress={handleRefresh}
-                    >
+                    <TouchableOpacity style={styles.retryButton} onPress={handleRefresh}>
                         <Text style={styles.retryButtonText}>Retry</Text>
                     </TouchableOpacity>
                 </View>
@@ -138,7 +138,6 @@ const MerchantParkinglotList = () => {
         <SafeAreaView style={styles.container}>
             {renderHeader()}
 
-            {/* Content */}
             {parkingLots.length === 0 ? (
                 <View style={styles.emptyContainer}>
                     <Image
@@ -147,10 +146,7 @@ const MerchantParkinglotList = () => {
                         resizeMode="contain"
                     />
                     <Text style={styles.emptyText}>You don't have any parking lots yet</Text>
-                    <TouchableOpacity
-                        style={styles.addButton}
-                        onPress={handleAddParkingLot}
-                    >
+                    <TouchableOpacity style={styles.addButton} onPress={handleAddParkingLot}>
                         <Text style={styles.addButtonText}>Add Your First Parking Lot</Text>
                     </TouchableOpacity>
                 </View>
@@ -164,7 +160,6 @@ const MerchantParkinglotList = () => {
                             onPress={() => handleParkingLotPress(item)}
                             activeOpacity={0.8}
                         >
-                            {/* Parking Lot Image */}
                             <View style={styles.imageContainer}>
                                 {item.images?.[0] ? (
                                     <Image
@@ -182,7 +177,6 @@ const MerchantParkinglotList = () => {
                                 )}
                             </View>
 
-                            {/* Parking Lot Info */}
                             <View style={styles.infoContainer}>
                                 <Text style={styles.parkingLotName} numberOfLines={1}>
                                     {item.parkingName}
@@ -191,15 +185,13 @@ const MerchantParkinglotList = () => {
                                     {item.address}
                                 </Text>
 
-                                {/* Price and Availability */}
                                 <View style={styles.detailsRow}>
                                     <View style={styles.priceContainer}>
                                         <Text style={styles.priceLabel}>Price:</Text>
                                         <Text style={styles.priceValue}>
-                                            ${item.price.toFixed(2)}/hr
+                                            ${item.price?.toFixed(2)}/hr
                                         </Text>
                                     </View>
-
                                     <View style={styles.slotsContainer}>
                                         <Text style={styles.slotsLabel}>Total Slots:</Text>
                                         <Text style={styles.slotsValue}>
@@ -208,7 +200,6 @@ const MerchantParkinglotList = () => {
                                     </View>
                                 </View>
 
-                                {/* Contact and Status */}
                                 <View style={styles.footerRow}>
                                     <View style={styles.contactContainer}>
                                         <Phone size={16} color={colors.brandColor} />
@@ -216,7 +207,6 @@ const MerchantParkinglotList = () => {
                                             {item.contactNumber}
                                         </Text>
                                     </View>
-
                                     <View style={[
                                         styles.statusBadge,
                                         item.is24x7 ? styles.openBadge : styles.closedBadge,
@@ -242,15 +232,8 @@ const MerchantParkinglotList = () => {
 const cardWidth = Dimensions.get('window').width - responsiveWidth(10);
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#FAFAFA',
-    },
-    loadingContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
+    container: { flex: 1, backgroundColor: '#FAFAFA' },
+    loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -261,15 +244,8 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: colors.lightGray,
     },
-    headerTitle: {
-        fontSize: responsiveFontSize(2.5),
-        fontWeight: 'bold',
-        color: colors.black,
-    },
-    listContent: {
-        paddingHorizontal: responsiveWidth(5),
-        paddingTop: responsiveHeight(2),
-    },
+    headerTitle: { fontSize: responsiveFontSize(2.5), fontWeight: 'bold', color: colors.black },
+    listContent: { paddingHorizontal: responsiveWidth(5), paddingTop: responsiveHeight(2) },
     card: {
         width: cardWidth,
         backgroundColor: '#FFF',
@@ -282,63 +258,18 @@ const styles = StyleSheet.create({
         elevation: 4,
         overflow: 'hidden',
     },
-    imageContainer: {
-        height: responsiveHeight(22),
-        width: '100%',
-        backgroundColor: colors.lightGray,
-    },
-    parkingLotImage: {
-        height: '100%',
-        width: '100%',
-    },
-    infoContainer: {
-        padding: responsiveWidth(4),
-    },
-    parkingLotName: {
-        fontSize: responsiveFontSize(2.2),
-        fontWeight: '700',
-        color: colors.black,
-        marginBottom: responsiveHeight(0.5),
-    },
-    address: {
-        fontSize: responsiveFontSize(1.8),
-        color: colors.gray,
-        marginBottom: responsiveHeight(1.5),
-        lineHeight: responsiveHeight(2.2),
-    },
-    detailsRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginBottom: responsiveHeight(1.5),
-    },
-    priceContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    priceLabel: {
-        fontSize: responsiveFontSize(1.8),
-        color: colors.gray,
-        marginRight: responsiveWidth(1),
-    },
-    priceValue: {
-        fontSize: responsiveFontSize(2),
-        fontWeight: 'bold',
-        color: colors.brandColor,
-    },
-    slotsContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    slotsLabel: {
-        fontSize: responsiveFontSize(1.8),
-        color: colors.gray,
-        marginRight: responsiveWidth(1),
-    },
-    slotsValue: {
-        fontSize: responsiveFontSize(2),
-        fontWeight: 'bold',
-        color: colors.black,
-    },
+    imageContainer: { height: responsiveHeight(22), width: '100%', backgroundColor: colors.lightGray },
+    parkingLotImage: { height: '100%', width: '100%' },
+    infoContainer: { padding: responsiveWidth(4) },
+    parkingLotName: { fontSize: responsiveFontSize(2.2), fontWeight: '700', color: colors.black, marginBottom: responsiveHeight(0.5) },
+    address: { fontSize: responsiveFontSize(1.8), color: colors.gray, marginBottom: responsiveHeight(1.5), lineHeight: responsiveHeight(2.2) },
+    detailsRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: responsiveHeight(1.5) },
+    priceContainer: { flexDirection: 'row', alignItems: 'center' },
+    priceLabel: { fontSize: responsiveFontSize(1.8), color: colors.gray, marginRight: responsiveWidth(1) },
+    priceValue: { fontSize: responsiveFontSize(2), fontWeight: 'bold', color: colors.brandColor },
+    slotsContainer: { flexDirection: 'row', alignItems: 'center' },
+    slotsLabel: { fontSize: responsiveFontSize(1.8), color: colors.gray, marginRight: responsiveWidth(1) },
+    slotsValue: { fontSize: responsiveFontSize(2), fontWeight: 'bold', color: colors.black },
     footerRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
@@ -348,84 +279,21 @@ const styles = StyleSheet.create({
         borderTopColor: '#EEE',
         paddingTop: responsiveHeight(1.5),
     },
-    contactContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        flex: 1,
-        marginRight: responsiveWidth(2),
-    },
-    contactText: {
-        fontSize: responsiveFontSize(1.7),
-        color: colors.gray,
-        marginLeft: responsiveWidth(1.5),
-    },
-    statusBadge: {
-        paddingHorizontal: responsiveWidth(3),
-        paddingVertical: responsiveHeight(0.8),
-        borderRadius: 12,
-    },
-    openBadge: {
-        backgroundColor: '#4CAF50',
-    },
-    closedBadge: {
-        backgroundColor: '#FF9800',
-    },
-    statusText: {
-        fontSize: responsiveFontSize(1.5),
-        fontWeight: 'bold',
-        color: colors.white,
-    },
-    emptyContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        paddingHorizontal: responsiveWidth(10),
-    },
-    emptyImage: {
-        width: responsiveWidth(50),
-        height: responsiveWidth(50),
-        marginBottom: responsiveHeight(3),
-    },
-    emptyText: {
-        fontSize: responsiveFontSize(2.2),
-        color: colors.gray,
-        textAlign: 'center',
-        marginBottom: responsiveHeight(3),
-    },
-    addButton: {
-        backgroundColor: colors.brandColor,
-        paddingVertical: responsiveHeight(1.8),
-        paddingHorizontal: responsiveWidth(8),
-        borderRadius: 10,
-    },
-    addButtonText: {
-        color: '#FFF',
-        fontSize: responsiveFontSize(2),
-        fontWeight: 'bold',
-    },
-    errorContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        paddingHorizontal: responsiveWidth(10),
-    },
-    errorText: {
-        fontSize: responsiveFontSize(1.8),
-        color: colors.error,
-        textAlign: 'center',
-        marginBottom: responsiveHeight(2),
-    },
-    retryButton: {
-        backgroundColor: colors.brandColor,
-        paddingVertical: responsiveHeight(1.5),
-        paddingHorizontal: responsiveWidth(8),
-        borderRadius: 8,
-    },
-    retryButtonText: {
-        color: '#FFF',
-        fontSize: responsiveFontSize(1.8),
-        fontWeight: 'bold',
-    },
+    contactContainer: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: responsiveWidth(2) },
+    contactText: { fontSize: responsiveFontSize(1.7), color: colors.gray, marginLeft: responsiveWidth(1.5) },
+    statusBadge: { paddingHorizontal: responsiveWidth(3), paddingVertical: responsiveHeight(0.8), borderRadius: 12 },
+    openBadge: { backgroundColor: '#4CAF50' },
+    closedBadge: { backgroundColor: '#FF9800' },
+    statusText: { fontSize: responsiveFontSize(1.5), fontWeight: 'bold', color: colors.white },
+    emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: responsiveWidth(10) },
+    emptyImage: { width: responsiveWidth(50), height: responsiveWidth(50), marginBottom: responsiveHeight(3) },
+    emptyText: { fontSize: responsiveFontSize(2.2), color: colors.gray, textAlign: 'center', marginBottom: responsiveHeight(3) },
+    addButton: { backgroundColor: colors.brandColor, paddingVertical: responsiveHeight(1.8), paddingHorizontal: responsiveWidth(8), borderRadius: 10 },
+    addButtonText: { color: '#FFF', fontSize: responsiveFontSize(2), fontWeight: 'bold' },
+    errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: responsiveWidth(10) },
+    errorText: { fontSize: responsiveFontSize(1.8), color: colors.error, textAlign: 'center', marginBottom: responsiveHeight(2) },
+    retryButton: { backgroundColor: colors.brandColor, paddingVertical: responsiveHeight(1.5), paddingHorizontal: responsiveWidth(8), borderRadius: 8 },
+    retryButtonText: { color: '#FFF', fontSize: responsiveFontSize(1.8), fontWeight: 'bold' },
 });
 
 export default MerchantParkinglotList;

@@ -96,11 +96,11 @@ interface DriverProfile {
 const DriverProfileScreen: React.FC = () => {
   const router = useRouter();
   const { token, user, isAuthenticated } = useSelector(
-    (state: RootState) => state.auth
+    (state: RootState) => state.auth,
   );
 
   const [driverProfile, setDriverProfile] = useState<DriverProfile | null>(
-    null
+    null,
   );
   const [loading, setLoading] = useState<boolean>(false);
   const [refreshing, setRefreshing] = useState<boolean>(false);
@@ -121,7 +121,7 @@ const DriverProfileScreen: React.FC = () => {
 
   const makeApiRequest = async (
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
   ) => {
     const API_BASE_URL = "https://vervoer-backend2.onrender.com/api";
     const url = `${API_BASE_URL}${endpoint}`;
@@ -151,7 +151,7 @@ const DriverProfileScreen: React.FC = () => {
 
       if (!response.ok) {
         throw new Error(
-          data.message || `HTTP ${response.status}: ${response.statusText}`
+          data.message || `HTTP ${response.status}: ${response.statusText}`,
         );
       }
 
@@ -402,7 +402,7 @@ const DriverProfileScreen: React.FC = () => {
                 <TouchableOpacity
                   onPress={() =>
                     openImageModal(
-                      driverProfile.vehicleInfo.vehicleInspectionImage
+                      driverProfile.vehicleInfo.vehicleInspectionImage,
                     )
                   }
                 >
@@ -419,7 +419,7 @@ const DriverProfileScreen: React.FC = () => {
                 <TouchableOpacity
                   onPress={() =>
                     openImageModal(
-                      driverProfile.vehicleInfo.vehicleInsuranceImage
+                      driverProfile.vehicleInfo.vehicleInsuranceImage,
                     )
                   }
                 >
@@ -556,7 +556,7 @@ const DriverProfileScreen: React.FC = () => {
                 <TouchableOpacity
                   onPress={() =>
                     openImageModal(
-                      driverProfile.attestation.electronicSignature
+                      driverProfile.attestation.electronicSignature,
                     )
                   }
                 >

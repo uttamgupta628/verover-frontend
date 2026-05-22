@@ -127,14 +127,11 @@ export const loginWithEmailPassword = (
   return async (dispatch: AppDispatch) => {
     dispatch(loginStart());
     try {
-      console.log("Login with Email/Password");
       const response = await axiosInstance.post("/users/login", {
         email,
         password,
         userType,
       });
-
-      console.log("Response:", response.data);
 
       const userData = {
         ...response.data.user,
@@ -143,14 +140,11 @@ export const loginWithEmailPassword = (
 
       dispatch(loginSuccess(userData));
 
-      // ⭐ SYNC PROFILE DATA TO PROFILE SLICE
       if (userData.firstName || userData.lastName) {
-        dispatch(
-          setProfileName({
-            firstName: userData.firstName || "",
-            lastName: userData.lastName || "",
-          })
-        );
+        dispatch(setProfileName({
+          firstName: userData.firstName || "",
+          lastName: userData.lastName || "",
+        }));
       }
 
       if (userData.profileImage) {
@@ -158,17 +152,34 @@ export const loginWithEmailPassword = (
       }
 
       return response;
+
     } catch (error: unknown) {
-      console.log("Login Error:", error);
+      // ── Fallback: try sub-account login ──────────────────────────
+      if (userType === "merchant") {
+        try {
+          const subRes = await axiosInstance.post("/merchants/sub-account/login", {
+            email,
+            password,
+          });
+
+          const subData = {
+            email,
+            token: subRes.data.data.token,
+            userType: "merchant",
+          };
+
+          dispatch(loginSuccess(subData));
+          return subRes;
+
+        } catch {
+          // sub-account login also failed, fall through to original error
+        }
+      }
+
       if (error instanceof AxiosError) {
-        console.log(error.response?.data);
-        dispatch(
-          loginFailure(
-            error.response?.data?.message ||
-              error.response?.data ||
-              "Login failed"
-          )
-        );
+        dispatch(loginFailure(
+          error.response?.data?.message || "Login failed"
+        ));
         throw error;
       } else if (error instanceof Error) {
         dispatch(loginFailure(error.message));

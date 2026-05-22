@@ -182,8 +182,15 @@ const PickupDeliveryScreen = () => {
     '21', '22', '23', '24', '25', '26', '27', '28', '29', '30',
   ];
   
-  const pickupTimes: string[] = ['08:00AM', '09:00AM', '10:00AM', '11:00AM', '12:00PM'];
-  const deliveryTimes: string[] = ['01:00PM', '02:00PM', '03:00PM', '04:00PM', '05:00PM'];
+  const pickupTimes: string[] = [
+  '12:00AM','01:00AM','02:00AM','03:00AM','04:00AM','05:00AM',
+  '06:00AM','07:00AM','08:00AM','09:00AM','10:00AM','11:00AM'
+];
+
+const deliveryTimes: string[] = [
+  '12:00PM','01:00PM','02:00PM','03:00PM','04:00PM','05:00PM',
+  '06:00PM','07:00PM','08:00PM','09:00PM','10:00PM','11:00PM'
+];
   
   const months: { label: string; value: string }[] = [
     { label: 'January', value: 'January' },

@@ -7,7 +7,6 @@ import {
     StyleSheet,
     ActivityIndicator,
     FlatList,
-    Platform,
 } from 'react-native';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -19,9 +18,9 @@ import { RootState } from '../../components/redux/store';
 import axiosInstance from '../../api/axios';
 import { ArrowLeft, Plus, Phone, Video } from 'lucide-react-native';
 
-// Interface for the residence data displayed in the list
 interface IResidence {
     _id: string;
+    owner: any;
     residenceName: string;
     address: string;
     images: string[];
@@ -31,6 +30,14 @@ interface IResidence {
     securityCamera: boolean;
 }
 
+// Helper to extract a flat array from any API response shape
+const extractList = (responseData: any): any[] => {
+    if (Array.isArray(responseData)) return responseData;
+    if (Array.isArray(responseData?.data)) return responseData.data;
+    if (responseData?.data && typeof responseData.data === 'object') return [responseData.data];
+    return [];
+};
+
 const MerchantResidenceList = () => {
     const router = useRouter();
     const { token, user } = useSelector((state: RootState) => state.auth);
@@ -39,25 +46,22 @@ const MerchantResidenceList = () => {
     const [error, setError] = useState<string | null>(null);
     const [refreshing, setRefreshing] = useState(false);
 
-    // Fetch residences owned by the current merchant
     const fetchResidences = useCallback(async () => {
         setRefreshing(true);
         setError(null);
         try {
             const response = await axiosInstance.get('/merchants/residence/search', {
-                headers: {
-                    Authorization: `Bearer ${token}`,
-                },
-                params: {
-                    owner: user?._id,
-                },
+                headers: { Authorization: `Bearer ${token}` },
+                params: { owner: user?._id },
             });
 
-            if (response.data && response.data.data) {
-                setResidences(response.data.data);
-            } else {
-                setResidences([]);
-            }
+            // Log full response to understand its structure
+            console.log('[Residence] Full response:', JSON.stringify(response.data, null, 2));
+
+            const rawList = extractList(response.data);
+            console.log(`[Residence] Parsed ${rawList.length} items from response`);
+
+            setResidences(rawList);
         } catch (err: any) {
             console.error('Error fetching residences:', err.response?.data || err.message);
             setError('Failed to load residences. ' + (err.response?.data?.message || ''));
@@ -67,16 +71,13 @@ const MerchantResidenceList = () => {
         }
     }, [token, user?._id]);
 
-    // useFocusEffect ensures data is re-fetched every time the screen is focused
     useFocusEffect(
         useCallback(() => {
             fetchResidences();
         }, [fetchResidences])
     );
 
-    const handleRefresh = () => {
-        fetchResidences();
-    };
+    const handleRefresh = () => fetchResidences();
 
     const handleAddResidence = () => {
         router.push("/parkingMerchent/registerResidence");
@@ -90,16 +91,7 @@ const MerchantResidenceList = () => {
                 residenceData: JSON.stringify(residence),
             }
         });
-        console.log('residenceID', residence._id);
     };
-
-    if (isLoading) {
-        return (
-            <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={colors.brandColor} />
-            </View>
-        );
-    }
 
     const renderHeader = () => (
         <View style={styles.header}>
@@ -112,6 +104,14 @@ const MerchantResidenceList = () => {
             </TouchableOpacity>
         </View>
     );
+
+    if (isLoading) {
+        return (
+            <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={colors.brandColor} />
+            </View>
+        );
+    }
 
     if (error) {
         return (
@@ -154,8 +154,8 @@ const MerchantResidenceList = () => {
                         >
                             <View style={styles.imageContainer}>
                                 {item.images?.[0] ? (
-                                    <Image 
-                                        source={{ uri: item.images[0] }} 
+                                    <Image
+                                        source={{ uri: item.images[0] }}
                                         style={styles.residenceImage}
                                         onError={(e) => console.log('Image load error:', e.nativeEvent.error)}
                                     />
@@ -178,7 +178,7 @@ const MerchantResidenceList = () => {
                                     <View style={styles.priceContainer}>
                                         <Text style={styles.priceLabel}>From:</Text>
                                         <Text style={styles.priceValue}>
-                                            ${item.price.toFixed(2)}/night
+                                            ${item.price?.toFixed(2)}/night
                                         </Text>
                                     </View>
                                     {item.securityCamera && (
@@ -197,7 +197,7 @@ const MerchantResidenceList = () => {
                                         </Text>
                                     </View>
                                     <View style={[
-                                        styles.statusBadge, 
+                                        styles.statusBadge,
                                         item.is24x7 ? styles.openBadge : styles.closedBadge
                                     ]}>
                                         <Text style={styles.statusText}>
@@ -219,15 +219,8 @@ const MerchantResidenceList = () => {
 };
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#F8F9FA',
-    },
-    loadingContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
+    container: { flex: 1, backgroundColor: '#F8F9FA' },
+    loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -238,15 +231,8 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: colors.lightGray,
     },
-    headerTitle: {
-        fontSize: responsiveFontSize(2.5),
-        fontWeight: 'bold',
-        color: colors.black,
-    },
-    listContent: {
-        paddingHorizontal: responsiveWidth(5),
-        paddingTop: responsiveHeight(2),
-    },
+    headerTitle: { fontSize: responsiveFontSize(2.5), fontWeight: 'bold', color: colors.black },
+    listContent: { paddingHorizontal: responsiveWidth(5), paddingTop: responsiveHeight(2) },
     card: {
         width: '100%',
         backgroundColor: '#FFF',
@@ -259,75 +245,19 @@ const styles = StyleSheet.create({
         elevation: 4,
         overflow: 'hidden',
     },
-    imageContainer: {
-        height: responsiveHeight(22),
-        width: '100%',
-        backgroundColor: colors.lightGray,
-    },
-    residenceImage: {
-        height: '100%',
-        width: '100%',
-        resizeMode: 'cover',
-    },
-    placeholderImage: {
-        height: '100%',
-        width: '100%',
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: '#E9ECEF',
-    },
-    placeholderText: {
-        fontSize: 80,
-    },
-    infoContainer: {
-        padding: responsiveWidth(4),
-    },
-    residenceName: {
-        fontSize: responsiveFontSize(2.2),
-        fontWeight: '700',
-        color: colors.black,
-        marginBottom: responsiveHeight(0.5),
-    },
-    address: {
-        fontSize: responsiveFontSize(1.8),
-        color: colors.gray,
-        marginBottom: responsiveHeight(1.5),
-        lineHeight: responsiveHeight(2.2),
-    },
-    detailsRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: responsiveHeight(1.5),
-    },
-    priceContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    priceLabel: {
-        fontSize: responsiveFontSize(1.8),
-        color: colors.gray,
-        marginRight: responsiveWidth(1),
-    },
-    priceValue: {
-        fontSize: responsiveFontSize(2),
-        fontWeight: 'bold',
-        color: colors.brandColor,
-    },
-    featureContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#E8F5E9',
-        paddingHorizontal: responsiveWidth(2),
-        paddingVertical: responsiveHeight(0.5),
-        borderRadius: 8,
-    },
-    featureText: {
-        fontSize: responsiveFontSize(1.6),
-        color: '#2E7D32',
-        marginLeft: responsiveWidth(1.5),
-        fontWeight: '500',
-    },
+    imageContainer: { height: responsiveHeight(22), width: '100%', backgroundColor: colors.lightGray },
+    residenceImage: { height: '100%', width: '100%', resizeMode: 'cover' },
+    placeholderImage: { height: '100%', width: '100%', justifyContent: 'center', alignItems: 'center', backgroundColor: '#E9ECEF' },
+    placeholderText: { fontSize: 80 },
+    infoContainer: { padding: responsiveWidth(4) },
+    residenceName: { fontSize: responsiveFontSize(2.2), fontWeight: '700', color: colors.black, marginBottom: responsiveHeight(0.5) },
+    address: { fontSize: responsiveFontSize(1.8), color: colors.gray, marginBottom: responsiveHeight(1.5), lineHeight: responsiveHeight(2.2) },
+    detailsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: responsiveHeight(1.5) },
+    priceContainer: { flexDirection: 'row', alignItems: 'center' },
+    priceLabel: { fontSize: responsiveFontSize(1.8), color: colors.gray, marginRight: responsiveWidth(1) },
+    priceValue: { fontSize: responsiveFontSize(2), fontWeight: 'bold', color: colors.brandColor },
+    featureContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#E8F5E9', paddingHorizontal: responsiveWidth(2), paddingVertical: responsiveHeight(0.5), borderRadius: 8 },
+    featureText: { fontSize: responsiveFontSize(1.6), color: '#2E7D32', marginLeft: responsiveWidth(1.5), fontWeight: '500' },
     footerRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
@@ -337,84 +267,21 @@ const styles = StyleSheet.create({
         borderTopColor: '#EEE',
         paddingTop: responsiveHeight(1.5),
     },
-    contactContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        flex: 1,
-        marginRight: responsiveWidth(2),
-    },
-    contactText: {
-        fontSize: responsiveFontSize(1.7),
-        color: colors.gray,
-        marginLeft: responsiveWidth(1.5),
-    },
-    statusBadge: {
-        paddingHorizontal: responsiveWidth(3),
-        paddingVertical: responsiveHeight(0.8),
-        borderRadius: 12,
-    },
-    openBadge: {
-        backgroundColor: '#4CAF50',
-    },
-    closedBadge: {
-        backgroundColor: '#FF9800',
-    },
-    statusText: {
-        fontSize: responsiveFontSize(1.5),
-        fontWeight: 'bold',
-        color: colors.white,
-    },
-    emptyContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        paddingHorizontal: responsiveWidth(10),
-    },
-    emptyImage: {
-        width: responsiveWidth(50),
-        height: responsiveWidth(50),
-        marginBottom: responsiveHeight(3),
-    },
-    emptyText: {
-        fontSize: responsiveFontSize(2.2),
-        color: colors.gray,
-        textAlign: 'center',
-        marginBottom: responsiveHeight(3),
-    },
-    addButton: {
-        backgroundColor: colors.brandColor,
-        paddingVertical: responsiveHeight(1.8),
-        paddingHorizontal: responsiveWidth(8),
-        borderRadius: 10,
-    },
-    addButtonText: {
-        color: '#FFF',
-        fontSize: responsiveFontSize(2),
-        fontWeight: 'bold',
-    },
-    errorContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        paddingHorizontal: responsiveWidth(10),
-    },
-    errorText: {
-        fontSize: responsiveFontSize(1.8),
-        color: colors.error,
-        textAlign: 'center',
-        marginBottom: responsiveHeight(2),
-    },
-    retryButton: {
-        backgroundColor: colors.brandColor,
-        paddingVertical: responsiveHeight(1.5),
-        paddingHorizontal: responsiveWidth(8),
-        borderRadius: 8,
-    },
-    retryButtonText: {
-        color: '#FFF',
-        fontSize: responsiveFontSize(1.8),
-        fontWeight: 'bold',
-    },
+    contactContainer: { flexDirection: 'row', alignItems: 'center', flex: 1, marginRight: responsiveWidth(2) },
+    contactText: { fontSize: responsiveFontSize(1.7), color: colors.gray, marginLeft: responsiveWidth(1.5) },
+    statusBadge: { paddingHorizontal: responsiveWidth(3), paddingVertical: responsiveHeight(0.8), borderRadius: 12 },
+    openBadge: { backgroundColor: '#4CAF50' },
+    closedBadge: { backgroundColor: '#FF9800' },
+    statusText: { fontSize: responsiveFontSize(1.5), fontWeight: 'bold', color: colors.white },
+    emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: responsiveWidth(10) },
+    emptyImage: { width: responsiveWidth(50), height: responsiveWidth(50), marginBottom: responsiveHeight(3) },
+    emptyText: { fontSize: responsiveFontSize(2.2), color: colors.gray, textAlign: 'center', marginBottom: responsiveHeight(3) },
+    addButton: { backgroundColor: colors.brandColor, paddingVertical: responsiveHeight(1.8), paddingHorizontal: responsiveWidth(8), borderRadius: 10 },
+    addButtonText: { color: '#FFF', fontSize: responsiveFontSize(2), fontWeight: 'bold' },
+    errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: responsiveWidth(10) },
+    errorText: { fontSize: responsiveFontSize(1.8), color: colors.error, textAlign: 'center', marginBottom: responsiveHeight(2) },
+    retryButton: { backgroundColor: colors.brandColor, paddingVertical: responsiveHeight(1.5), paddingHorizontal: responsiveWidth(8), borderRadius: 8 },
+    retryButtonText: { color: '#FFF', fontSize: responsiveFontSize(1.8), fontWeight: 'bold' },
 });
 
 export default MerchantResidenceList;

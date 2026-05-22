@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, {
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import {
   View,
   Text,
@@ -6,21 +12,19 @@ import {
   ScrollView,
   TouchableOpacity,
   Modal,
-  Image,
   Alert,
   ActivityIndicator,
 } from "react-native";
 import {
   saveOrderData,
   setSelectedCleaner as setSelectedCleanerRedux,
-  enableOrderProtection,
-  disableOrderProtection,
 } from "../../components/redux/userSlice";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useDispatch, useSelector } from "react-redux";
 import Icon from "react-native-vector-icons/MaterialCommunityIcons";
 
-// Types for TypeScript
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 interface Cleaner {
   _id: string;
   shopname: string;
@@ -31,44 +35,183 @@ interface Cleaner {
   services?: any[];
 }
 
+// ✅ Additional service from backend — array of { name, price }
+interface AdditionalServiceOption {
+  name: "zipper" | "button" | "wash/fold";
+  price: number;
+  _id?: string;
+}
+
 interface ServiceItem {
   _id: string;
   name: string;
   price: number;
   quantity: number;
   category: string;
-  starchLevel: number;
+  merchantStarchLevel: "low" | "medium" | "high";
+  userStarchLevel: "low" | "medium" | "high";
   washOnly: boolean;
-  additionalservice?: string;
+  // ✅ Now an array of { name, price } — matches new backend format
+  additionalservice?: AdditionalServiceOption[];
   dryCleanerId: string;
   dryCleanerName: string;
   options: {
     washAndFold: boolean;
     button?: boolean;
     zipper?: boolean;
+    // ✅ Track which additional services the user has toggled ON
+    selectedAdditionals: string[]; // e.g. ["zipper", "wash/fold"]
   };
 }
 
+const STARCH_LEVELS: ("low" | "medium" | "high")[] = ["low", "medium", "high"];
+
+// ─── Helper: normalize additionalservice from backend ─────────────────────────
+// Handles legacy string format, single object, or new array format
+const normalizeAdditionalServices = (raw: any): AdditionalServiceOption[] => {
+  if (!raw) return [];
+  if (Array.isArray(raw)) {
+    return raw.filter((s: any) => s && s.name);
+  }
+  if (typeof raw === "object" && raw.name) {
+    return [{ name: raw.name, price: raw.price || 0 }];
+  }
+  if (typeof raw === "string" && raw.length > 0) {
+    return [{ name: raw as any, price: 0 }];
+  }
+  return [];
+};
+
+// ─── AdditionalServicesPanel ──────────────────────────────────────────────────
+// Renders the list of available additional services for an item as toggleable chips
+
+const AdditionalServicesPanel: React.FC<{
+  additionalServices: AdditionalServiceOption[];
+  selectedAdditionals: string[];
+  onToggle: (name: string) => void;
+}> = ({ additionalServices, selectedAdditionals, onToggle }) => {
+  if (!additionalServices || additionalServices.length === 0) return null;
+
+  return (
+    <View style={addStyles.container}>
+      <Text style={addStyles.label}>Additional Services</Text>
+      <View style={addStyles.row}>
+        {additionalServices.map((svc) => {
+          const selected = selectedAdditionals.includes(svc.name);
+          return (
+            <TouchableOpacity
+              key={svc.name}
+              style={[addStyles.chip, selected && addStyles.chipSelected]}
+              onPress={() => onToggle(svc.name)}
+              activeOpacity={0.75}
+            >
+              <Text
+                style={[
+                  addStyles.chipText,
+                  selected && addStyles.chipTextSelected,
+                ]}
+              >
+                {selected ? "✓ " : ""}
+                {svc.name}
+              </Text>
+              {svc.price > 0 && (
+                <Text
+                  style={[
+                    addStyles.chipPrice,
+                    selected && addStyles.chipPriceSelected,
+                  ]}
+                >
+                  +${svc.price.toFixed(2)}
+                </Text>
+              )}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      {selectedAdditionals.length > 0 && (
+        <View style={addStyles.summary}>
+          <Icon name="plus-circle-outline" size={13} color="#FF8C00" />
+          <Text style={addStyles.summaryText}>
+            Add-ons: +$
+            {additionalServices
+              .filter((s) => selectedAdditionals.includes(s.name))
+              .reduce((sum, s) => sum + (s.price || 0), 0)
+              .toFixed(2)}
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+};
+
+const addStyles = StyleSheet.create({
+  container: {
+    marginTop: 4,
+    padding: 10,
+    backgroundColor: "#FFF8F0",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#FFD699",
+  },
+  label: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#FF8C00",
+    marginBottom: 8,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  row: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  chip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: "#FFD699",
+    backgroundColor: "#FFFFFF",
+  },
+  chipSelected: {
+    borderColor: "#FF8C00",
+    backgroundColor: "#FF8C001A",
+  },
+  chipText: { fontSize: 13, color: "#666", fontWeight: "500" },
+  chipTextSelected: { color: "#FF8C00", fontWeight: "700" },
+  chipPrice: { fontSize: 12, color: "#999", fontWeight: "600" },
+  chipPriceSelected: { color: "#FF8C00" },
+  summary: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#FFD699",
+  },
+  summaryText: { fontSize: 12, color: "#FF8C00", fontWeight: "700" },
+});
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
+
 const AvailableServicesScreen: React.FC = () => {
-  // Local state
   const [items, setItems] = useState<ServiceItem[]>([]);
   const [selectedCleaner, setSelectedCleaner] = useState<Cleaner | null>(null);
   const [showWashOnlyModal, setShowWashOnlyModal] = useState(false);
-  const [showStarchLevelModal, setShowStarchLevelModal] = useState(false);
+  const [showStarchModal, setShowStarchModal] = useState(false);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [hasFetchedServices, setHasFetchedServices] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState("All"); // LOCAL STATE FOR CATEGORIES
+  const [selectedCategory, setSelectedCategory] = useState("All");
 
   const router = useRouter();
   const params = useLocalSearchParams();
   const dispatch = useDispatch();
 
-  // Redux state
   const orderData = useSelector((state: any) => state.user?.order || null);
 
-  // Standard categories - always show these
   const categories = [
     "All",
     "Shirts",
@@ -81,14 +224,23 @@ const AvailableServicesScreen: React.FC = () => {
     "Curtains",
     "Other",
   ];
-
   const washOnlyOptions = ["Yes", "No"];
-  const starchLevelOptions = ["None", "Light", "Medium", "Heavy"];
 
-  // Validate item data
+  const capitalizeFirst = (str: string) =>
+    str ? str.charAt(0).toUpperCase() + str.slice(1) : "Low";
+
+  const getAllowedStarchLevels = useCallback(
+    (
+      merchantLevel: "low" | "medium" | "high",
+    ): ("low" | "medium" | "high")[] => {
+      const maxIndex = STARCH_LEVELS.indexOf(merchantLevel);
+      return STARCH_LEVELS.filter((_, idx) => idx <= maxIndex);
+    },
+    [],
+  );
+
   const validateItemData = useCallback((item: any): ServiceItem => {
     try {
-      // Category mapping - convert old/incorrect categories to standard ones
       const categoryMap: { [key: string]: string } = {
         Wast: "Pants",
         Wash: "Shirts",
@@ -102,50 +254,41 @@ const AvailableServicesScreen: React.FC = () => {
         comforter: "Comforters",
         curtain: "Curtains",
       };
-
       const rawCategory = item.category || "Other";
       const mappedCategory = categoryMap[rawCategory] || rawCategory;
+      const validStarch = (val: any): val is "low" | "medium" | "high" =>
+        val === "low" || val === "medium" || val === "high";
+      const merchantStarchLevel: "low" | "medium" | "high" = validStarch(
+        item.starchLevel,
+      )
+        ? item.starchLevel
+        : "medium";
 
-      const validatedItem = {
+      // ✅ Normalize additionalservice to array
+      const additionalServices = normalizeAdditionalServices(
+        item.additionalservice,
+      );
+
+      const validatedItem: ServiceItem = {
         _id: item._id?.toString() || `temp_${Date.now()}_${Math.random()}`,
         name: item.name || "Unknown Item",
         price: typeof item.price === "number" ? item.price : 0,
         quantity:
           typeof item.quantity === "number" ? Math.max(0, item.quantity) : 0,
-        category: mappedCategory, // Use mapped category
-        starchLevel:
-          typeof item.starchLevel === "number" ? item.starchLevel : 3,
+        category: mappedCategory,
+        merchantStarchLevel,
+        userStarchLevel: "low",
         washOnly: typeof item.washOnly === "boolean" ? item.washOnly : false,
-        additionalservice: item.additionalservice || null,
+        additionalservice: additionalServices,
         dryCleanerId: item.dryCleanerId || null,
         dryCleanerName: item.dryCleanerName || "",
         options: {
           washAndFold: false,
           button: false,
           zipper: false,
+          selectedAdditionals: [], // ✅ none selected initially
         },
       };
-
-      // Process options safely
-      if (
-        item.options &&
-        typeof item.options === "object" &&
-        !Array.isArray(item.options)
-      ) {
-        Object.keys(item.options).forEach((key) => {
-          if (typeof item.options[key] === "boolean") {
-            validatedItem.options[key as keyof typeof validatedItem.options] =
-              item.options[key];
-          }
-        });
-      }
-
-      if (validatedItem.additionalservice === "button") {
-        validatedItem.options.button = validatedItem.options.button || false;
-      }
-      if (validatedItem.additionalservice === "zipper") {
-        validatedItem.options.zipper = validatedItem.options.zipper || false;
-      }
 
       return validatedItem;
     } catch (error) {
@@ -156,46 +299,39 @@ const AvailableServicesScreen: React.FC = () => {
         price: 0,
         quantity: 0,
         category: "Other",
-        starchLevel: 3,
+        merchantStarchLevel: "medium",
+        userStarchLevel: "low",
         washOnly: false,
-        additionalservice: null,
+        additionalservice: [],
         dryCleanerId: null,
         dryCleanerName: "",
-        options: { washAndFold: false, button: false, zipper: false },
+        options: {
+          washAndFold: false,
+          button: false,
+          zipper: false,
+          selectedAdditionals: [],
+        },
       };
     }
   }, []);
 
-  // Check if dry cleaner is open
   const isDryCleanerOpen = useCallback((hoursOfOperation: any[]): boolean => {
     try {
-      if (!hoursOfOperation || !Array.isArray(hoursOfOperation)) {
-        return true;
-      }
-
+      if (!hoursOfOperation || !Array.isArray(hoursOfOperation)) return true;
       const now = new Date();
       const currentDay = now.toLocaleDateString("en-US", { weekday: "long" });
       const currentTime = now.getHours() * 60 + now.getMinutes();
-
       const todayHours = hoursOfOperation.find(
         (h: any) =>
-          h && h.day && h.day.toLowerCase() === currentDay.toLowerCase()
+          h && h.day && h.day.toLowerCase() === currentDay.toLowerCase(),
       );
-
-      if (!todayHours) {
-        return false;
-      }
-
-      // Parse time function
+      if (!todayHours) return false;
       const parseTime = (timeStr: string): number => {
         if (!timeStr) return 0;
-
         const cleanTime = timeStr.toLowerCase().replace(/\s/g, "");
-
         if (cleanTime.includes("am") || cleanTime.includes("pm")) {
           const isPM = cleanTime.includes("pm");
           const timeOnly = cleanTime.replace(/[ap]m/g, "");
-
           let hours = 0,
             minutes = 0;
           if (timeOnly.includes(":")) {
@@ -204,27 +340,19 @@ const AvailableServicesScreen: React.FC = () => {
             minutes = parseInt(m) || 0;
           } else {
             hours = parseInt(timeOnly) || 0;
-            minutes = 0;
           }
-
           if (isPM && hours !== 12) hours += 12;
           if (!isPM && hours === 12) hours = 0;
-
           return hours * 60 + minutes;
         }
-
-        // Handle 24-hour format
         if (timeStr.includes(":")) {
           const [h, m] = timeStr.split(":");
           return (parseInt(h) || 0) * 60 + (parseInt(m) || 0);
         }
-
         return (parseInt(timeStr) || 0) * 60;
       };
-
       const openTime = parseTime(todayHours.open);
       const closeTime = parseTime(todayHours.close);
-
       return currentTime >= openTime && currentTime <= closeTime;
     } catch (error) {
       console.error("Error checking cleaner hours:", error);
@@ -235,15 +363,11 @@ const AvailableServicesScreen: React.FC = () => {
   const fetchSelectedCleanerServices = useCallback(
     async (cleaner: Cleaner) => {
       if (!cleaner || !cleaner._id) {
-        console.error("No cleaner data provided");
         Alert.alert("Error", "No dry cleaner selected.");
         return;
       }
-
       try {
         setIsLoading(true);
-        console.log("Fetching services for cleaner:", cleaner.shopname);
-
         if (
           cleaner.hoursOfOperation &&
           !isDryCleanerOpen(cleaner.hoursOfOperation)
@@ -251,99 +375,58 @@ const AvailableServicesScreen: React.FC = () => {
           Alert.alert(
             "Dry Cleaner Closed",
             `${cleaner.shopname} is currently closed. Please try again during business hours.`,
-            [{ text: "OK" }]
+            [{ text: "OK" }],
           );
           setItems([]);
           setIsInitialized(true);
           return;
         }
-
         const apiUrl = `https://vervoer-backend2.onrender.com/api/users/dry-cleaners/${cleaner._id}/services`;
-
-        console.log("Fetching from URL:", apiUrl);
-
         const response = await fetch(apiUrl, {
           method: "GET",
-          headers: {
-            "Content-Type": "application/json",
-          },
+          headers: { "Content-Type": "application/json" },
         });
-
-        if (!response.ok) {
+        if (!response.ok)
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
         const data = await response.json();
-        console.log("API Response received:", data);
-
         let services: any[] = [];
-
-        if (data.data && Array.isArray(data.data)) {
-          services = data.data;
-        } else if (data.services && Array.isArray(data.services)) {
+        if (data.data && Array.isArray(data.data)) services = data.data;
+        else if (data.services && Array.isArray(data.services))
           services = data.services;
-        } else if (Array.isArray(data)) {
-          services = data;
-        } else {
-          services = [];
-        }
+        else if (Array.isArray(data)) services = data;
 
         if (services.length === 0) {
           Alert.alert(
             "No Services",
-            `No services available from ${cleaner.shopname} at this time.`
+            `No services available from ${cleaner.shopname} at this time.`,
           );
           setItems([]);
           setIsInitialized(true);
           return;
         }
-
-        const cleanerServices = services.map((service) => {
-          const baseOptions = {
-            washAndFold: false,
-            button: false,
-            zipper: false,
-          };
-
-          if (service.additionalservice === "button") {
-            baseOptions.button = false;
-          }
-          if (service.additionalservice === "zipper") {
-            baseOptions.zipper = false;
-          }
-
-          return {
-            ...service,
-            quantity: 0,
-            dryCleanerId: cleaner._id,
-            dryCleanerName: cleaner.shopname,
-            options: baseOptions,
-          };
-        });
-
+        const cleanerServices = services.map((service) => ({
+          ...service,
+          quantity: 0,
+          dryCleanerId: cleaner._id,
+          dryCleanerName: cleaner.shopname,
+        }));
         const validatedServices = cleanerServices.map(validateItemData);
         setItems(validatedServices);
-
-        console.log(`Successfully loaded ${validatedServices.length} services`);
       } catch (error: any) {
         console.error("Error fetching services:", error);
-
         let errorMessage = "Failed to load services. Please try again.";
-
         if (
           error.message.includes("Network Error") ||
           error.name === "TypeError"
-        ) {
+        )
           errorMessage =
             "Cannot connect to server. Please check your internet connection.";
-        } else if (error.message.includes("timeout")) {
+        else if (error.message.includes("timeout"))
           errorMessage = "Request timed out. Please try again.";
-        } else if (error.message.includes("404")) {
+        else if (error.message.includes("404"))
           errorMessage = "Services not found for this dry cleaner.";
-        } else if (error.message.includes("500")) {
+        else if (error.message.includes("500"))
           errorMessage = "Server error. Please try again later.";
-        }
-
         Alert.alert("Error", errorMessage, [{ text: "OK" }]);
         setItems([]);
       } finally {
@@ -351,29 +434,22 @@ const AvailableServicesScreen: React.FC = () => {
         setIsInitialized(true);
       }
     },
-    [isDryCleanerOpen, validateItemData]
+    [isDryCleanerOpen, validateItemData],
   );
 
-  // Initialize component
   useEffect(() => {
     const initializeCleaner = async () => {
-      console.log("Route params:", params);
-
       let cleaner: Cleaner | null = null;
-
-      // Parse cleaner data
       if (params?.selectedCleaner) {
         const selectedCleanerParam = params.selectedCleaner;
         if (typeof selectedCleanerParam === "string") {
           try {
             cleaner = JSON.parse(selectedCleanerParam);
-            console.log("Parsed cleaner from string:", cleaner);
           } catch (error) {
-            console.error("Error parsing cleaner data:", error);
             Alert.alert(
               "Error",
               "Invalid dry cleaner data. Please select a dry cleaner again.",
-              [{ text: "Go Back", onPress: () => router.back() }]
+              [{ text: "Go Back", onPress: () => router.back() }],
             );
             return;
           }
@@ -381,133 +457,125 @@ const AvailableServicesScreen: React.FC = () => {
           cleaner = selectedCleanerParam as Cleaner;
         }
       }
-
       if (!cleaner) {
-        console.error("No cleaner found in route params");
         Alert.alert(
           "Error",
           "No dry cleaner selected. Please select a dry cleaner first.",
-          [{ text: "Go Back", onPress: () => router.back() }]
+          [{ text: "Go Back", onPress: () => router.back() }],
         );
         return;
       }
-
-      // Validate cleaner data
       if (!cleaner._id || !cleaner.shopname) {
-        console.error("Invalid cleaner data structure:", cleaner);
         Alert.alert(
           "Error",
           "Invalid dry cleaner data. Please select a dry cleaner again.",
-          [{ text: "Go Back", onPress: () => router.back() }]
+          [{ text: "Go Back", onPress: () => router.back() }],
         );
         return;
       }
-
-      console.log("Initializing with cleaner:", {
-        id: cleaner._id,
-        name: cleaner.shopname,
-      });
-
-      // Only update selectedCleaner if it's different
       if (!selectedCleaner || selectedCleaner._id !== cleaner._id) {
         setSelectedCleaner(cleaner);
         setHasFetchedServices(false);
       }
     };
-
     initializeCleaner();
   }, [params, router]);
 
-  // Fetch services when selectedCleaner changes
   useEffect(() => {
     const fetchServices = async () => {
-      if (!selectedCleaner || hasFetchedServices) {
-        return;
-      }
-
-      console.log("Fetching services for cleaner:", selectedCleaner.shopname);
+      if (!selectedCleaner || hasFetchedServices) return;
       await fetchSelectedCleanerServices(selectedCleaner);
       setHasFetchedServices(true);
     };
-
     fetchServices();
   }, [selectedCleaner, hasFetchedServices, fetchSelectedCleanerServices]);
 
-  // Category selection - NOW FUNCTIONAL
   const handleCategorySelection = useCallback((category: string) => {
     setSelectedCategory(category);
   }, []);
 
-  // Delete item (reset quantity to 0)
   const deleteItem = useCallback((id: string) => {
     setItems((prevItems) =>
       prevItems.map((item) =>
-        item._id === id ? { ...item, quantity: 0 } : item
-      )
+        item._id === id ? { ...item, quantity: 0 } : item,
+      ),
     );
-    console.log("Item deleted:", id);
   }, []);
 
-  // Update quantity
   const updateQuantity = useCallback((id: string, increment: boolean) => {
-    setItems((prevItems) => {
-      const newItems = prevItems.map((item) => {
+    setItems((prevItems) =>
+      prevItems.map((item) => {
         if (item._id === id) {
           const newQuantity = increment
             ? item.quantity + 1
             : Math.max(0, item.quantity - 1);
-
-          console.log("Updated quantity:", { id, newQuantity });
-
           return { ...item, quantity: newQuantity };
         }
         return item;
-      });
-      return newItems;
-    });
+      }),
+    );
   }, []);
 
-  // Update wash only option
   const updateWashOnly = useCallback(
     (value: string) => {
       if (selectedItemId) {
         const washOnly = value === "Yes";
         setItems((prevItems) =>
           prevItems.map((item) =>
-            item._id === selectedItemId ? { ...item, washOnly } : item
-          )
+            item._id === selectedItemId ? { ...item, washOnly } : item,
+          ),
         );
         setShowWashOnlyModal(false);
         setSelectedItemId(null);
       }
     },
-    [selectedItemId]
+    [selectedItemId],
   );
 
-  // Update starch level
-  const updateStarchLevel = useCallback(
-    (value: string) => {
+  const updateUserStarchLevel = useCallback(
+    (value: "low" | "medium" | "high") => {
       if (selectedItemId) {
-        const starchLevelMap: { [key: string]: number } = {
-          None: 1,
-          Light: 2,
-          Medium: 3,
-          Heavy: 4,
-        };
-        const starchLevel = starchLevelMap[value] || 3;
         setItems((prevItems) =>
-          prevItems.map((item) =>
-            item._id === selectedItemId ? { ...item, starchLevel } : item
-          )
+          prevItems.map((item) => {
+            if (item._id === selectedItemId) {
+              const merchantMaxIndex = STARCH_LEVELS.indexOf(
+                item.merchantStarchLevel,
+              );
+              const selectedIndex = STARCH_LEVELS.indexOf(value);
+              const capped =
+                STARCH_LEVELS[Math.min(selectedIndex, merchantMaxIndex)];
+              return { ...item, userStarchLevel: capped };
+            }
+            return item;
+          }),
         );
-        setShowStarchLevelModal(false);
+        setShowStarchModal(false);
         setSelectedItemId(null);
       }
     },
-    [selectedItemId]
+    [selectedItemId],
   );
 
-  // Toggle additional options
+  // ✅ Toggle an additional service on/off for an item
+  const toggleAdditionalService = useCallback(
+    (itemId: string, serviceName: string) => {
+      setItems((prevItems) =>
+        prevItems.map((item) => {
+          if (item._id !== itemId) return item;
+          const current = item.options.selectedAdditionals || [];
+          const updated = current.includes(serviceName)
+            ? current.filter((n) => n !== serviceName)
+            : [...current, serviceName];
+          return {
+            ...item,
+            options: { ...item.options, selectedAdditionals: updated },
+          };
+        }),
+      );
+    },
+    [],
+  );
+
   const toggleOption = useCallback((itemId: string, optionName: string) => {
     setItems((prevItems) =>
       prevItems.map((item) => {
@@ -521,151 +589,105 @@ const AvailableServicesScreen: React.FC = () => {
           return { ...item, options: newOptions };
         }
         return item;
-      })
+      }),
     );
   }, []);
 
-  // Get starch level text
-  const getStarchLevelText = useCallback((level: number): string => {
-    const starchLevels: { [key: number]: string } = {
-      1: "None",
-      2: "Light",
-      3: "Medium",
-      4: "Heavy",
-    };
-    return starchLevels[level] || "Medium";
+  // ✅ Compute per-item effective price (base + selected additional services)
+  const getEffectivePrice = useCallback((item: ServiceItem): number => {
+    const addOnTotal = (item.additionalservice || [])
+      .filter((s) => (item.options.selectedAdditionals || []).includes(s.name))
+      .reduce((sum, s) => sum + (s.price || 0), 0);
+    return item.price + addOnTotal;
   }, []);
 
-  // Check if item has option
-  const hasOption = useCallback(
-    (item: ServiceItem, optionName: string): boolean => {
-      if (
-        !item.options ||
-        typeof item.options !== "object" ||
-        Array.isArray(item.options)
-      ) {
-        return false;
-      }
-      return item.options.hasOwnProperty(optionName);
-    },
-    []
-  );
-
-  // Get option value
-  const getOptionValue = useCallback(
-    (item: ServiceItem, optionName: string): boolean => {
-      if (!hasOption(item, optionName)) {
-        return false;
-      }
-      return Boolean(item.options[optionName as keyof typeof item.options]);
-    },
-    [hasOption]
-  );
-
-  // Calculate totals
   const { totalItems, totalAmount } = useMemo(() => {
     const totalItems = items.reduce(
       (sum, item) => sum + (item.quantity || 0),
-      0
+      0,
     );
     const totalAmount = items.reduce(
-      (sum, item) => sum + (item.price || 0) * (item.quantity || 0),
-      0
+      (sum, item) => sum + getEffectivePrice(item) * (item.quantity || 0),
+      0,
     );
     return { totalItems, totalAmount };
-  }, [items]);
+  }, [items, getEffectivePrice]);
 
-  // Filter items based on category
   const filteredItems = useMemo(() => {
     if (!items || items.length === 0) return [];
-
-    if (selectedCategory === "All") {
-      return items;
-    }
-
+    if (selectedCategory === "All") return items;
     return items.filter(
-      (item) => item.category === selectedCategory || (item.quantity || 0) > 0
+      (item) => item.category === selectedCategory || (item.quantity || 0) > 0,
     );
   }, [items, selectedCategory]);
+
+  const selectedItemForStarch = useMemo(
+    () => items.find((i) => i._id === selectedItemId) || null,
+    [items, selectedItemId],
+  );
 
   const handleContinue = useCallback(() => {
     if (totalItems === 0) {
       Alert.alert(
         "No Items Selected",
-        "Please add at least one item to continue."
+        "Please add at least one item to continue.",
       );
       return;
     }
-
     const selectedItemsForOrder = items.filter((item) => item.quantity > 0);
-
-    console.log("Final Order Summary:", {
-      totalItems,
-      totalAmount: totalAmount.toFixed(2),
-      selectedCleaner: selectedCleaner?.shopname,
-      items: selectedItemsForOrder.map((item) => ({
-        name: item.name,
-        quantity: item.quantity,
-        price: item.price,
-        washOnly: item.washOnly,
-        starchLevel: getStarchLevelText(item.starchLevel),
-        options: item.options,
-      })),
-    });
-
     try {
-      // Save cleaner
       if (selectedCleaner) {
-        const cleanerData = {
-          _id: selectedCleaner._id,
-          shopname: selectedCleaner.shopname,
-          address: selectedCleaner.address || {},
-          rating: selectedCleaner.rating || 0,
-          phoneNumber: selectedCleaner.phoneNumber || "",
-          hoursOfOperation: selectedCleaner.hoursOfOperation || [],
-        };
-        dispatch(setSelectedCleanerRedux(cleanerData));
-        console.log("✅ Cleaner saved");
+        dispatch(
+          setSelectedCleanerRedux({
+            _id: selectedCleaner._id,
+            shopname: selectedCleaner.shopname,
+            address: selectedCleaner.address || {},
+            rating: selectedCleaner.rating || 0,
+            phoneNumber: selectedCleaner.phoneNumber || "",
+            hoursOfOperation: selectedCleaner.hoursOfOperation || [],
+          }),
+        );
       }
-
-      // Save order data
-      const orderData = {
-        items: selectedItemsForOrder.map((item) => ({
-          _id: item._id,
-          name: item.name,
-          category: item.category,
-          price: item.price,
-          quantity: item.quantity,
-          starchLevel: item.starchLevel,
-          washOnly: item.washOnly,
-          additionalservice: item.additionalservice || "",
-          dryCleanerId: item.dryCleanerId || "",
-          dryCleanerName: item.dryCleanerName || "",
-          options: {
-            washAndFold: item.options?.washAndFold || false,
-            button: item.options?.button || false,
-            zipper: item.options?.zipper || false,
-          },
-        })),
-        selectedCleaner: selectedCleaner
-          ? {
-              _id: selectedCleaner._id,
-              shopname: selectedCleaner.shopname,
-              address: selectedCleaner.address || {},
-              rating: selectedCleaner.rating || 0,
-              phoneNumber: selectedCleaner.phoneNumber || "",
-              hoursOfOperation: selectedCleaner.hoursOfOperation || [],
-            }
-          : undefined,
-        totalAmount: totalAmount,
-        totalItems: totalItems,
-        lastUpdated: new Date().toISOString(),
-      };
-
-      dispatch(saveOrderData(orderData));
-      console.log("✅ Order data saved to Redux");
-
-      // Navigate with a small delay to ensure Redux state is updated
+      dispatch(
+        saveOrderData({
+          items: selectedItemsForOrder.map((item) => ({
+            _id: item._id,
+            name: item.name,
+            category: item.category,
+            price: item.price, // base price
+            effectivePrice: getEffectivePrice(item), // base + add-ons
+            quantity: item.quantity,
+            merchantStarchLevel: item.merchantStarchLevel,
+            starchLevel: item.userStarchLevel,
+            washOnly: item.washOnly,
+            // ✅ Pass full additionalservice array so OrderSummary can display it
+            additionalservice: item.additionalservice || [],
+            // ✅ Which additional services the user selected
+            selectedAdditionals: item.options.selectedAdditionals || [],
+            dryCleanerId: item.dryCleanerId || "",
+            dryCleanerName: item.dryCleanerName || "",
+            options: {
+              washAndFold: item.options?.washAndFold || false,
+              button: item.options?.button || false,
+              zipper: item.options?.zipper || false,
+              selectedAdditionals: item.options.selectedAdditionals || [],
+            },
+          })),
+          selectedCleaner: selectedCleaner
+            ? {
+                _id: selectedCleaner._id,
+                shopname: selectedCleaner.shopname,
+                address: selectedCleaner.address || {},
+                rating: selectedCleaner.rating || 0,
+                phoneNumber: selectedCleaner.phoneNumber || "",
+                hoursOfOperation: selectedCleaner.hoursOfOperation || [],
+              }
+            : undefined,
+          totalAmount,
+          totalItems,
+          lastUpdated: new Date().toISOString(),
+        }),
+      );
       setTimeout(() => {
         router.push({
           pathname: "/dryCleanerUser/pickUpLocation",
@@ -686,12 +708,11 @@ const AvailableServicesScreen: React.FC = () => {
     totalItems,
     totalAmount,
     selectedCleaner,
-    getStarchLevelText,
     dispatch,
     router,
+    getEffectivePrice,
   ]);
 
-  // Loading state
   if (isLoading) {
     return (
       <View
@@ -730,7 +751,8 @@ const AvailableServicesScreen: React.FC = () => {
       {totalItems > 0 && (
         <View style={styles.orderSummary}>
           <Text style={styles.orderSummaryText}>
-            {totalItems} items • ${totalAmount.toFixed(2)}
+            {totalItems} item{totalItems !== 1 ? "s" : ""} • $
+            {totalAmount.toFixed(2)}
           </Text>
         </View>
       )}
@@ -772,9 +794,7 @@ const AvailableServicesScreen: React.FC = () => {
           <View style={styles.noItemsContainer}>
             <Text style={styles.noItemsText}>
               {items.length === 0
-                ? `No services available from ${
-                    selectedCleaner?.shopname || "this dry cleaner"
-                  }`
+                ? `No services available from ${selectedCleaner?.shopname || "this dry cleaner"}`
                 : "No services available in this category"}
             </Text>
             {items.length === 0 && selectedCleaner && (
@@ -787,123 +807,115 @@ const AvailableServicesScreen: React.FC = () => {
             )}
           </View>
         ) : (
-          filteredItems.map((item, index) => (
-            <View key={`${item._id}-${index}`} style={styles.itemCard}>
-              <View style={styles.itemHeader}>
-                <Text style={styles.itemName}>{item.name}</Text>
-                <Text style={styles.itemPrice}>${item.price.toFixed(2)}</Text>
-                {item.quantity > 0 &&
-                  item.category !== selectedCategory &&
-                  selectedCategory !== "All" && (
-                    <Text style={styles.categoryBadge}>{item.category}</Text>
-                  )}
-              </View>
+          filteredItems.map((item, index) => {
+            const effectivePrice = getEffectivePrice(item);
+            const hasAddOns = (item.additionalservice || []).length > 0;
+            const addOnTotal = effectivePrice - item.price;
 
-              <View style={styles.optionsContainer}>
-                <View style={styles.dropdownContainer}>
-                  <TouchableOpacity
-                    style={styles.dropdown}
-                    onPress={() => {
-                      setSelectedItemId(item._id);
-                      setShowWashOnlyModal(true);
-                    }}
-                  >
-                    <Text style={styles.dropdownText}>
-                      Wash Only: {item.washOnly ? "Yes" : "No"}
+            return (
+              <View key={`${item._id}-${index}`} style={styles.itemCard}>
+                {/* Item header */}
+                <View style={styles.itemHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.itemName}>{item.name}</Text>
+                    <Text style={styles.itemCategory}>{item.category}</Text>
+                  </View>
+                  <View style={{ alignItems: "flex-end" }}>
+                    <Text style={styles.itemPrice}>
+                      ${item.price.toFixed(2)}
                     </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.dropdown}
-                    onPress={() => {
-                      setSelectedItemId(item._id);
-                      setShowStarchLevelModal(true);
-                    }}
-                  >
-                    <Text style={styles.dropdownText}>
-                      Starch Level: {getStarchLevelText(item.starchLevel)}
-                    </Text>
-                  </TouchableOpacity>
+                    {addOnTotal > 0 && (
+                      <Text style={styles.itemAddOnPrice}>
+                        +${addOnTotal.toFixed(2)} add-ons
+                      </Text>
+                    )}
+                    {item.quantity > 0 && addOnTotal > 0 && (
+                      <Text style={styles.itemEffectivePrice}>
+                        ${effectivePrice.toFixed(2)} each
+                      </Text>
+                    )}
+                  </View>
                 </View>
 
-                <View style={styles.checkboxContainer}>
-                  {hasOption(item, "zipper") && (
+                <View style={styles.optionsContainer}>
+                  {/* Wash Only + Starch row */}
+                  <View style={styles.dropdownContainer}>
                     <TouchableOpacity
-                      style={[
-                        styles.checkbox,
-                        getOptionValue(item, "zipper") &&
-                          styles.checkboxChecked,
-                      ]}
-                      onPress={() => toggleOption(item._id, "zipper")}
+                      style={styles.dropdown}
+                      onPress={() => {
+                        setSelectedItemId(item._id);
+                        setShowWashOnlyModal(true);
+                      }}
                     >
-                      <View style={styles.checkboxInner}>
-                        {getOptionValue(item, "zipper") && (
-                          <Text style={styles.checkmark}>✓</Text>
-                        )}
-                      </View>
-                      <Text style={styles.checkboxText}>Zipper</Text>
+                      <Text style={styles.dropdownText}>
+                        Wash Only: {item.washOnly ? "Yes" : "No"}
+                      </Text>
+                      <Text style={styles.dropdownSubText}>Tap to change</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.dropdown, styles.starchDropdown]}
+                      onPress={() => {
+                        setSelectedItemId(item._id);
+                        setShowStarchModal(true);
+                      }}
+                    >
+                      <Text style={styles.dropdownText}>
+                        Starch: {capitalizeFirst(item.userStarchLevel)}
+                      </Text>
+                      <Text style={styles.starchCapLabel}>
+                        Max: {capitalizeFirst(item.merchantStarchLevel)} ▼
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* ✅ Additional Services panel — chip-based multi-select with prices */}
+                  {hasAddOns && (
+                    <AdditionalServicesPanel
+                      additionalServices={item.additionalservice!}
+                      selectedAdditionals={
+                        item.options.selectedAdditionals || []
+                      }
+                      onToggle={(name) =>
+                        toggleAdditionalService(item._id, name)
+                      }
+                    />
+                  )}
+
+                  {/* Quantity controls */}
+                  <View style={styles.quantityContainer}>
+                    <TouchableOpacity
+                      style={styles.quantityButton}
+                      onPress={() => updateQuantity(item._id, false)}
+                    >
+                      <Text style={styles.quantityButtonText}>-</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.quantityText}>{item.quantity}</Text>
+                    <TouchableOpacity
+                      style={styles.quantityButton}
+                      onPress={() => updateQuantity(item._id, true)}
+                    >
+                      <Text style={styles.quantityButtonText}>+</Text>
+                    </TouchableOpacity>
+                    {item.quantity > 0 && (
+                      <Text style={styles.itemSubtotal}>
+                        = ${(effectivePrice * item.quantity).toFixed(2)}
+                      </Text>
+                    )}
+                  </View>
+
+                  {item.quantity > 0 && (
+                    <TouchableOpacity
+                      style={styles.deleteButton}
+                      onPress={() => deleteItem(item._id)}
+                    >
+                      <Icon name="delete-outline" size={24} color="#FF3B30" />
                     </TouchableOpacity>
                   )}
-                  {hasOption(item, "button") && (
-                    <TouchableOpacity
-                      style={[
-                        styles.checkbox,
-                        getOptionValue(item, "button") &&
-                          styles.checkboxChecked,
-                      ]}
-                      onPress={() => toggleOption(item._id, "button")}
-                    >
-                      <View style={styles.checkboxInner}>
-                        {getOptionValue(item, "button") && (
-                          <Text style={styles.checkmark}>✓</Text>
-                        )}
-                      </View>
-                      <Text style={styles.checkboxText}>Button</Text>
-                    </TouchableOpacity>
-                  )}
-                  <TouchableOpacity
-                    style={[
-                      styles.checkbox,
-                      getOptionValue(item, "washAndFold") &&
-                        styles.checkboxChecked,
-                    ]}
-                    onPress={() => toggleOption(item._id, "washAndFold")}
-                  >
-                    <View style={styles.checkboxInner}>
-                      {getOptionValue(item, "washAndFold") && (
-                        <Text style={styles.checkmark}>✓</Text>
-                      )}
-                    </View>
-                    <Text style={styles.checkboxText}>Wash & Fold</Text>
-                  </TouchableOpacity>
                 </View>
-
-                <View style={styles.quantityContainer}>
-                  <TouchableOpacity
-                    style={styles.quantityButton}
-                    onPress={() => updateQuantity(item._id, false)}
-                  >
-                    <Text style={styles.quantityButtonText}>-</Text>
-                  </TouchableOpacity>
-                  <Text style={styles.quantityText}>{item.quantity}</Text>
-                  <TouchableOpacity
-                    style={styles.quantityButton}
-                    onPress={() => updateQuantity(item._id, true)}
-                  >
-                    <Text style={styles.quantityButtonText}>+</Text>
-                  </TouchableOpacity>
-                </View>
-
-                {item.quantity > 0 && (
-                  <TouchableOpacity
-                    style={styles.deleteButton}
-                    onPress={() => deleteItem(item._id)}
-                  >
-                    <Icon name="delete-outline" size={24} color="#FF3B30" />
-                  </TouchableOpacity>
-                )}
               </View>
-            </View>
-          ))
+            );
+          })
         )}
       </ScrollView>
 
@@ -917,16 +929,14 @@ const AvailableServicesScreen: React.FC = () => {
         disabled={totalItems === 0}
       >
         <Text style={styles.continueButtonText}>
-          Continue {totalItems > 0 && `(${totalItems} items)`}
+          Continue{" "}
+          {totalItems > 0 &&
+            `(${totalItems} items • $${totalAmount.toFixed(2)})`}
         </Text>
       </TouchableOpacity>
 
       {/* Wash Only Modal */}
-      <Modal
-        visible={showWashOnlyModal}
-        transparent={true}
-        animationType="slide"
-      >
+      <Modal visible={showWashOnlyModal} transparent animationType="slide">
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Select Wash Only</Text>
@@ -950,26 +960,51 @@ const AvailableServicesScreen: React.FC = () => {
       </Modal>
 
       {/* Starch Level Modal */}
-      <Modal
-        visible={showStarchLevelModal}
-        transparent={true}
-        animationType="slide"
-      >
+      <Modal visible={showStarchModal} transparent animationType="slide">
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Select Starch Level</Text>
-            {starchLevelOptions.map((option) => (
-              <TouchableOpacity
-                key={option}
-                style={styles.modalOption}
-                onPress={() => updateStarchLevel(option)}
-              >
-                <Text style={styles.modalOptionText}>{option}</Text>
-              </TouchableOpacity>
-            ))}
+            {selectedItemForStarch && (
+              <Text style={styles.modalSubtitle}>
+                Merchant allows up to:{" "}
+                <Text style={styles.modalSubtitleBold}>
+                  {capitalizeFirst(selectedItemForStarch.merchantStarchLevel)}
+                </Text>
+              </Text>
+            )}
+            {selectedItemForStarch &&
+              getAllowedStarchLevels(
+                selectedItemForStarch.merchantStarchLevel,
+              ).map((level) => (
+                <TouchableOpacity
+                  key={level}
+                  style={[
+                    styles.modalOption,
+                    selectedItemForStarch.userStarchLevel === level &&
+                      styles.modalOptionSelected,
+                  ]}
+                  onPress={() => updateUserStarchLevel(level)}
+                >
+                  <Text
+                    style={[
+                      styles.modalOptionText,
+                      selectedItemForStarch.userStarchLevel === level &&
+                        styles.modalOptionTextSelected,
+                    ]}
+                  >
+                    {capitalizeFirst(level)}
+                  </Text>
+                  {selectedItemForStarch.userStarchLevel === level && (
+                    <Text style={styles.modalOptionCheck}>✓</Text>
+                  )}
+                </TouchableOpacity>
+              ))}
             <TouchableOpacity
               style={styles.modalCloseButton}
-              onPress={() => setShowStarchLevelModal(false)}
+              onPress={() => {
+                setShowStarchModal(false);
+                setSelectedItemId(null);
+              }}
             >
               <Text style={styles.modalCloseButtonText}>Cancel</Text>
             </TouchableOpacity>
@@ -981,11 +1016,7 @@ const AvailableServicesScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F7F7FA",
-    paddingTop: 40,
-  },
+  container: { flex: 1, backgroundColor: "#F7F7FA", paddingTop: 40 },
   headerContainer: {
     flexDirection: "row",
     alignItems: "flex-start",
@@ -993,27 +1024,10 @@ const styles = StyleSheet.create({
     marginBottom: 0,
     paddingTop: 10,
   },
-  titleContainer: {
-    flex: 1,
-    marginLeft: 50,
-    marginTop: -35,
-  },
-  title: {
-    fontSize: 25,
-    fontWeight: "400",
-    color: "#000000",
-  },
-  subtitle: {
-    fontSize: 16,
-    fontWeight: "300",
-    color: "#666666",
-    marginTop: 4,
-  },
-  loadingSubtext: {
-    fontSize: 14,
-    color: "#666666",
-    marginTop: 8,
-  },
+  titleContainer: { flex: 1, marginLeft: 50, marginTop: -35 },
+  title: { fontSize: 25, fontWeight: "400", color: "#000000" },
+  subtitle: { fontSize: 16, fontWeight: "300", color: "#666666", marginTop: 4 },
+  loadingSubtext: { fontSize: 14, color: "#666666", marginTop: 8 },
   orderSummary: {
     backgroundColor: "#FF8C00",
     marginHorizontal: 20,
@@ -1023,21 +1037,10 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     alignItems: "center",
   },
-  orderSummaryText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  categoriesWrapper: {
-    marginBottom: 20,
-  },
-  categoriesContainer: {
-    flexDirection: "row",
-    paddingHorizontal: 15,
-  },
-  categoriesContentContainer: {
-    paddingRight: 20,
-  },
+  orderSummaryText: { color: "#FFFFFF", fontSize: 16, fontWeight: "600" },
+  categoriesWrapper: { marginBottom: 20 },
+  categoriesContainer: { flexDirection: "row", paddingHorizontal: 15 },
+  categoriesContentContainer: { paddingRight: 20 },
   categoryButton: {
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -1047,21 +1050,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     minWidth: 60,
   },
-  categoryButtonActive: {
-    backgroundColor: "#FF8C00",
-  },
-  categoryText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  categoryTextActive: {
-    color: "#FFFFFF",
-  },
-  itemsContainer: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
+  categoryButtonActive: { backgroundColor: "#FF8C00" },
+  categoryText: { color: "#FFFFFF", fontSize: 14, fontWeight: "500" },
+  categoryTextActive: { color: "#FFFFFF" },
+  itemsContainer: { flex: 1, paddingHorizontal: 20 },
   noItemsContainer: {
     flex: 1,
     justifyContent: "center",
@@ -1081,21 +1073,14 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginTop: 20,
   },
-  retryButtonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "600",
-  },
+  retryButtonText: { color: "#FFFFFF", fontSize: 16, fontWeight: "600" },
   itemCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 15,
     padding: 15,
     marginBottom: 15,
     shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
@@ -1103,82 +1088,66 @@ const styles = StyleSheet.create({
   itemHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 15,
-    flexWrap: "wrap",
+    alignItems: "flex-start",
+    marginBottom: 12,
   },
   itemName: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: "600",
     color: "#000000",
-    flex: 1,
+    marginBottom: 2,
   },
-  itemPrice: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#FF8C00",
-  },
-  categoryBadge: {
+  itemCategory: { fontSize: 12, color: "#999", fontWeight: "500" },
+  itemPrice: { fontSize: 16, fontWeight: "700", color: "#FF8C00" },
+  itemAddOnPrice: {
     fontSize: 12,
     color: "#FF8C00",
+    marginTop: 2,
+    fontWeight: "500",
+  },
+  itemEffectivePrice: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#333",
+    marginTop: 2,
     backgroundColor: "#FFF3E0",
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 10,
-    marginTop: 4,
+    borderRadius: 6,
   },
-  optionsContainer: {
-    gap: 15,
+  itemSubtotal: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#FF8C00",
+    marginLeft: 12,
+    alignSelf: "center",
   },
+  optionsContainer: { gap: 12 },
   dropdownContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
+    gap: 8,
   },
   dropdown: {
     flex: 1,
     padding: 10,
     borderRadius: 8,
-  },
-  dropdownText: {
-    color: "#666",
-    fontSize: 14,
-  },
-  checkboxContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 15,
-  },
-  checkbox: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 8,
-  },
-  checkboxInner: {
-    width: 20,
-    height: 20,
+    backgroundColor: "#F8F8F8",
     borderWidth: 1,
-    borderColor: "#666",
-    borderRadius: 4,
-    marginRight: 8,
-    justifyContent: "center",
-    alignItems: "center",
+    borderColor: "#E0E0E0",
   },
-  checkboxChecked: {
-    backgroundColor: "#F5F5F5",
-  },
-  checkmark: {
+  starchDropdown: { backgroundColor: "#FFF8F0", borderColor: "#FFD699" },
+  dropdownText: { color: "#333", fontSize: 14, fontWeight: "500" },
+  dropdownSubText: { fontSize: 11, color: "#999", marginTop: 2 },
+  starchCapLabel: {
+    fontSize: 11,
     color: "#FF8C00",
-    fontSize: 14,
-    fontWeight: "bold",
-  },
-  checkboxText: {
-    color: "#666",
-    fontSize: 14,
+    marginTop: 2,
+    fontWeight: "500",
   },
   quantityContainer: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
     backgroundColor: "#FFFFFF",
     borderRadius: 8,
     borderWidth: 1,
@@ -1194,11 +1163,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#F5F5F5",
     borderRadius: 6,
   },
-  quantityButtonText: {
-    fontSize: 18,
-    color: "#000000",
-    fontWeight: "bold",
-  },
+  quantityButtonText: { fontSize: 18, color: "#000000", fontWeight: "bold" },
   quantityText: {
     marginHorizontal: 15,
     fontSize: 16,
@@ -1221,22 +1186,13 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     alignItems: "center",
     shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 5,
   },
-  continueButtonDisabled: {
-    backgroundColor: "#CCCCCC",
-  },
-  continueButtonText: {
-    color: "#FFF",
-    fontSize: 18,
-    fontWeight: "600",
-  },
+  continueButtonDisabled: { backgroundColor: "#CCCCCC" },
+  continueButtonText: { color: "#FFF", fontSize: 18, fontWeight: "600" },
   modalContainer: {
     flex: 1,
     justifyContent: "center",
@@ -1252,19 +1208,38 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: "600",
-    marginBottom: 15,
+    marginBottom: 6,
     textAlign: "center",
   },
+  modalSubtitle: {
+    fontSize: 13,
+    color: "#666",
+    textAlign: "center",
+    marginBottom: 15,
+  },
+  modalSubtitleBold: { color: "#FF8C00", fontWeight: "600" },
   modalOption: {
     padding: 15,
     borderBottomWidth: 1,
     borderBottomColor: "#E0E0E0",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  modalOptionSelected: {
+    backgroundColor: "#FFF3E0",
+    borderRadius: 8,
+    borderBottomWidth: 0,
+    marginBottom: 2,
   },
   modalOptionText: {
     fontSize: 16,
     color: "#333",
     textAlign: "center",
+    flex: 1,
   },
+  modalOptionTextSelected: { color: "#FF8C00", fontWeight: "600" },
+  modalOptionCheck: { color: "#FF8C00", fontSize: 16, fontWeight: "bold" },
   modalCloseButton: {
     marginTop: 15,
     padding: 15,
@@ -1272,11 +1247,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: "center",
   },
-  modalCloseButtonText: {
-    color: "#FF8C00",
-    fontSize: 16,
-    fontWeight: "600",
-  },
+  modalCloseButtonText: { color: "#FF8C00", fontSize: 16, fontWeight: "600" },
 });
 
 export default AvailableServicesScreen;

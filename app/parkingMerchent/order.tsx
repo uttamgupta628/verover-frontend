@@ -1,1062 +1,800 @@
-import React, { useState, useEffect } from 'react';
+// parkingMerchent/merchantBookingHistoryScreen.tsx
+import React, { useState, useEffect } from "react";
 import {
-    View,
-    Text,
-    TouchableOpacity,
-    StyleSheet,
-    ScrollView,
-    Dimensions,
-    ActivityIndicator,
-    RefreshControl,
-    Alert,
-} from 'react-native';
-import { useRouter } from 'expo-router';
-import { useSelector } from 'react-redux';
-import { Ionicons } from '@expo/vector-icons';
-import colors from '../../assets/color';
-import axiosInstance from '../../api/axios';
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  ActivityIndicator,
+  RefreshControl,
+  Alert,
+} from "react-native";
+import { useRouter } from "expo-router";
+import { useSelector } from "react-redux";
+import { Ionicons } from "@expo/vector-icons";
+import colors from "../../assets/color";
+import axiosInstance from "../../api/axios";
 
-const { width, height } = Dimensions.get('window');
+type BookingType = "parking" | "garage" | "residence";
+type BookingStatus =
+  | "pending"
+  | "confirmed"
+  | "in_progress"
+  | "completed"
+  | "cancelled"
+  | "active"
+  | "SUCCESS"
+  | "FAILED";
 
-type BookingType = 'parking' | 'garage' | 'residence';
-type BookingStatus = 'pending' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'active';
+const HIDDEN_STATUSES = new Set(["FAILED", "COMPLETED"]);
 
 interface BookingItem {
-    _id: string;
-    bookingId: string;
-    orderNumber: string;
-    status: BookingStatus;
-    createdAt: string;
-    vehicleNumber: string;
-    totalAmount: number;
-    bookingPeriod?: {
-        from: string;
-        to: string;
-    };
-    placeInfo?: {
-        name: string;
-        address: string;
-        phoneNo: string;
-    };
-    slot?: string;
-    type: BookingType;
-    lot?: any;
-    garage?: any;
-    residence?: any;
-    paymentMethod?: string;
-    paymentStatus?: string;
-    user?: {
-        firstName: string;
-        lastName: string;
-        phone: string;
-    };
-}
-
-interface BookingResponse {
-    success: boolean;
-    data: BookingItem[] | { bookings?: BookingItem[]; data?: BookingItem[] };
-    message?: string;
+  _id: string;
+  bookingId: string;
+  orderNumber: string;
+  status: BookingStatus;
+  createdAt: string;
+  vehicleNumber: string;
+  totalAmount: number;
+  bookingPeriod?: { from: string; to: string };
+  placeInfo?: { name: string; address: string; phoneNo: string };
+  slot?: string;
+  type: BookingType;
+  paymentMethod?: string;
+  paymentStatus?: string;
+  user?: { firstName: string; lastName: string; phone: string; email?: string };
 }
 
 const MerchantParkingOrderHistory = () => {
-    const router = useRouter();
-    const { user, token, isAuthenticated } = useSelector((state: any) => state.auth);
-    
-    const [loading, setLoading] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
-    const [allBookings, setAllBookings] = useState<BookingItem[]>([]);
-    const [filteredBookings, setFilteredBookings] = useState<BookingItem[]>([]);
-    const [activeFilter, setActiveFilter] = useState<BookingType | 'all'>('all');
-    const [activeStatusFilter, setActiveStatusFilter] = useState<BookingStatus | 'all'>('all');
-    const [filterApplied, setFilterApplied] = useState(false);
-    const [stats, setStats] = useState({
-        parking: 0,
-        garage: 0,
-        residence: 0,
-        pending: 0,
-        active: 0,
-        completed: 0,
-        total: 0
-    });
+  const router = useRouter();
+  const { isAuthenticated, token } = useSelector((state: any) => state.auth); // ✅ token added
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [allBookings, setAllBookings] = useState<BookingItem[]>([]);
+  const [filteredBookings, setFilteredBookings] = useState<BookingItem[]>([]);
+  const [activeFilter, setActiveFilter] = useState<BookingType | "all">("all");
+  const [activeStatusFilter, setActiveStatusFilter] = useState<string>("all");
+  const [filterApplied, setFilterApplied] = useState(false);
 
-    useEffect(() => {
-        if (isAuthenticated && token) {
-            fetchAllBookings();
-        }
-    }, [isAuthenticated, token]);
+  useEffect(() => {
+    if (isAuthenticated) fetchAllBookings();
+  }, [isAuthenticated]);
 
-    useEffect(() => {
-        filterBookings();
-        updateStats();
-    }, [allBookings, activeFilter, activeStatusFilter]);
+  useEffect(() => {
+    filterBookings();
+  }, [allBookings, activeFilter, activeStatusFilter]);
 
-    const fetchAllBookings = async () => {
-        try {
-            setLoading(true);
-            
-            // Fetch bookings from all three endpoints in parallel
-            const [parkingResponse, garageResponse, residenceResponse] = await Promise.allSettled([
-                fetchParkingBookings(),
-                fetchGarageBookings(),
-                fetchResidenceBookings()
-            ]);
-
-            const allBookings: BookingItem[] = [];
-
-            // Process parking bookings
-            if (parkingResponse.status === 'fulfilled' && parkingResponse.value) {
-                allBookings.push(...parkingResponse.value);
-            }
-
-            // Process garage bookings
-            if (garageResponse.status === 'fulfilled' && garageResponse.value) {
-                allBookings.push(...garageResponse.value);
-            }
-
-            // Process residence bookings
-            if (residenceResponse.status === 'fulfilled' && residenceResponse.value) {
-                allBookings.push(...residenceResponse.value);
-            }
-
-            // Sort by date (newest first)
-            allBookings.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-            
-            setAllBookings(allBookings);
-            console.log('Total bookings fetched:', allBookings.length);
-
-        } catch (error: any) {
-            console.error('Error fetching bookings:', error);
-            Alert.alert('Error', 'Failed to fetch bookings. Please try again.');
-        } finally {
-            setLoading(false);
-            setRefreshing(false);
-        }
-    };
-
-   const fetchParkingBookings = async (): Promise<BookingItem[]> => {
+  const fetchAllBookings = async () => {
     try {
-        const response = await axiosInstance.get<BookingResponse>('/merchants/parkinglot/booking', {
-            headers: {
-                'Authorization': `Bearer ${token}`,
-            },
-            params: {
-                page: 1,
-                limit: 100,
-            }
-        });
-
-        console.log('Parking bookings response:', response.data);
-
-        if (!response.data.success) return [];
-
-        const data = response.data.data;
-        const bookings = data?.bookings || [];
-
-        return bookings.map((b: any) => {
-            const bookingId = b._id;
-
-            return {
-                _id: bookingId,
-                bookingId,
-                orderNumber: `PARK${String(bookingId).slice(-6).toUpperCase()}`,
-
-                status: b.paymentDetails?.status || 'PENDING',
-                createdAt: b.createdAt,
-
-                vehicleNumber: b.vehicleNumber || "N/A",
-
-                totalAmount: b.paymentDetails?.totalAmount || 0,
-
-                bookingPeriod: b.bookingPeriod,
-
-                placeInfo: {
-                    name: b.lot?.name || b.lot?.parkingName || "Parking Lot",
-                    address: b.lot?.address || "N/A",
-                    phoneNo: b.lot?.contactNumber || "N/A",
-                },
-
-                slot: b.bookedSlot || null,
-
-                type: "parking",
-
-                lot: b.lot,
-
-                paymentMethod: b.paymentDetails?.method || "N/A",
-                paymentStatus: b.paymentDetails?.status || "N/A",
-
-                user: b.customer || null
-            };
-        });
-
-    } catch (error) {
-        console.error('Error fetching parking bookings:', error);
-        return [];
-    }
-};
-
-    const fetchGarageBookings = async (): Promise<BookingItem[]> => {
-    try {
-        const response = await axiosInstance.get<BookingResponse>('/merchants/garage/booking', {
-            headers: {
-                'Authorization': `Bearer ${token}`,
-            },
-            params: {
-                page: 1,
-                limit: 100,
-            }
-        });
-
-        console.log('Garage bookings response:', response.data);
-
-        if (!response.data.success) return [];
-
-        const data = response.data.data;
-        const bookings = data?.bookings || [];
-
-        return bookings.map((b: any) => {
-            const bookingId = b._id;
-
-            return {
-                _id: bookingId,
-                bookingId,
-                orderNumber: `GAR${String(bookingId).slice(-6).toUpperCase()}`,
-
-                status: b.paymentDetails?.status || 'PENDING',
-                createdAt: b.createdAt,
-
-                vehicleNumber: b.vehicleNumber || "N/A",
-
-                totalAmount: b.paymentDetails?.totalAmount || 0,
-
-                bookingPeriod: b.bookingPeriod,
-
-                placeInfo: {
-                    name: b.garage?.name || b.garage?.garageName || "Garage",
-                    address: b.garage?.address || "N/A",
-                    phoneNo: b.garage?.contactNumber || "N/A",
-                },
-
-                slot: b.bookedSlot || null,
-
-                type: "garage",
-
-                garage: b.garage,
-
-                paymentMethod: b.paymentDetails?.method || "N/A",
-                paymentStatus: b.paymentDetails?.status || "N/A",
-
-                user: b.customer || null
-            };
-        });
-
-    } catch (error) {
-        console.error('Error fetching garage bookings:', error);
-        return [];
-    }
-};
-
-   const fetchResidenceBookings = async (): Promise<BookingItem[]> => {
-    try {
-        const response = await axiosInstance.get<BookingResponse>('/merchants/residence/booking', {
-            headers: {
-                'Authorization': `Bearer ${token}`,
-            },
-            params: {
-                page: 1,
-                limit: 100,
-            }
-        });
-
-        console.log('Residence bookings response:', response.data);
-
-        if (response.data.success) {
-            const data = response.data.data as any;
-            const bookings = data?.bookings || data || [];
-
-            return bookings.map((booking: any) => ({
-                _id: booking._id || booking.bookingId,
-                bookingId: booking.bookingId || booking._id,
-                orderNumber: booking.bookingNumber || `RES${(booking._id || '').slice(-6).toUpperCase()}`,
-                status: booking.status || 'pending',
-                createdAt: booking.createdAt || new Date().toISOString(),
-                vehicleNumber: booking.vehicleNumber || 'N/A',
-                totalAmount: booking.totalAmount || booking.totalPrice || 0,
-                bookingPeriod: booking.bookingPeriod,
-                placeInfo: booking.placeInfo || {
-                    name: booking.residence?.residenceName || 'Residence',
-                    address: booking.residence?.address || 'N/A',
-                    phoneNo: booking.residence?.contactNumber || 'N/A'
-                },
-                type: 'residence' as BookingType,
-                residence: booking.residence,
-                paymentMethod: booking.paymentMethod,
-                paymentStatus: booking.paymentStatus,
-                user: booking.user
-            }));
-        }
-
-        return [];
+      setLoading(true);
+      const [parkingRes, garageRes, residenceRes] = await Promise.allSettled([
+        fetchParkingBookings(),
+        fetchGarageBookings(),
+        fetchResidenceBookings(),
+      ]);
+      const combined: BookingItem[] = [];
+      if (parkingRes.status === "fulfilled") combined.push(...parkingRes.value);
+      if (garageRes.status === "fulfilled") combined.push(...garageRes.value);
+      if (residenceRes.status === "fulfilled") combined.push(...residenceRes.value);
+      if (parkingRes.status === "rejected")
+        console.warn("Parking fetch failed:", parkingRes.reason?.message);
+      if (garageRes.status === "rejected")
+        console.warn("Garage fetch failed:", garageRes.reason?.message);
+      if (residenceRes.status === "rejected")
+        console.warn("Residence fetch failed:", residenceRes.reason?.message);
+      combined.sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+      setAllBookings(combined);
     } catch (error: any) {
-        console.error('Error fetching residence bookings:', error);
-        return [];
+      console.error("Error fetching bookings:", error);
+      Alert.alert("Error", "Failed to fetch bookings. Please try again.");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
-};
+  };
 
-    const onRefresh = () => {
-        setRefreshing(true);
-        fetchAllBookings();
-    };
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Helpers
+  // ─────────────────────────────────────────────────────────────────────────────
 
-    const filterBookings = () => {
-        let filtered = allBookings;
-        
-        // Filter by type
-        if (activeFilter !== 'all') {
-            filtered = filtered.filter(booking => booking.type === activeFilter);
-        }
-        
-        // Filter by status
-        if (activeStatusFilter !== 'all') {
-            filtered = filtered.filter(booking => booking.status === activeStatusFilter);
-        }
-        
-        setFilteredBookings(filtered);
-    };
-
-    const updateStats = () => {
-        const stats = {
-            parking: allBookings.filter(b => b.type === 'parking').length,
-            garage: allBookings.filter(b => b.type === 'garage').length,
-            residence: allBookings.filter(b => b.type === 'residence').length,
-            pending: allBookings.filter(b => b.status === 'pending').length,
-            active: allBookings.filter(b => 
-                b.status === 'confirmed' || 
-                b.status === 'active' || 
-                b.status === 'in_progress'
-            ).length,
-            completed: allBookings.filter(b => 
-                b.status === 'completed' || 
-                b.status === 'delivered'
-            ).length,
-            total: allBookings.length
-        };
-        setStats(stats);
-    };
-
-    const getStatusColor = (status: BookingStatus) => {
-        switch (status) {
-            case 'pending':
-                return '#FFA500';
-            case 'confirmed':
-            case 'active':
-                return '#4CAF50';
-            case 'in_progress':
-                return '#2196F3';
-            case 'completed':
-                return '#666666';
-            case 'cancelled':
-                return '#FF0000';
-            default:
-                return colors.gray;
-        }
-    };
-
-    const getStatusText = (status: BookingStatus) => {
-        switch (status) {
-            case 'pending':
-                return 'Pending';
-            case 'confirmed':
-                return 'Confirmed';
-            case 'active':
-                return 'Active';
-            case 'in_progress':
-                return 'In Progress';
-            case 'completed':
-                return 'Completed';
-            case 'cancelled':
-                return 'Cancelled';
-            default:
-                return status;
-        }
-    };
-
-    const getTypeIcon = (type: BookingType) => {
-        switch (type) {
-            case 'parking':
-                return 'car-sport';
-            case 'garage':
-                return 'construct';
-            case 'residence':
-                return 'home';
-            default:
-                return 'car';
-        }
-    };
-
-    const getTypeColor = (type: BookingType) => {
-        switch (type) {
-            case 'parking':
-                return '#2196F3';
-            case 'garage':
-                return '#FF9800';
-            case 'residence':
-                return '#4CAF50';
-            default:
-                return colors.gray;
-        }
-    };
-
-    const getTypeText = (type: BookingType) => {
-        switch (type) {
-            case 'parking':
-                return 'Parking';
-            case 'garage':
-                return 'Garage';
-            case 'residence':
-                return 'Residence';
-            default:
-                return type;
-        }
-    };
-
-    const formatDate = (dateString: string) => {
-        try {
-            const date = new Date(dateString);
-            return date.toLocaleDateString('en-US', {
-                day: 'numeric',
-                month: 'short',
-                year: 'numeric'
-            });
-        } catch (error) {
-            return 'Invalid date';
-        }
-    };
-
-    const formatTime = (dateString: string) => {
-        try {
-            const date = new Date(dateString);
-            return date.toLocaleTimeString('en-US', {
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-        } catch (error) {
-            return 'Invalid time';
-        }
-    };
-
-    const formatBookingPeriod = (bookingPeriod?: { from: string; to: string }) => {
-        if (!bookingPeriod?.from || !bookingPeriod?.to) return 'N/A';
-        
-        try {
-            const fromDate = new Date(bookingPeriod.from);
-            const toDate = new Date(bookingPeriod.to);
-            
-            const fromTime = fromDate.toLocaleTimeString('en-US', {
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-            
-            const toTime = toDate.toLocaleTimeString('en-US', {
-                hour: '2-digit',
-                minute: '2-digit'
-            });
-            
-            return `${fromTime} - ${toTime}`;
-        } catch (error) {
-            return 'N/A';
-        }
-    };
-
-    const handleBookingPress = (booking: BookingItem) => {
-        // Navigate to booking details screen based on type
-        let screenPath = '';
-        
-        switch (booking.type) {
-            case 'parking':
-                screenPath = '/merchant/parking/bookingDetail';
-                break;
-            case 'garage':
-                screenPath = '/merchant/garage/bookingDetail';
-                break;
-            case 'residence':
-                screenPath = '/merchant/residence/bookingDetail';
-                break;
-        }
-        
-        router.push({
-            pathname: "/parkingMerchent/BookingDetailScreen",
-            params: {
-                bookingId: booking.bookingId,
-                bookingType: booking.type,
-                bookingData: JSON.stringify(booking)
-            }
-        });
-    };
-
-    const handleFilterPress = () => {
-        setFilterApplied(!filterApplied);
-    };
-
-    const applyTypeFilter = (filter: BookingType | 'all') => {
-        setActiveFilter(filter);
-    };
-
-    const applyStatusFilter = (filter: BookingStatus | 'all') => {
-        setActiveStatusFilter(filter);
-    };
-
-    const calculateDuration = (from: string, to: string): string => {
-        try {
-            const start = new Date(from);
-            const end = new Date(to);
-            const diffMs = end.getTime() - start.getTime();
-            const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-            const diffMinutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-            
-            if (diffHours > 0) {
-                return `${diffHours}h ${diffMinutes}m`;
-            }
-            return `${diffMinutes}m`;
-        } catch (error) {
-            return 'N/A';
-        }
-    };
-
-    if (loading && !refreshing) {
-        return (
-            <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={colors.primary} />
-                <Text style={styles.loadingText}>Loading bookings...</Text>
-            </View>
-        );
+  const extractVehicleNumber = (b: any): string => {
+    const candidates = [
+      b.vehicleNumber,
+      b.vehicle_number,
+      b.licensePlate,
+      b.license_plate,
+      b.plateNumber,
+      b.plate_number,
+      b.carNumber,
+    ];
+    for (const v of candidates) {
+      if (v && typeof v === "string" && !v.startsWith("http") && !v.startsWith("/")) {
+        return v;
+      }
     }
+    return "N/A";
+  };
 
+  const extractParkingVehicleNumber = (b: any): string => {
+    if (
+      b.vehicleNumber &&
+      typeof b.vehicleNumber === "string" &&
+      b.vehicleNumber.trim() !== "" &&
+      !b.vehicleNumber.startsWith("http") &&
+      !b.vehicleNumber.startsWith("/")
+    ) {
+      return b.vehicleNumber;
+    }
+    const fromCustomer = b.customer?.carLicensePlateImage;
+    if (
+      fromCustomer &&
+      typeof fromCustomer === "string" &&
+      fromCustomer.trim() !== "" &&
+      !fromCustomer.startsWith("http") &&
+      !fromCustomer.startsWith("/")
+    ) {
+      return fromCustomer;
+    }
+    return "N/A";
+  };
+
+  const resolveBookingDate = (b: any): string => {
     return (
-        <View style={styles.container}>
-            {/* Header */}
-            <View style={styles.header}>
-                <TouchableOpacity 
-                    style={styles.backButton} 
-                    onPress={() => router.back()}
-                >
-                    <Ionicons name="arrow-back" size={35} color={colors.primary} />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Parking Bookings</Text>
-                <TouchableOpacity 
-                    style={[styles.filterButton, filterApplied && styles.filterButtonActive]} 
-                    onPress={handleFilterPress}
-                >
-                    <Ionicons name="filter" size={22} color="#FFF" />
-                    <Text style={styles.filterText}>FILTERS</Text>
-                </TouchableOpacity>
-            </View>
-
-
-            {/* Filter Options */}
-            {filterApplied && (
-                <View style={styles.filterOptions}>
-                    <ScrollView 
-                        horizontal 
-                        showsHorizontalScrollIndicator={false}
-                        style={styles.typeFilterScroll}
-                    >
-                        <TouchableOpacity 
-                            style={[styles.filterOption, activeFilter === 'all' && styles.filterOptionActive]}
-                            onPress={() => applyTypeFilter('all')}
-                        >
-                            <Text style={[styles.filterOptionText, activeFilter === 'all' && styles.filterOptionTextActive]}>
-                                All Types
-                            </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                            style={[styles.filterOption, activeFilter === 'parking' && styles.filterOptionActive]}
-                            onPress={() => applyTypeFilter('parking')}
-                        >
-                            <Ionicons name="car-sport" size={16} color={activeFilter === 'parking' ? '#FFF' : '#2196F3'} />
-                            <Text style={[styles.filterOptionText, activeFilter === 'parking' && styles.filterOptionTextActive]}>
-                                Parking
-                            </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                            style={[styles.filterOption, activeFilter === 'garage' && styles.filterOptionActive]}
-                            onPress={() => applyTypeFilter('garage')}
-                        >
-                            <Ionicons name="construct" size={16} color={activeFilter === 'garage' ? '#FFF' : '#FF9800'} />
-                            <Text style={[styles.filterOptionText, activeFilter === 'garage' && styles.filterOptionTextActive]}>
-                                Garage
-                            </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                            style={[styles.filterOption, activeFilter === 'residence' && styles.filterOptionActive]}
-                            onPress={() => applyTypeFilter('residence')}
-                        >
-                            <Ionicons name="home" size={16} color={activeFilter === 'residence' ? '#FFF' : '#4CAF50'} />
-                            <Text style={[styles.filterOptionText, activeFilter === 'residence' && styles.filterOptionTextActive]}>
-                                Residence
-                            </Text>
-                        </TouchableOpacity>
-                    </ScrollView>
-
-                    <ScrollView 
-                        horizontal 
-                        showsHorizontalScrollIndicator={false}
-                        style={styles.statusFilterScroll}
-                    >
-                        <TouchableOpacity 
-                            style={[styles.filterOption, activeStatusFilter === 'all' && styles.filterOptionActive]}
-                            onPress={() => applyStatusFilter('all')}
-                        >
-                            <Text style={[styles.filterOptionText, activeStatusFilter === 'all' && styles.filterOptionTextActive]}>
-                                All Status
-                            </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                            style={[styles.filterOption, activeStatusFilter === 'pending' && styles.filterOptionActive]}
-                            onPress={() => applyStatusFilter('pending')}
-                        >
-                            <View style={[styles.statusIndicator, { backgroundColor: getStatusColor('pending') }]} />
-                            <Text style={[styles.filterOptionText, activeStatusFilter === 'pending' && styles.filterOptionTextActive]}>
-                                Pending
-                            </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                            style={[styles.filterOption, activeStatusFilter === 'active' && styles.filterOptionActive]}
-                            onPress={() => applyStatusFilter('active')}
-                        >
-                            <View style={[styles.statusIndicator, { backgroundColor: getStatusColor('active') }]} />
-                            <Text style={[styles.filterOptionText, activeStatusFilter === 'active' && styles.filterOptionTextActive]}>
-                                Active
-                            </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                            style={[styles.filterOption, activeStatusFilter === 'in_progress' && styles.filterOptionActive]}
-                            onPress={() => applyStatusFilter('in_progress')}
-                        >
-                            <View style={[styles.statusIndicator, { backgroundColor: getStatusColor('in_progress') }]} />
-                            <Text style={[styles.filterOptionText, activeStatusFilter === 'in_progress' && styles.filterOptionTextActive]}>
-                                In Progress
-                            </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                            style={[styles.filterOption, activeStatusFilter === 'completed' && styles.filterOptionActive]}
-                            onPress={() => applyStatusFilter('completed')}
-                        >
-                            <View style={[styles.statusIndicator, { backgroundColor: getStatusColor('completed') }]} />
-                            <Text style={[styles.filterOptionText, activeStatusFilter === 'completed' && styles.filterOptionTextActive]}>
-                                Completed
-                            </Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity 
-                            style={[styles.filterOption, activeStatusFilter === 'cancelled' && styles.filterOptionActive]}
-                            onPress={() => applyStatusFilter('cancelled')}
-                        >
-                            <View style={[styles.statusIndicator, { backgroundColor: getStatusColor('cancelled') }]} />
-                            <Text style={[styles.filterOptionText, activeStatusFilter === 'cancelled' && styles.filterOptionTextActive]}>
-                                Cancelled
-                            </Text>
-                        </TouchableOpacity>
-                    </ScrollView>
-                </View>
-            )}
-
-            {/* Booking List */}
-            <ScrollView 
-                style={styles.scrollView}
-                contentContainerStyle={styles.scrollContent}
-                refreshControl={
-                    <RefreshControl
-                        refreshing={refreshing}
-                        onRefresh={onRefresh}
-                        colors={[colors.primary]}
-                        tintColor={colors.primary}
-                    />
-                }
-            >
-                {/* Booking Count */}
-                <View style={styles.orderCountContainer}>
-                    <Text style={styles.orderCountText}>
-                        {filteredBookings.length} {filteredBookings.length === 1 ? 'booking' : 'bookings'} found
-                    </Text>
-                </View>
-
-                {/* Booking Cards */}
-                {filteredBookings.length === 0 ? (
-                    <View style={styles.emptyContainer}>
-                        <Ionicons name="calendar-outline" size={80} color={colors.gray} />
-                        <Text style={styles.emptyText}>No bookings found</Text>
-                        <Text style={styles.emptySubText}>
-                            {activeFilter === 'all' 
-                                ? 'No bookings have been made yet' 
-                                : `No ${activeFilter} bookings found`}
-                        </Text>
-                    </View>
-                ) : (
-                    filteredBookings.map((booking) => (
-                        <TouchableOpacity 
-                            key={booking._id} 
-                            style={styles.bookingCard}
-                            onPress={() => handleBookingPress(booking)}
-                            activeOpacity={0.7}
-                        >
-                            <View style={styles.bookingCardHeader}>
-                                <View style={styles.typeBadge}>
-                                    <Ionicons 
-                                        name={getTypeIcon(booking.type)} 
-                                        size={16} 
-                                        color={getTypeColor(booking.type)} 
-                                    />
-                                    <Text style={[styles.typeText, { color: getTypeColor(booking.type) }]}>
-                                        {getTypeText(booking.type)}
-                                    </Text>
-                                </View>
-                                <View style={styles.statusContainer}>
-                                    <View style={[styles.statusDot, { backgroundColor: getStatusColor(booking.status) }]} />
-                                    <Text style={[styles.bookingStatus, { color: getStatusColor(booking.status) }]}>
-                                        {getStatusText(booking.status)}
-                                    </Text>
-                                </View>
-                            </View>
-
-                            <View style={styles.bookingInfo}>
-                                <Text style={styles.bookingNumber}>{booking.orderNumber}</Text>
-                                <Text style={styles.bookingPlace}>
-                                    {booking.placeInfo?.name || 'N/A'}
-                                </Text>
-                            </View>
-
-                            <View style={styles.bookingDetails}>
-                                <View style={styles.detailRow}>
-                                    <Ionicons name="calendar-outline" size={16} color={colors.gray} />
-                                    <Text style={styles.detailText}>
-                                        {formatDate(booking.createdAt)}
-                                    </Text>
-                                </View>
-                                <View style={styles.detailRow}>
-                                    <Ionicons name="time-outline" size={16} color={colors.gray} />
-                                    <Text style={styles.detailText}>
-                                        {formatTime(booking.createdAt)}
-                                    </Text>
-                                </View>
-                                <View style={styles.detailRow}>
-                                    <Ionicons name="car-outline" size={16} color={colors.gray} />
-                                    <Text style={styles.detailText}>
-                                        {booking.vehicleNumber || 'N/A'}
-                                    </Text>
-                                </View>
-                                {booking.bookingPeriod && (
-                                    <View style={styles.detailRow}>
-                                        <Ionicons name="time" size={16} color={colors.gray} />
-                                        <Text style={styles.detailText}>
-                                            {formatBookingPeriod(booking.bookingPeriod)}
-                                            {booking.bookingPeriod.from && booking.bookingPeriod.to && 
-                                                ` (${calculateDuration(booking.bookingPeriod.from, booking.bookingPeriod.to)})`
-                                            }
-                                        </Text>
-                                    </View>
-                                )}
-                                <View style={styles.detailRow}>
-                                    <Ionicons name="cash-outline" size={16} color={colors.gray} />
-                                    <Text style={styles.detailText}>
-                                        ₹{booking.totalAmount.toFixed(2)}
-                                    </Text>
-                                </View>
-                            </View>
-
-                            {/* Customer Info */}
-                            {booking.user && (
-                                <View style={styles.customerInfo}>
-                                    <Ionicons name="person-outline" size={16} color={colors.gray} />
-                                    <Text style={styles.customerText}>
-                                        {booking.user.firstName} {booking.user.lastName}
-                                    </Text>
-                                </View>
-                            )}
-
-                            <View style={styles.bookingCardFooter}>
-                                <Text style={styles.viewDetailsText}>View Details</Text>
-                                <Ionicons name="chevron-forward" size={20} color={colors.gray} />
-                            </View>
-                        </TouchableOpacity>
-                    ))
-                )}
-            </ScrollView>
-        </View>
+      b.createdAt ||
+      b.paymentDetails?.paidAt ||
+      b.bookingPeriod?.from ||
+      new Date().toISOString()
     );
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Fetch functions — all include Authorization header ✅
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  const fetchParkingBookings = async (): Promise<BookingItem[]> => {
+    const response = await axiosInstance.get("/merchants/parkinglot/booking", {
+      params: { page: 1, limit: 100 },
+      headers: { Authorization: token }, // ✅
+    });
+    if (!response.data.success) return [];
+    return (response.data.data?.bookings || []).map((b: any) => ({
+      _id: b._id,
+      bookingId: b._id,
+      orderNumber: `PARK-${String(b._id).slice(-6).toUpperCase()}`,
+      status: (b.paymentDetails?.status || b.status || "PENDING") as BookingStatus,
+      createdAt: resolveBookingDate(b),
+      vehicleNumber: extractParkingVehicleNumber(b),
+      totalAmount: b.paymentDetails?.totalAmount || b.paymentDetails?.amountPaid || 0,
+      bookingPeriod: b.bookingPeriod
+        ? { from: b.bookingPeriod.from, to: b.bookingPeriod.to }
+        : undefined,
+      placeInfo: {
+        name: b.parking?.name || "Parking Lot",
+        address: b.parking?.address || "N/A",
+        phoneNo: b.parking?.contactNumber || "N/A",
+      },
+      slot: b.bookedSlot || undefined,
+      type: "parking" as BookingType,
+      paymentMethod: b.paymentDetails?.method || "N/A",   // ✅ maps "method"
+      paymentStatus: b.paymentDetails?.status || "N/A",   // ✅ maps "status"
+      user: b.customer
+        ? {
+            firstName: b.customer.name?.split(" ")[0] || "",
+            lastName: b.customer.name?.split(" ").slice(1).join(" ") || "",
+            phone: b.customer.phone || "",
+            email: b.customer.email || "",
+          }
+        : undefined,
+    }));
+  };
+
+  const fetchGarageBookings = async (): Promise<BookingItem[]> => {
+    const response = await axiosInstance.get("/merchants/garage/booking", {
+      params: { page: 1, limit: 100 },
+      headers: { Authorization: token }, // ✅
+    });
+    if (!response.data.success) return [];
+    return (response.data.data?.bookings || []).map((b: any) => ({
+      _id: b._id,
+      bookingId: b._id,
+      orderNumber: `GAR-${String(b._id).slice(-6).toUpperCase()}`,
+      status: (b.paymentDetails?.status || b.status || "PENDING") as BookingStatus,
+      createdAt: resolveBookingDate(b),
+      vehicleNumber: extractVehicleNumber(b),
+      totalAmount: b.paymentDetails?.totalAmount || b.paymentDetails?.amountPaid || 0,
+      bookingPeriod: b.bookingPeriod
+        ? { from: b.bookingPeriod.from, to: b.bookingPeriod.to }
+        : undefined,
+      placeInfo: {
+        name: b.garage?.name || "Garage",
+        address: b.garage?.address || "N/A",
+        phoneNo: b.garage?.contactNumber || "N/A",
+      },
+      slot: b.bookedSlot || undefined,
+      type: "garage" as BookingType,
+      paymentMethod: b.paymentDetails?.method || "N/A",   // ✅
+      paymentStatus: b.paymentDetails?.status || "N/A",   // ✅
+      user: b.customer
+        ? {
+            firstName: b.customer.name?.split(" ")[0] || "",
+            lastName: b.customer.name?.split(" ").slice(1).join(" ") || "",
+            phone: b.customer.phone || "",
+            email: b.customer.email || "",
+          }
+        : undefined,
+    }));
+  };
+
+  const fetchResidenceBookings = async (): Promise<BookingItem[]> => {
+    const response = await axiosInstance.get("/merchants/residence/booking", {
+      params: { page: 1, limit: 100 },
+      headers: { Authorization: token }, // ✅
+    });
+    if (!response.data.success) return [];
+    const bookings = response.data.data?.bookings || response.data.data || [];
+    return bookings.map((b: any) => ({
+      _id: b._id,
+      bookingId: b._id,
+      orderNumber: `RES-${String(b._id).slice(-6).toUpperCase()}`,
+      status: (b.paymentDetails?.status || b.status || "PENDING") as BookingStatus,
+      createdAt: resolveBookingDate(b),
+      vehicleNumber: extractVehicleNumber(b),
+      totalAmount: b.paymentDetails?.totalAmount || b.paymentDetails?.amountPaid || 0,
+      bookingPeriod: b.bookingPeriod
+        ? { from: b.bookingPeriod.from, to: b.bookingPeriod.to }
+        : undefined,
+      placeInfo: {
+        name: b.residence?.name || "Residence",
+        address: b.residence?.address || "N/A",
+        phoneNo: b.residence?.contactNumber || "N/A",
+      },
+      slot: undefined,
+      type: "residence" as BookingType,
+      paymentMethod: b.paymentDetails?.method || "N/A",   // ✅
+      paymentStatus: b.paymentDetails?.status || "N/A",   // ✅
+      user: b.customer
+        ? {
+            firstName: b.customer.name?.split(" ")[0] || "",
+            lastName: b.customer.name?.split(" ").slice(1).join(" ") || "",
+            phone: b.customer.phone || "",
+            email: b.customer.email || "",
+          }
+        : undefined,
+    }));
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Filtering
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  const filterBookings = () => {
+    let filtered = allBookings;
+
+    // Always hide FAILED and COMPLETED
+    filtered = filtered.filter(
+      (b) => !HIDDEN_STATUSES.has(b.status?.toUpperCase())
+    );
+
+    if (activeFilter !== "all") {
+      filtered = filtered.filter((b) => b.type === activeFilter);
+    }
+
+    if (activeStatusFilter !== "all") {
+      filtered = filtered.filter(
+        (b) => b.status?.toUpperCase() === activeStatusFilter.toUpperCase()
+      );
+    }
+
+    setFilteredBookings(filtered);
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Display helpers
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  const getStatusColor = (status: string) => {
+    switch (status?.toUpperCase()) {
+      case "SUCCESS":
+      case "CONFIRMED":
+      case "ACTIVE":
+        return "#4CAF50";
+      case "PENDING":
+        return "#FFA500";
+      case "IN_PROGRESS":
+        return "#2196F3";
+      case "COMPLETED":
+        return "#666666";
+      case "FAILED":
+      case "CANCELLED":
+        return "#FF0000";
+      default:
+        return colors.gray;
+    }
+  };
+
+  const getStatusText = (status: string) => {
+    const map: Record<string, string> = {
+      SUCCESS: "Success",
+      PENDING: "Pending",
+      CONFIRMED: "Confirmed",
+      ACTIVE: "Active",
+      IN_PROGRESS: "In Progress",
+      COMPLETED: "Completed",
+      FAILED: "Failed",
+      CANCELLED: "Cancelled",
+    };
+    return map[status?.toUpperCase()] || status;
+  };
+
+  const getTypeIcon = (type: BookingType): any => {
+    const map = { parking: "car-sport", garage: "construct", residence: "home" };
+    return map[type] || "car";
+  };
+
+  const getTypeColor = (type: BookingType) => {
+    const map = { parking: "#2196F3", garage: "#FF9800", residence: "#4CAF50" };
+    return map[type] || colors.gray;
+  };
+
+  const getTypeText = (type: BookingType) => {
+    const map = { parking: "Parking", garage: "Garage", residence: "Residence" };
+    return map[type] || type;
+  };
+
+  const formatDate = (d: string) => {
+    try {
+      return new Date(d).toLocaleDateString("en-US", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      });
+    } catch {
+      return "N/A";
+    }
+  };
+
+  const formatTime = (d: string) => {
+    try {
+      return new Date(d).toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return "N/A";
+    }
+  };
+
+  const formatBookingPeriod = (bp?: { from: string; to: string }) => {
+    if (!bp?.from || !bp?.to) return "N/A";
+    try {
+      const from = new Date(bp.from).toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      const to = new Date(bp.to).toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      return `${from} → ${to}`;
+    } catch {
+      return "N/A";
+    }
+  };
+
+  const calculateDuration = (from: string, to: string) => {
+    try {
+      const diffMs = new Date(to).getTime() - new Date(from).getTime();
+      const h = Math.floor(diffMs / 3600000);
+      const m = Math.floor((diffMs % 3600000) / 60000);
+      return h > 0 ? `${h}h ${m}m` : `${m}m`;
+    } catch {
+      return "N/A";
+    }
+  };
+
+  // ✅ Cash pending badge helper
+  const isCashPending = (booking: BookingItem): boolean => {
+    return (
+      booking.paymentMethod?.toUpperCase() === "CASH" &&
+      booking.paymentStatus?.toUpperCase() === "PENDING"
+    );
+  };
+
+  const handleBookingPress = (booking: BookingItem) => {
+    router.push({
+      pathname: "/parkingMerchent/BookingDetailScreen",
+      params: {
+        bookingId: booking.bookingId,
+        bookingType: booking.type,
+        bookingData: JSON.stringify(booking),
+      },
+    });
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Render
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  if (loading && !refreshing) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.loadingText}>Loading bookings...</Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={24} color={colors.primary} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Parking Bookings</Text>
+        <TouchableOpacity
+          style={[styles.filterButton, filterApplied && styles.filterButtonActive]}
+          onPress={() => setFilterApplied(!filterApplied)}
+        >
+          <Ionicons name="filter" size={20} color="#FFF" />
+          <Text style={styles.filterText}>FILTERS</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Filters */}
+      {filterApplied && (
+        <View style={styles.filterOptions}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ marginBottom: 8 }}
+          >
+            {(["all", "parking", "garage", "residence"] as const).map((f) => (
+              <TouchableOpacity
+                key={f}
+                style={[styles.filterChip, activeFilter === f && styles.filterChipActive]}
+                onPress={() => setActiveFilter(f)}
+              >
+                {f !== "all" && (
+                  <Ionicons
+                    name={getTypeIcon(f as BookingType)}
+                    size={14}
+                    color={activeFilter === f ? "#FFF" : getTypeColor(f as BookingType)}
+                  />
+                )}
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    activeFilter === f && styles.filterChipTextActive,
+                  ]}
+                >
+                  {f === "all" ? "All Types" : getTypeText(f as BookingType)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {(["all", "SUCCESS", "PENDING", "CANCELLED"] as const).map((s) => (
+              <TouchableOpacity
+                key={s}
+                style={[
+                  styles.filterChip,
+                  activeStatusFilter === s && styles.filterChipActive,
+                ]}
+                onPress={() => setActiveStatusFilter(s)}
+              >
+                {s !== "all" && (
+                  <View
+                    style={[styles.statusDot, { backgroundColor: getStatusColor(s) }]}
+                  />
+                )}
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    activeStatusFilter === s && styles.filterChipTextActive,
+                  ]}
+                >
+                  {s === "all" ? "All Status" : getStatusText(s)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* List */}
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              fetchAllBookings();
+            }}
+            colors={[colors.primary]}
+            tintColor={colors.primary}
+          />
+        }
+      >
+        <Text style={styles.countText}>
+          {filteredBookings.length}{" "}
+          {filteredBookings.length === 1 ? "booking" : "bookings"} found
+        </Text>
+
+        {filteredBookings.length === 0 ? (
+          <View style={styles.emptyContainer}>
+            <Ionicons name="calendar-outline" size={72} color={colors.gray} />
+            <Text style={styles.emptyText}>No bookings found</Text>
+            <Text style={styles.emptySubText}>
+              {activeFilter === "all"
+                ? "No active bookings at the moment"
+                : `No ${activeFilter} bookings found`}
+            </Text>
+          </View>
+        ) : (
+          filteredBookings.map((booking) => (
+            <TouchableOpacity
+              key={`${booking.type}-${booking._id}`}
+              style={[
+                styles.card,
+                // ✅ Highlight cash-pending cards with an orange left border
+                isCashPending(booking) && styles.cardCashPending,
+              ]}
+              onPress={() => handleBookingPress(booking)}
+              activeOpacity={0.7}
+            >
+              {/* Card header */}
+              <View style={styles.cardHeader}>
+                <View style={styles.typeBadge}>
+                  <Ionicons
+                    name={getTypeIcon(booking.type)}
+                    size={14}
+                    color={getTypeColor(booking.type)}
+                  />
+                  <Text style={[styles.typeText, { color: getTypeColor(booking.type) }]}>
+                    {getTypeText(booking.type)}
+                  </Text>
+                </View>
+                <View style={styles.statusRow}>
+                  {/* ✅ Show "Awaiting Cash" badge instead of status dot for pending cash */}
+                  {isCashPending(booking) ? (
+                    <View style={styles.cashPendingBadge}>
+                      <Ionicons name="cash-outline" size={12} color="#795548" />
+                      <Text style={styles.cashPendingBadgeText}>Awaiting Cash</Text>
+                    </View>
+                  ) : (
+                    <>
+                      <View
+                        style={[
+                          styles.statusDot,
+                          { backgroundColor: getStatusColor(booking.status) },
+                        ]}
+                      />
+                      <Text
+                        style={[
+                          styles.statusText,
+                          { color: getStatusColor(booking.status) },
+                        ]}
+                      >
+                        {getStatusText(booking.status)}
+                      </Text>
+                    </>
+                  )}
+                </View>
+              </View>
+
+              {/* Order number + place */}
+              <Text style={styles.orderNumber}>{booking.orderNumber}</Text>
+              <Text style={styles.placeName}>{booking.placeInfo?.name || "N/A"}</Text>
+
+              {/* Details */}
+              <View style={styles.detailsBlock}>
+                <DetailRow icon="calendar-outline" text={formatDate(booking.createdAt)} />
+                <DetailRow icon="time-outline" text={formatTime(booking.createdAt)} />
+                <DetailRow icon="car-outline" text={booking.vehicleNumber || "N/A"} />
+                {booking.bookingPeriod && (
+                  <DetailRow
+                    icon="time"
+                    text={`${formatBookingPeriod(booking.bookingPeriod)} (${calculateDuration(
+                      booking.bookingPeriod.from,
+                      booking.bookingPeriod.to
+                    )})`}
+                  />
+                )}
+                <DetailRow icon="cash-outline" text={`$${booking.totalAmount.toFixed(2)}`} />
+              </View>
+
+              {/* Customer */}
+              {booking.user && (
+                <View style={styles.customerRow}>
+                  <Ionicons name="person-outline" size={15} color={colors.gray} />
+                  <Text style={styles.customerText}>
+                    {booking.user.firstName} {booking.user.lastName}
+                  </Text>
+                </View>
+              )}
+
+              {/* Footer */}
+              <View style={styles.cardFooter}>
+                <Text style={styles.viewDetails}>
+                  {isCashPending(booking) ? "Confirm Cash →" : "View Details"}
+                </Text>
+                <Ionicons name="chevron-forward" size={18} color={colors.gray} />
+              </View>
+            </TouchableOpacity>
+          ))
+        )}
+      </ScrollView>
+    </View>
+  );
 };
+
+const DetailRow = ({ icon, text }: { icon: any; text: string }) => (
+  <View style={styles.detailRow}>
+    <Ionicons name={icon} size={15} color={colors.gray} />
+    <Text style={styles.detailText}>{text}</Text>
+  </View>
+);
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#FAFAFA',
-    },
-    loadingContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: '#FAFAFA',
-    },
-    loadingText: {
-        marginTop: 20,
-        fontSize: 16,
-        color: colors.gray,
-    },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: 20,
-        paddingTop: 10,
-        paddingBottom: 15,
-        backgroundColor: '#FFFFFF',
-        borderBottomWidth: 1,
-        borderBottomColor: '#F0F0F0',
-        elevation: 2,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 3,
-    },
-    backButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: '#F8F8F8',
-    },
-    headerTitle: {
-        fontSize: 20,
-        color: colors.black,
-        fontWeight: 'bold',
-        flex: 1,
-        textAlign: 'center',
-        marginHorizontal: 10,
-    },
-    filterButton: {
-        flexDirection: 'row',
-        backgroundColor: colors.primary,
-        borderRadius: 20,
-        paddingHorizontal: 15,
-        paddingVertical: 8,
-        alignItems: 'center',
-    },
-    filterButtonActive: {
-        backgroundColor: colors.darkPrimary || '#1976D2',
-    },
-    filterText: {
-        color: '#FFF',
-        fontSize: 14,
-        fontWeight: '600',
-        marginLeft: 5,
-    },
-    statsScroll: {
-        backgroundColor: '#FFFFFF',
-        borderBottomWidth: 1,
-        borderBottomColor: '#F0F0F0',
-    },
-    statsContainer: {
-        flexDirection: 'row',
-        paddingHorizontal: 15,
-        paddingVertical: 10,
-    },
-    statBox: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingHorizontal: 20,
-        paddingVertical: 10,
-        marginRight: 10,
-        backgroundColor: '#F8F8F8',
-        borderRadius: 10,
-        minWidth: 100,
-    },
-    statNumber: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        color: colors.primary,
-    },
-    statLabel: {
-        fontSize: 12,
-        color: colors.gray,
-        marginTop: 5,
-    },
-    filterOptions: {
-        backgroundColor: '#FFFFFF',
-        paddingHorizontal: 15,
-        paddingVertical: 10,
-        borderBottomWidth: 1,
-        borderBottomColor: '#F0F0F0',
-    },
-    typeFilterScroll: {
-        marginBottom: 10,
-    },
-    statusFilterScroll: {
-        marginBottom: 5,
-    },
-    filterOption: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 15,
-        paddingVertical: 8,
-        borderRadius: 20,
-        backgroundColor: '#F8F8F8',
-        marginRight: 10,
-    },
-    filterOptionActive: {
-        backgroundColor: colors.primary,
-    },
-    filterOptionText: {
-        fontSize: 14,
-        color: colors.gray,
-        fontWeight: '500',
-        marginLeft: 5,
-    },
-    filterOptionTextActive: {
-        color: '#FFFFFF',
-        fontWeight: '600',
-    },
-    statusIndicator: {
-        width: 10,
-        height: 10,
-        borderRadius: 5,
-        marginRight: 5,
-    },
-    scrollView: {
-        flex: 1,
-    },
-    scrollContent: {
-        paddingHorizontal: 15,
-        paddingTop: 10,
-        paddingBottom: 20,
-    },
-    orderCountContainer: {
-        paddingVertical: 15,
-        borderBottomWidth: 1,
-        borderBottomColor: '#F0F0F0',
-        marginBottom: 10,
-    },
-    orderCountText: {
-        fontSize: 14,
-        color: colors.gray,
-        fontWeight: '500',
-    },
-    bookingCard: {
-        backgroundColor: '#FFFFFF',
-        borderRadius: 12,
-        padding: 15,
-        marginVertical: 8,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 4,
-        elevation: 3,
-        borderWidth: 1,
-        borderColor: '#F0F0F0',
-    },
-    bookingCardHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 10,
-    },
-    typeBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#F0F8FF',
-        paddingHorizontal: 10,
-        paddingVertical: 5,
-        borderRadius: 15,
-    },
-    typeText: {
-        fontSize: 12,
-        fontWeight: '600',
-        marginLeft: 5,
-    },
-    statusContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    statusDot: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        marginRight: 5,
-    },
-    bookingStatus: {
-        fontSize: 14,
-        fontWeight: '600',
-    },
-    bookingInfo: {
-        marginBottom: 10,
-    },
-    bookingNumber: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        color: colors.black,
-        marginBottom: 5,
-    },
-    bookingPlace: {
-        fontSize: 14,
-        color: colors.gray,
-    },
-    bookingDetails: {
-        marginBottom: 10,
-    },
-    detailRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 8,
-    },
-    detailText: {
-        fontSize: 14,
-        color: colors.gray,
-        marginLeft: 10,
-        flex: 1,
-    },
-    customerInfo: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingTop: 10,
-        paddingBottom: 10,
-        borderTopWidth: 1,
-        borderTopColor: '#F0F0F0',
-    },
-    customerText: {
-        fontSize: 14,
-        color: colors.black,
-        fontWeight: '500',
-        marginLeft: 10,
-    },
-    bookingCardFooter: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingTop: 10,
-        borderTopWidth: 1,
-        borderTopColor: '#F0F0F0',
-    },
-    viewDetailsText: {
-        fontSize: 14,
-        color: colors.primary,
-        fontWeight: '600',
-    },
-    emptyContainer: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 60,
-    },
-    emptyText: {
-        fontSize: 18,
-        color: colors.black,
-        fontWeight: '600',
-        marginTop: 20,
-        marginBottom: 8,
-    },
-    emptySubText: {
-        fontSize: 14,
-        color: colors.gray,
-        textAlign: 'center',
-        paddingHorizontal: 40,
-    },
+  container: { flex: 1, backgroundColor: "#FAFAFA" },
+  loadingContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+  loadingText: { marginTop: 16, fontSize: 15, color: colors.gray },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    backgroundColor: "#FFF",
+    borderBottomWidth: 1,
+    borderBottomColor: "#F0F0F0",
+    elevation: 2,
+  },
+  backButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#F8F8F8",
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#000",
+    flex: 1,
+    textAlign: "center",
+  },
+  filterButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.primary,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+  },
+  filterButtonActive: { backgroundColor: "#1565C0" },
+  filterText: { color: "#FFF", fontSize: 13, fontWeight: "600", marginLeft: 4 },
+  filterOptions: {
+    backgroundColor: "#FFF",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F0F0F0",
+  },
+  filterChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: "#F5F5F5",
+    marginRight: 8,
+  },
+  filterChipActive: { backgroundColor: colors.primary },
+  filterChipText: { fontSize: 13, color: colors.gray, marginLeft: 4 },
+  filterChipTextActive: { color: "#FFF", fontWeight: "600" },
+  statusDot: { width: 8, height: 8, borderRadius: 4, marginRight: 5 },
+  scrollView: { flex: 1 },
+  scrollContent: { padding: 14, paddingBottom: 30 },
+  countText: { fontSize: 13, color: colors.gray, marginBottom: 10 },
+  emptyContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 60,
+  },
+  emptyText: {
+    fontSize: 17,
+    fontWeight: "600",
+    color: "#000",
+    marginTop: 16,
+    marginBottom: 6,
+  },
+  emptySubText: {
+    fontSize: 13,
+    color: colors.gray,
+    textAlign: "center",
+    paddingHorizontal: 40,
+  },
+  card: {
+    backgroundColor: "#FFF",
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 12,
+    elevation: 2,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.07,
+    shadowRadius: 3,
+    borderWidth: 1,
+    borderColor: "#F0F0F0",
+  },
+  // ✅ Orange left border for cash-pending cards
+  cardCashPending: {
+    borderLeftWidth: 4,
+    borderLeftColor: "#FF8C00",
+    borderColor: "#FFE0B2",
+  },
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  typeBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F0F8FF",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  typeText: { fontSize: 12, fontWeight: "600", marginLeft: 4 },
+  statusRow: { flexDirection: "row", alignItems: "center" },
+  statusText: { fontSize: 13, fontWeight: "600" },
+  orderNumber: { fontSize: 15, fontWeight: "bold", color: "#000", marginBottom: 2 },
+  placeName: { fontSize: 13, color: colors.gray, marginBottom: 10 },
+  detailsBlock: { marginBottom: 8 },
+  detailRow: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
+  detailText: { fontSize: 13, color: colors.gray, marginLeft: 8, flex: 1 },
+  customerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#F5F5F5",
+    marginBottom: 8,
+  },
+  customerText: { fontSize: 13, color: "#000", fontWeight: "500", marginLeft: 6 },
+  cardFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#F5F5F5",
+  },
+  viewDetails: { fontSize: 13, color: colors.primary, fontWeight: "600" },
+  // ✅ Cash pending badge styles
+  cashPendingBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#EFEBE9",
+    borderWidth: 1,
+    borderColor: "#A1887F",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
+  cashPendingBadgeText: { fontSize: 11, fontWeight: "600", color: "#5D4037" },
 });
 
 export default MerchantParkingOrderHistory;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -12,22 +12,60 @@ import {
   TextInput,
   Switch,
   Dimensions,
-} from 'react-native';
-import { useSelector } from 'react-redux';
-import { useRouter } from 'expo-router';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
-import * as MediaLibrary from 'expo-media-library';
-import * as Camera from 'expo-camera';
-import axios from 'axios';
-import colors from '../../assets/color';
-import { images } from '../../assets/images/images';
-import { RootState } from '../../components/redux/store';
-import { Image } from 'expo-image';
+  Platform,
+} from "react-native";
+import { useSelector } from "react-redux";
+import { useRouter } from "expo-router";
+import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
+import axios from "axios";
+import { RootState } from "../../components/redux/store";
+import { Picker } from "@react-native-picker/picker";
+import { Image } from "expo-image";
 
-const { width: screenWidth } = Dimensions.get('window');
-const API_BASE_URL = 'https://vervoer-backend2.onrender.com/api/users';
-// Define the DryCleaner type based on your backend model
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+const isSmallScreen = SCREEN_WIDTH < 380;
+const isTablet = SCREEN_WIDTH >= 768;
+
+const COLORS = {
+  primary: "#FF9933",
+  secondary: "#FFB366",
+  background: "#FFFFFF",
+  card: "#FFFFFF",
+  text: "#333333",
+  textLight: "#666666",
+  textMuted: "#999999",
+  border: "#FFE5C8",
+  borderLight: "#F5F5F5",
+  success: "#4CAF50",
+  error: "#F44336",
+  warning: "#FFC107",
+  white: "#FFFFFF",
+  black: "#000000",
+  primaryLight: "#FFF3E6",
+  primaryFade: "#FF993315",
+};
+
+const API_BASE_URL = "https://vervoer-backend2.onrender.com/api/users";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface AdditionalService {
+  name: "zipper" | "button" | "wash/fold";
+  price: number;
+}
+
+interface ServiceItem {
+  name: string;
+  category: string;
+  starchLevel: "low" | "medium" | "high";
+  washOnly: boolean;
+  // NOW AN ARRAY
+  additionalservice?: AdditionalService[];
+  price: number;
+  _id: string;
+}
+
 interface DryCleaner {
   _id: string;
   shopname: string;
@@ -50,654 +88,866 @@ interface DryCleaner {
     close: string;
     _id: string;
   }>;
-  services: Array<{
-    name: string;
-    category: string;
-    strachLevel: number;
-    washOnly: boolean;
-    additionalservice?: string;
-    price: number;
-    _id: string;
-  }>;
+  services: ServiceItem[];
   owner: string;
   ownerId?: string;
 }
 
-// Helper function to check ownership
-const isOwner = (cleaner: DryCleaner, currentUserId: string): boolean => {
-  const cleanerOwnerId = cleaner.ownerId || cleaner.owner;
-  return cleanerOwnerId === currentUserId;
+const isOwner = (c: DryCleaner, uid: string) =>
+  (c.ownerId || c.owner) === uid;
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const SERVICE_CATEGORIES = [
+  "Shirts",
+  "Pants",
+  "Suits",
+  "Dresses",
+  "Coats",
+  "Blankets",
+  "Comforters",
+  "Curtains",
+  "Other",
+];
+
+const ADDITIONAL_OPTIONS = ["zipper", "button", "wash/fold"] as const;
+
+// ─── Reusable UI ──────────────────────────────────────────────────────────────
+
+const SectionHeader: React.FC<{ title: string; right?: React.ReactNode }> = ({
+  title,
+  right,
+}) => (
+  <View style={u.sectionTitleRow}>
+    <Text style={u.sectionTitle}>{title}</Text>
+    {right}
+  </View>
+);
+
+const FieldGroup: React.FC<{ label: string; children: React.ReactNode }> = ({
+  label,
+  children,
+}) => (
+  <View style={u.fieldGroup}>
+    <Text style={u.fieldLabel}>{label}</Text>
+    {children}
+  </View>
+);
+
+const PrimaryBtn: React.FC<{
+  label: string;
+  onPress: () => void;
+  loading?: boolean;
+  disabled?: boolean;
+  style?: any;
+}> = ({ label, onPress, loading, disabled, style }) => (
+  <TouchableOpacity
+    style={[u.primaryBtn, (loading || disabled) && u.btnDisabled, style]}
+    onPress={onPress}
+    disabled={loading || disabled}
+    activeOpacity={0.8}
+  >
+    {loading ? (
+      <ActivityIndicator size="small" color={COLORS.white} />
+    ) : (
+      <Text style={u.primaryBtnText}>{label}</Text>
+    )}
+  </TouchableOpacity>
+);
+
+const DangerBtn: React.FC<{
+  label: string;
+  onPress: () => void;
+  loading?: boolean;
+  icon?: string;
+}> = ({ label, onPress, loading, icon }) => (
+  <TouchableOpacity
+    style={u.dangerBtn}
+    onPress={onPress}
+    disabled={loading}
+    activeOpacity={0.8}
+  >
+    {loading ? (
+      <ActivityIndicator size="small" color={COLORS.white} />
+    ) : (
+      <>
+        <MaterialCommunityIcons
+          name={(icon || "delete-outline") as any}
+          size={18}
+          color={COLORS.white}
+        />
+        <Text style={u.dangerBtnText}>{label}</Text>
+      </>
+    )}
+  </TouchableOpacity>
+);
+
+const ModalShell: React.FC<{
+  visible: boolean;
+  title: string;
+  onClose: () => void;
+  onSave: () => void;
+  saveLabel?: string;
+  loading?: boolean;
+  children: React.ReactNode;
+}> = ({ visible, title, onClose, onSave, saveLabel = "Save", loading, children }) => (
+  <Modal
+    visible={visible}
+    animationType="slide"
+    transparent
+    onRequestClose={onClose}
+  >
+    <SafeAreaView style={u.modalShell}>
+      <View style={u.modalHeader}>
+        <TouchableOpacity onPress={onClose} style={u.modalHeaderBtn}>
+          <Ionicons name="arrow-back" size={24} color={COLORS.primary} />
+        </TouchableOpacity>
+        <Text style={u.modalHeaderTitle}>{title}</Text>
+        <TouchableOpacity
+          onPress={onSave}
+          disabled={loading}
+          style={u.modalHeaderBtn}
+        >
+          {loading ? (
+            <ActivityIndicator size="small" color={COLORS.primary} />
+          ) : (
+            <Text style={u.modalSaveText}>{saveLabel}</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: 40 }}
+        showsVerticalScrollIndicator={false}
+      >
+        {children}
+      </ScrollView>
+    </SafeAreaView>
+  </Modal>
+);
+
+// ─── ServiceForm ──────────────────────────────────────────────────────────────
+// additionalservice is now AdditionalService[] — multi-select chips
+
+const ServiceForm: React.FC<{
+  formData: any;
+  setFormData: (d: any) => void;
+}> = ({ formData, setFormData }) => {
+  // Always treat as array
+  const selectedAdditionals: AdditionalService[] =
+    Array.isArray(formData.additionalservice) ? formData.additionalservice : [];
+
+  const isSelected = (opt: string) =>
+    selectedAdditionals.some((s) => s.name === opt);
+
+  const toggleOption = (opt: typeof ADDITIONAL_OPTIONS[number]) => {
+    if (isSelected(opt)) {
+      // Remove
+      setFormData({
+        ...formData,
+        additionalservice: selectedAdditionals.filter((s) => s.name !== opt),
+      });
+    } else {
+      // Add with price 0
+      setFormData({
+        ...formData,
+        additionalservice: [...selectedAdditionals, { name: opt, price: 0 }],
+      });
+    }
+  };
+
+  const updatePrice = (opt: string, priceStr: string) => {
+    setFormData({
+      ...formData,
+      additionalservice: selectedAdditionals.map((s) =>
+        s.name === opt ? { ...s, price: parseFloat(priceStr) || 0 } : s
+      ),
+    });
+  };
+
+  return (
+    <View style={{ paddingHorizontal: 20, paddingTop: 16 }}>
+      {/* Service Name */}
+      <FieldGroup label="Service Name *">
+        <TextInput
+          style={u.input}
+          value={formData.name}
+          onChangeText={(t) => setFormData({ ...formData, name: t })}
+          placeholder="e.g. Shirt Wash, Suit Dry Clean"
+          placeholderTextColor={COLORS.textMuted}
+        />
+      </FieldGroup>
+
+      {/* Category */}
+      <FieldGroup label="Category *">
+        <View style={u.chipRow}>
+          {SERVICE_CATEGORIES.map((cat) => (
+            <TouchableOpacity
+              key={cat}
+              style={[u.chip, formData.category === cat && u.chipActive]}
+              onPress={() => setFormData({ ...formData, category: cat })}
+            >
+              <Text
+                style={[u.chipText, formData.category === cat && u.chipTextActive]}
+              >
+                {cat}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </FieldGroup>
+
+      {/* Price + Starch */}
+      <View style={u.row}>
+        <View style={{ flex: 1, marginRight: 8 }}>
+          <FieldGroup label="Price ($) *">
+            <TextInput
+              style={u.input}
+              value={String(formData.price === 0 ? "" : formData.price)}
+              onChangeText={(t) => setFormData({ ...formData, price: t })}
+              keyboardType="decimal-pad"
+              placeholder="0.00"
+              placeholderTextColor={COLORS.textMuted}
+            />
+          </FieldGroup>
+        </View>
+        <View style={{ flex: 1, marginLeft: 8 }}>
+          <FieldGroup label="Starch Level">
+            <View style={[u.input, { padding: 0, overflow: "hidden" }]}>
+              <Picker
+                selectedValue={formData.starchLevel}
+                onValueChange={(value) =>
+                  setFormData({ ...formData, starchLevel: value })
+                }
+                style={{ height: 48, color: COLORS.text }}
+              >
+                <Picker.Item label="Low" value="low" />
+                <Picker.Item label="Medium" value="medium" />
+                <Picker.Item label="High" value="high" />
+              </Picker>
+            </View>
+          </FieldGroup>
+        </View>
+      </View>
+
+      {/* Additional Services — multi-select */}
+      <FieldGroup label="Additional Services (select all that apply)">
+        <View style={u.chipRow}>
+          {ADDITIONAL_OPTIONS.map((opt) => {
+            const selected = isSelected(opt);
+            return (
+              <TouchableOpacity
+                key={opt}
+                style={[u.chip, selected && u.chipActive]}
+                onPress={() => toggleOption(opt)}
+              >
+                <Text style={[u.chipText, selected && u.chipTextActive]}>
+                  {selected ? `✓ ${opt}` : opt}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* Price input per selected option */}
+        {selectedAdditionals.map((additional) => (
+          <View key={additional.name} style={u.additionalPriceRow}>
+            <View style={u.additionalPriceLabel}>
+              <MaterialCommunityIcons
+                name="plus-circle-outline"
+                size={14}
+                color={COLORS.primary}
+              />
+              <Text style={u.additionalPriceLabelText}>
+                Charge for "{additional.name}" ($)
+              </Text>
+            </View>
+            <TextInput
+              style={u.input}
+              value={additional.price === 0 ? "" : String(additional.price)}
+              onChangeText={(t) => updatePrice(additional.name, t)}
+              keyboardType="decimal-pad"
+              placeholder="e.g. 1.50"
+              placeholderTextColor={COLORS.textMuted}
+            />
+          </View>
+        ))}
+      </FieldGroup>
+
+      {/* Wash Only */}
+      <View style={u.toggleRow}>
+        <View>
+          <Text style={u.fieldLabel}>Wash Only</Text>
+          <Text style={u.toggleSub}>No dry cleaning, just washing</Text>
+        </View>
+        <Switch
+          value={formData.washOnly}
+          onValueChange={(v) => setFormData({ ...formData, washOnly: v })}
+          trackColor={{ false: COLORS.border, true: COLORS.primary }}
+          thumbColor={COLORS.white}
+          ios_backgroundColor={COLORS.border}
+        />
+      </View>
+    </View>
+  );
 };
 
-// Service Edit Modal Component
-const ServiceEditModal = ({ 
-  visible, 
-  service, 
-  onClose, 
-  onSave,
-  loading 
-}: { 
+// ─── AddServiceModal ──────────────────────────────────────────────────────────
+
+const AddServiceModal: React.FC<{
   visible: boolean;
-  service: any | null;
   onClose: () => void;
-  onSave: (serviceData: any) => void;
+  onSave: (d: any) => void;
   loading: boolean;
-}) => {
-  const [formData, setFormData] = useState({
-    name: '',
-    category: '',
-    strachLevel: 1,
+}> = ({ visible, onClose, onSave, loading }) => {
+  const empty = {
+    name: "",
+    category: "Other",
+    starchLevel: "medium",
     washOnly: false,
-    additionalservice: '',
-    price: 0,
+    additionalservice: [] as AdditionalService[],
+    price: "",
+  };
+  const [formData, setFormData] = useState(empty);
+
+  useEffect(() => {
+    if (visible) setFormData(empty);
+  }, [visible]);
+
+  const handleSave = () => {
+    if (!formData.name.trim()) {
+      Alert.alert("Required", "Service name is required");
+      return;
+    }
+    if (!formData.category) {
+      Alert.alert("Required", "Please select a category");
+      return;
+    }
+    const price = parseFloat(String(formData.price));
+    if (!price || price <= 0) {
+      Alert.alert("Required", "Enter a valid price");
+      return;
+    }
+
+    // Validate each selected additional service has a non-negative price
+    const additionals = formData.additionalservice as AdditionalService[];
+    for (const add of additionals) {
+      if (add.price < 0) {
+        Alert.alert("Required", `Enter a valid price for "${add.name}"`);
+        return;
+      }
+    }
+
+    onSave({
+      name: formData.name.trim(),
+      category: formData.category,
+      starchLevel: formData.starchLevel || "medium",
+      washOnly: Boolean(formData.washOnly),
+      // Send array (or omit if empty)
+      additionalservice: additionals.length > 0 ? additionals : undefined,
+      price,
+    });
+  };
+
+  return (
+    <ModalShell
+      visible={visible}
+      title="Add New Service"
+      onClose={onClose}
+      onSave={handleSave}
+      saveLabel="Add"
+      loading={loading}
+    >
+      <View style={{ marginTop: 6 }}>
+        <View style={u.infoBanner}>
+          <MaterialCommunityIcons
+            name="information-outline"
+            size={18}
+            color={COLORS.primary}
+          />
+          <Text style={u.infoBannerText}>
+            Fill in the details for the new service
+          </Text>
+        </View>
+        <ServiceForm formData={formData} setFormData={setFormData} />
+      </View>
+    </ModalShell>
+  );
+};
+
+// ─── ServiceEditModal ─────────────────────────────────────────────────────────
+
+const ServiceEditModal: React.FC<{
+  visible: boolean;
+  service: ServiceItem | null;
+  onClose: () => void;
+  onSave: (d: any) => void;
+  onDelete: (id: string) => void;
+  loading: boolean;
+}> = ({ visible, service, onClose, onSave, onDelete, loading }) => {
+  const [formData, setFormData] = useState<any>({
+    name: "",
+    category: "Other",
+    starchLevel: "medium",
+    washOnly: false,
+    additionalservice: [] as AdditionalService[],
+    price: "",
   });
 
   useEffect(() => {
     if (service) {
+      // Normalize additionalservice to always be an array
+      let additionals: AdditionalService[] = [];
+      if (Array.isArray(service.additionalservice)) {
+        additionals = service.additionalservice;
+      } else if (
+        service.additionalservice &&
+        typeof service.additionalservice === "object"
+      ) {
+        // Legacy single-object from old data — wrap it
+        additionals = [service.additionalservice as unknown as AdditionalService];
+      } else if (
+        service.additionalservice &&
+        typeof service.additionalservice === "string"
+      ) {
+        // Very old string format
+        additionals = [
+          { name: service.additionalservice as any, price: 0 },
+        ];
+      }
+
       setFormData({
-        name: service.name || '',
-        category: service.category || '',
-        strachLevel: service.strachLevel || 1,
+        name: service.name || "",
+        category: service.category || "Other",
+        starchLevel: service.starchLevel || "medium",
         washOnly: service.washOnly || false,
-        additionalservice: service.additionalservice || '',
-        price: service.price || 0,
+        additionalservice: additionals,
+        price: String(service.price || ""),
       });
     }
   }, [service]);
 
   const handleSave = () => {
     if (!formData.name.trim()) {
-      Alert.alert('Error', 'Service name is required');
+      Alert.alert("Required", "Service name is required");
       return;
     }
-    if (!formData.category.trim()) {
-      Alert.alert('Error', 'Category is required');
+    if (!formData.category) {
+      Alert.alert("Required", "Please select a category");
       return;
     }
-    if (formData.price <= 0) {
-      Alert.alert('Error', 'Price must be greater than 0');
+    const price = parseFloat(String(formData.price));
+    if (!price || price <= 0) {
+      Alert.alert("Required", "Enter a valid price");
       return;
     }
 
+    const additionals = formData.additionalservice as AdditionalService[];
+    for (const add of additionals) {
+      if (add.price < 0) {
+        Alert.alert("Required", `Enter a valid price for "${add.name}"`);
+        return;
+      }
+    }
+
     onSave({
-      serviceId: service._id,
-      ...formData,
+      serviceId: service!._id,
+      name: formData.name.trim(),
+      category: formData.category,
+      starchLevel: formData.starchLevel || "medium",
+      washOnly: Boolean(formData.washOnly),
+      // Always send the array (empty array = clear all)
+      additionalservice: additionals,
+      price,
     });
+  };
+
+  const handleDelete = () => {
+    Alert.alert("Delete Service", `Delete "${service?.name}"?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => onDelete(service!._id),
+      },
+    ]);
   };
 
   if (!service) return null;
 
   return (
-    <Modal
+    <ModalShell
       visible={visible}
-      animationType="slide"
-      transparent={true}
-      onRequestClose={onClose}
+      title="Edit Service"
+      onClose={onClose}
+      onSave={handleSave}
+      loading={loading}
     >
-      <SafeAreaView style={styles.modalContainer}>
-        <View style={styles.modalHeader}>
-          <TouchableOpacity onPress={onClose}>
-            <MaterialCommunityIcons name="close" size={24} color="#000" />
-          </TouchableOpacity>
-          <Text style={styles.modalTitle}>Edit Service</Text>
-          <TouchableOpacity onPress={handleSave} disabled={loading}>
-            <Text style={[styles.saveButton, loading && styles.disabledButton]}>
-              {loading ? 'Saving...' : 'Save'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView style={styles.modalContent}>
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Service Name *</Text>
-            <TextInput
-              style={styles.textInput}
-              value={formData.name}
-              onChangeText={(text) => setFormData({...formData, name: text})}
-              placeholder="Enter service name"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Category *</Text>
-            <TextInput
-              style={styles.textInput}
-              value={formData.category}
-              onChangeText={(text) => setFormData({...formData, category: text})}
-              placeholder="Enter category"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Starch Level (1-5)</Text>
-            <TextInput
-              style={styles.textInput}
-              value={formData.strachLevel.toString()}
-              onChangeText={(text) => {
-                const level = parseInt(text) || 1;
-                if (level >= 1 && level <= 5) {
-                  setFormData({...formData, strachLevel: level});
-                }
-              }}
-              keyboardType="numeric"
-              placeholder="1-5"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Price (₹) *</Text>
-            <TextInput
-              style={styles.textInput}
-              value={formData.price.toString()}
-              onChangeText={(text) => {
-                const price = parseFloat(text) || 0;
-                setFormData({...formData, price: price});
-              }}
-              keyboardType="numeric"
-              placeholder="Enter price"
-            />
-          </View>
-
-          <View style={styles.switchGroup}>
-            <Text style={styles.inputLabel}>Wash Only</Text>
-            <Switch
-              value={formData.washOnly}
-              onValueChange={(value) => setFormData({...formData, washOnly: value})}
-              trackColor={{ false: '#767577', true: colors.brandColor }}
-              thumbColor={formData.washOnly ? '#f5dd4b' : '#f4f3f4'}
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Additional Service</Text>
-            <TextInput
-              style={styles.textInput}
-              value={formData.additionalservice}
-              onChangeText={(text) => setFormData({...formData, additionalservice: text})}
-              placeholder="zipper, button, wash/fold"
-            />
-          </View>
-        </ScrollView>
-      </SafeAreaView>
-    </Modal>
+      <ServiceForm formData={formData} setFormData={setFormData} />
+      <View style={{ paddingHorizontal: 20, marginTop: 8 }}>
+        <DangerBtn
+          label="Delete This Service"
+          onPress={handleDelete}
+          loading={loading}
+        />
+      </View>
+    </ModalShell>
   );
 };
 
-// Hours Edit Modal Component
-const HoursEditModal = ({ 
-  visible, 
-  hours, 
-  onClose, 
-  onSave,
-  loading 
-}: { 
+// ─── HoursEditModal ───────────────────────────────────────────────────────────
+
+const HoursEditModal: React.FC<{
   visible: boolean;
   hours: any[];
   onClose: () => void;
-  onSave: (hoursData: any[]) => void;
+  onSave: (d: any[]) => void;
   loading: boolean;
-}) => {
+}> = ({ visible, hours, onClose, onSave, loading }) => {
+  const days = [
+    "Monday", "Tuesday", "Wednesday", "Thursday",
+    "Friday", "Saturday", "Sunday",
+  ];
   const [hoursData, setHoursData] = useState<any[]>([]);
 
-  const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-
   useEffect(() => {
-    if (hours && hours.length > 0) {
-      setHoursData(hours);
-    } else {
-      // Initialize with default hours
-      const defaultHours = daysOfWeek.map(day => ({
-        day,
-        open: '09:00 AM',
-        close: '07:00 PM',
-      }));
-      setHoursData(defaultHours);
-    }
-  }, [hours]);
+    setHoursData(
+      hours?.length > 0
+        ? hours
+        : days.map((day) => ({ day, open: "09:00 AM", close: "07:00 PM" }))
+    );
+  }, [hours, visible]);
 
-  const updateHour = (index: number, field: string, value: string) => {
-    const newHours = [...hoursData];
-    newHours[index] = { ...newHours[index], [field]: value };
-    setHoursData(newHours);
-  };
-
-  const handleSave = () => {
-    onSave(hoursData);
+  const update = (i: number, field: string, val: string) => {
+    const next = [...hoursData];
+    next[i] = { ...next[i], [field]: val };
+    setHoursData(next);
   };
 
   return (
-    <Modal
+    <ModalShell
       visible={visible}
-      animationType="slide"
-      transparent={true}
-      onRequestClose={onClose}
+      title="Operating Hours"
+      onClose={onClose}
+      onSave={() => onSave(hoursData)}
+      loading={loading}
     >
-      <SafeAreaView style={styles.modalContainer}>
-        <View style={styles.modalHeader}>
-          <TouchableOpacity onPress={onClose}>
-            <MaterialCommunityIcons name="close" size={24} color="#000" />
-          </TouchableOpacity>
-          <Text style={styles.modalTitle}>Edit Operating Hours</Text>
-          <TouchableOpacity onPress={handleSave} disabled={loading}>
-            <Text style={[styles.saveButton, loading && styles.disabledButton]}>
-              {loading ? 'Saving...' : 'Save'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView style={styles.modalContent}>
-          {hoursData.map((hour, index) => (
-            <View key={index} style={styles.hourRow}>
-              <Text style={styles.dayLabel}>{hour.day}</Text>
-              <View style={styles.timeInputs}>
-                <TextInput
-                  style={styles.timeInput}
-                  value={hour.open}
-                  onChangeText={(text) => updateHour(index, 'open', text)}
-                  placeholder="09:00 AM"
-                />
-                <Text style={styles.timeSeparator}>to</Text>
-                <TextInput
-                  style={styles.timeInput}
-                  value={hour.close}
-                  onChangeText={(text) => updateHour(index, 'close', text)}
-                  placeholder="07:00 PM"
-                />
-              </View>
-            </View>
-          ))}
-        </ScrollView>
-      </SafeAreaView>
-    </Modal>
+      <View style={{ paddingHorizontal: 20, paddingTop: 16 }}>
+        {hoursData.map((hour, i) => (
+          <View key={i} style={u.hourRow}>
+            <Text style={u.hourDay}>{hour.day.slice(0, 3)}</Text>
+            <TextInput
+              style={u.hourInput}
+              value={hour.open}
+              onChangeText={(t) => update(i, "open", t)}
+              placeholder="09:00 AM"
+              placeholderTextColor={COLORS.textMuted}
+            />
+            <Text style={u.hourSep}>–</Text>
+            <TextInput
+              style={u.hourInput}
+              value={hour.close}
+              onChangeText={(t) => update(i, "close", t)}
+              placeholder="07:00 PM"
+              placeholderTextColor={COLORS.textMuted}
+            />
+          </View>
+        ))}
+      </View>
+    </ModalShell>
   );
 };
 
-// Profile Edit Modal Component
-const ProfileEditModal = ({ 
-  visible, 
-  cleaner, 
-  onClose, 
-  onSave,
-  loading 
-}: { 
+// ─── ProfileEditModal ─────────────────────────────────────────────────────────
+
+const ProfileEditModal: React.FC<{
   visible: boolean;
   cleaner: DryCleaner | null;
   onClose: () => void;
-  onSave: (profileData: any) => void;
+  onSave: (d: any) => void;
   loading: boolean;
-}) => {
-  const [formData, setFormData] = useState({
-    contactPerson: '',
-    phoneNumber: '',
-    contactPersonImg: '',
+}> = ({ visible, cleaner, onClose, onSave, loading }) => {
+  const [form, setForm] = useState({
+    contactPerson: "",
+    phoneNumber: "",
+    contactPersonImg: "",
   });
-  const [imageUploading, setImageUploading] = useState(false);
-  const [selectedImageUri, setSelectedImageUri] = useState<string | null>(null);
-  const [selectedImageData, setSelectedImageData] = useState<any>(null);
-
-  const authToken = useSelector((state: RootState) => state.auth.token);
+  const [imgUri, setImgUri] = useState<string | null>(null);
+  const [imgData, setImgData] = useState<any>(null);
+  const [uploading, setUploading] = useState(false);
+  const authToken = useSelector((s: RootState) => s.auth.token);
 
   useEffect(() => {
     if (cleaner) {
-      setFormData({
-        contactPerson: cleaner.contactPerson || '',
-        phoneNumber: cleaner.phoneNumber || '',
-        contactPersonImg: cleaner.contactPersonImg || '',
+      setForm({
+        contactPerson: cleaner.contactPerson || "",
+        phoneNumber: cleaner.phoneNumber || "",
+        contactPersonImg: cleaner.contactPersonImg || "",
       });
-      setSelectedImageUri(null);
-      setSelectedImageData(null);
+      setImgUri(null);
+      setImgData(null);
     }
   }, [cleaner]);
 
-  // Request permissions
-  const requestPermissions = async () => {
-  try {
-    // Request camera permissions
-    const cameraPermission = await Camera.requestCameraPermissionsAsync();
-    console.log('Camera permission status:', cameraPermission.status);
-    
-    // Request media library permissions
-    const mediaPermission = await MediaLibrary.requestPermissionsAsync();
-    console.log('Media library permission status:', mediaPermission.status);
-    
-    // Check if permissions are granted
-    if (cameraPermission.status !== 'granted') {
-      Alert.alert(
-        'Camera Permission Required',
-        'Please allow camera access in your device settings to take photos.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Open Settings', onPress: () => Linking.openSettings() }
-        ]
-      );
-      return false;
-    }
-    
-    if (mediaPermission.status !== 'granted') {
-      Alert.alert(
-        'Gallery Permission Required',
-        'Please allow gallery access in your device settings to select photos.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Open Settings', onPress: () => Linking.openSettings() }
-        ]
-      );
-      return false;
-    }
-    
-    return true;
-  } catch (error) {
-    console.error('Permission request error:', error);
-    Alert.alert('Error', 'Failed to request permissions. Please try again.');
-    return false;
-  }
-};
+  const pickImage = () =>
+    Alert.alert("Photo", "Choose source", [
+      {
+        text: "Camera",
+        onPress: async () => {
+          const r = await ImagePicker.launchCameraAsync({
+            mediaTypes: ["images"],
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 0.8,
+          });
+          if (!r.canceled) {
+            setImgUri(r.assets[0].uri);
+            setImgData(r.assets[0]);
+          }
+        },
+      },
+      {
+        text: "Gallery",
+        onPress: async () => {
+          const r = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ["images"],
+            allowsEditing: true,
+            aspect: [1, 1],
+            quality: 0.8,
+          });
+          if (!r.canceled) {
+            setImgUri(r.assets[0].uri);
+            setImgData(r.assets[0]);
+          }
+        },
+      },
+      {
+        text: "Remove",
+        onPress: () => {
+          setImgUri(null);
+          setImgData(null);
+          setForm((f) => ({ ...f, contactPersonImg: "" }));
+        },
+        style: "destructive",
+      },
+      { text: "Cancel", style: "cancel" },
+    ]);
 
-  // Show image picker options
-  const showImagePicker = async () => {
-  Alert.alert(
-    'Select Image',
-    'Choose an option to select contact person image',
-    [
-      {
-        text: 'Camera',
-        onPress: () => openCamera(),
-      },
-      {
-        text: 'Gallery',
-        onPress: () => openGallery(),
-      },
-      {
-        text: 'Remove Image',
-        onPress: () => removeImage(),
-        style: 'destructive',
-      },
-      {
-        text: 'Cancel',
-        style: 'cancel',
-      },
-    ],
-  );
-};
-
-  // Open camera
- const openCamera = async () => {
-  try {
-    console.log('Opening camera...');
-    
-    // Request camera permission from ImagePicker
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    console.log('Camera permission status:', status);
-    
-    if (status !== 'granted') {
-      Alert.alert(
-        'Permission Denied', 
-        'Camera permission is required to take photos.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Try Again', onPress: () => openCamera() }
-        ]
-      );
+  const handleSave = async () => {
+    if (!form.contactPerson.trim()) {
+      Alert.alert("Required", "Contact person name is required");
       return;
     }
-    
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-
-    console.log('Camera result:', result);
-
-    if (!result.canceled && result.assets && result.assets[0]) {
-      const asset = result.assets[0];
-      console.log('Image selected:', asset.uri);
-      setSelectedImageUri(asset.uri);
-      setSelectedImageData(asset);
+    if (!form.phoneNumber.trim()) {
+      Alert.alert("Required", "Phone number is required");
+      return;
     }
-  } catch (error) {
-    console.error('Camera error:', error);
-    Alert.alert('Error', 'Failed to take photo. Please try again.');
-  }
-};
-
-const openGallery = async () => {
-  try {
-    console.log('Opening gallery...');
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-
-    console.log('Gallery result:', result);
-
-    if (!result.canceled && result.assets?.[0]) {
-      const asset = result.assets[0];
-      setSelectedImageUri(asset.uri);
-      setSelectedImageData(asset);
+    if (!cleaner || !authToken) return;
+    try {
+      setUploading(true);
+      const fd = new FormData();
+      fd.append("contactPerson", form.contactPerson);
+      fd.append("phoneNumber", form.phoneNumber);
+      if (imgData) {
+        const ext = imgData.uri.split(".").pop() || "jpg";
+        fd.append("contactPersonImg", {
+          uri: imgData.uri,
+          type: `image/${ext}`,
+          name: `cp-${Date.now()}.${ext}`,
+        } as any);
+      }
+      const res = await axios.put(
+        `${API_BASE_URL}/edit-profile-drycleaner/${cleaner._id}`,
+        fd,
+        {
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            "Content-Type": "multipart/form-data",
+          },
+          timeout: 30000,
+        }
+      );
+      if (res.data.success) {
+        onSave({
+          contactPerson: form.contactPerson,
+          phoneNumber: form.phoneNumber,
+          contactPersonImg:
+            res.data.data?.dryCleaner?.contactPersonImg || form.contactPersonImg,
+        });
+        onClose();
+      }
+    } catch (e: any) {
+      Alert.alert("Error", e.response?.data?.message || "Failed to update");
+    } finally {
+      setUploading(false);
     }
-  } catch (error) {
-    console.error('Gallery error:', error);
-    Alert.alert('Error', 'Failed to select image. Please try again.');
-  }
-};
-
-
-  // Remove image
-  const removeImage = () => {
-    setSelectedImageUri(null);
-    setSelectedImageData(null);
-    setFormData({
-      ...formData,
-      contactPersonImg: '',
-    });
   };
 
- const handleSave = async () => {
-  if (!formData.contactPerson.trim()) {
-    Alert.alert('Error', 'Contact person name is required');
-    return;
-  }
-  if (!formData.phoneNumber.trim()) {
-    Alert.alert('Error', 'Phone number is required');
-    return;
-  }
-
-  if (!cleaner || !authToken) {
-    Alert.alert('Error', 'Authentication required');
-    return;
-  }
-
-  try {
-    setImageUploading(true);
-
-    const formDataUpload = new FormData();
-    formDataUpload.append('contactPerson', formData.contactPerson);
-    formDataUpload.append('phoneNumber', formData.phoneNumber);
-
-    if (selectedImageData) {
-      // FIXED: Proper file object for React Native
-      const fileExtension = selectedImageData.uri.split('.').pop() || 'jpg';
-      const fileName = `contact-person-${Date.now()}.${fileExtension}`;
-      
-      formDataUpload.append('contactPersonImg', {
-        uri: selectedImageData.uri,
-        type: `image/${fileExtension}`,
-        name: fileName,
-      } as any);
-    }
-
-    console.log('Uploading to:', `${API_BASE_URL}/edit-profile-drycleaner/${cleaner._id}`);
-
-    const response = await axios.put(
-      `${API_BASE_URL}/edit-profile-drycleaner/${cleaner._id}`,
-      formDataUpload,
-      {
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-          'Content-Type': 'multipart/form-data',
-        },
-        timeout: 30000, // 30 second timeout
-      }
-    );
-
-    console.log('Upload response:', response.data);
-
-    if (response.data.success) {
-      Alert.alert('Success', 'Contact information updated successfully');
-      
-      const updatedData = {
-        contactPerson: formData.contactPerson,
-        phoneNumber: formData.phoneNumber,
-        contactPersonImg: response.data.data?.dryCleaner?.contactPersonImg || formData.contactPersonImg,
-      };
-      
-      onSave(updatedData);
-      onClose();
-    }
-  } catch (error: any) {
-    console.error('Error updating profile:', error);
-    console.error('Error response:', error.response?.data);
-    console.error('Error config:', error.config);
-    
-    if (error.code === 'ECONNABORTED') {
-      Alert.alert('Error', 'Request timed out. Please check your internet connection.');
-    } else if (error.response?.status === 403) {
-      Alert.alert('Access Denied', 'You can only edit dry cleaners that you own.');
-    } else if (error.message === 'Network Error') {
-      Alert.alert('Network Error', 'Cannot connect to server. Please check if the backend is running and the IP address is correct.');
-    } else {
-      const message = error.response?.data?.message || 'Failed to update contact information';
-      Alert.alert('Error', message);
-    }
-  } finally {
-    setImageUploading(false);
-  }
-};
-
-
   if (!cleaner) return null;
-
-  // Determine which image to show
-  const displayImageUri = selectedImageUri || formData.contactPersonImg;
+  const displayImg = imgUri || form.contactPersonImg;
 
   return (
-    <Modal
+    <ModalShell
       visible={visible}
-      animationType="slide"
-      transparent={true}
-      onRequestClose={onClose}
+      title="Edit Contact Info"
+      onClose={onClose}
+      onSave={handleSave}
+      loading={loading || uploading}
     >
-      <SafeAreaView style={styles.modalContainer}>
-        <View style={styles.modalHeader}>
-          <TouchableOpacity onPress={onClose}>
-            <MaterialCommunityIcons name="close" size={24} color="#000" />
-          </TouchableOpacity>
-          <Text style={styles.modalTitle}>Edit Contact Info</Text>
-          <TouchableOpacity onPress={handleSave} disabled={loading || imageUploading}>
-            <Text style={[styles.saveButton, (loading || imageUploading) && styles.disabledButton]}>
-              {loading || imageUploading ? 'Saving...' : 'Save'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView style={styles.modalContent}>
-          {/* Contact Person Image Section */}
-          <View style={styles.imageSection}>
-            <Text style={styles.inputLabel}>Contact Person Image</Text>
-            <View style={styles.imageContainer}>
-              <TouchableOpacity 
-                style={styles.imagePickerButton}
-                onPress={showImagePicker}
-                disabled={imageUploading}
-              >
-                {displayImageUri ? (
-                  <Image
-                    source={{ uri: displayImageUri }}
-                    style={styles.contactPersonImageLarge}
-                    contentFit="cover"
-                  />
-                ) : (
-                  <View style={styles.placeholderImage}>
-                    <MaterialCommunityIcons name="account-plus" size={40} color="#999" />
-                    <Text style={styles.placeholderText}>Add Photo</Text>
-                  </View>
-                )}
-                
-                {imageUploading && (
-                  <View style={styles.uploadingOverlay}>
-                    <ActivityIndicator size="small" color={colors.brandColor} />
-                  </View>
-                )}
-                
-                {/* Edit icon overlay */}
-                <View style={styles.editImageIcon}>
-                  <MaterialCommunityIcons name="camera" size={16} color="#fff" />
-                </View>
-              </TouchableOpacity>
-              
-              <Text style={styles.imageHint}>
-                Tap to change contact person photo
-              </Text>
-              
-              {selectedImageUri && (
-                <Text style={styles.imageSelectedText}>
-                  ✓ New image selected. Save to upload.
-                </Text>
+      <View style={{ paddingHorizontal: 20, paddingTop: 20 }}>
+        <View style={u.avatarWrap}>
+          <TouchableOpacity onPress={pickImage} activeOpacity={0.85}>
+            <View style={u.avatarCircle}>
+              {displayImg ? (
+                <Image
+                  source={{ uri: displayImg }}
+                  style={u.avatarImg}
+                  contentFit="cover"
+                />
+              ) : (
+                <MaterialCommunityIcons
+                  name="account-plus"
+                  size={44}
+                  color={COLORS.primary}
+                />
               )}
+              {uploading && (
+                <View style={u.avatarOverlay}>
+                  <ActivityIndicator color={COLORS.white} />
+                </View>
+              )}
+              <View style={u.avatarCameraBtn}>
+                <MaterialCommunityIcons name="camera" size={14} color={COLORS.white} />
+              </View>
             </View>
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Contact Person *</Text>
-            <TextInput
-              style={styles.textInput}
-              value={formData.contactPerson}
-              onChangeText={(text) => setFormData({...formData, contactPerson: text})}
-              placeholder="Enter contact person name"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Phone Number *</Text>
-            <TextInput
-              style={styles.textInput}
-              value={formData.phoneNumber}
-              onChangeText={(text) => setFormData({...formData, phoneNumber: text})}
-              placeholder="Enter phone number"
-              keyboardType="phone-pad"
-            />
-          </View>
-        </ScrollView>
-      </SafeAreaView>
-    </Modal>
+          </TouchableOpacity>
+          <Text style={u.avatarHint}>Tap to change photo</Text>
+          {imgUri && <Text style={u.avatarSelected}>✓ New photo selected</Text>}
+        </View>
+        <FieldGroup label="Contact Person *">
+          <TextInput
+            style={u.input}
+            value={form.contactPerson}
+            onChangeText={(t) => setForm({ ...form, contactPerson: t })}
+            placeholder="Full name"
+            placeholderTextColor={COLORS.textMuted}
+          />
+        </FieldGroup>
+        <FieldGroup label="Phone Number *">
+          <TextInput
+            style={u.input}
+            value={form.phoneNumber}
+            onChangeText={(t) => setForm({ ...form, phoneNumber: t })}
+            placeholder="+1 234 567 8900"
+            placeholderTextColor={COLORS.textMuted}
+            keyboardType="phone-pad"
+          />
+        </FieldGroup>
+      </View>
+    </ModalShell>
   );
 };
 
-// Shop Image Edit Modal Component
-const ShopImageEditModal = ({ 
-  visible, 
-  cleaner, 
-  onClose, 
-  onSave,
-  loading 
-}: { 
+// ─── AddressEditModal ─────────────────────────────────────────────────────────
+
+const AddressEditModal: React.FC<{
   visible: boolean;
   cleaner: DryCleaner | null;
   onClose: () => void;
-  onSave: (imageData: any) => void;
+  onSave: (d: any) => void;
   loading: boolean;
-}) => {
+}> = ({ visible, cleaner, onClose, onSave, loading }) => {
+  const [form, setForm] = useState({
+    shopname: "",
+    about: "",
+    address: { street: "", city: "", state: "", zipCode: "", country: "" },
+  });
+
+  useEffect(() => {
+    if (cleaner)
+      setForm({
+        shopname: cleaner.shopname || "",
+        about: cleaner.about || "",
+        address: {
+          street: cleaner.address?.street || "",
+          city: cleaner.address?.city || "",
+          state: cleaner.address?.state || "",
+          zipCode: cleaner.address?.zipCode || "",
+          country: cleaner.address?.country || "",
+        },
+      });
+  }, [cleaner]);
+
+  if (!cleaner) return null;
+
+  return (
+    <ModalShell
+      visible={visible}
+      title="Edit Shop Details"
+      onClose={onClose}
+      onSave={() => {
+        if (!form.shopname.trim()) {
+          Alert.alert("Required", "Shop name is required");
+          return;
+        }
+        onSave(form);
+      }}
+      loading={loading}
+    >
+      <View style={{ paddingHorizontal: 20, paddingTop: 16 }}>
+        <FieldGroup label="Shop Name *">
+          <TextInput
+            style={u.input}
+            value={form.shopname}
+            onChangeText={(t) => setForm({ ...form, shopname: t })}
+            placeholder="Enter shop name"
+            placeholderTextColor={COLORS.textMuted}
+          />
+        </FieldGroup>
+        <FieldGroup label="About">
+          <TextInput
+            style={[u.input, { height: 90, textAlignVertical: "top", paddingTop: 12 }]}
+            value={form.about}
+            onChangeText={(t) => setForm({ ...form, about: t })}
+            placeholder="Describe your shop"
+            placeholderTextColor={COLORS.textMuted}
+            multiline
+          />
+        </FieldGroup>
+        <Text style={u.groupHeader}>Address</Text>
+        {(["street", "city", "state", "zipCode", "country"] as const).map((f) => (
+          <FieldGroup key={f} label={f.charAt(0).toUpperCase() + f.slice(1)}>
+            <TextInput
+              style={u.input}
+              value={form.address[f]}
+              onChangeText={(t) =>
+                setForm({ ...form, address: { ...form.address, [f]: t } })
+              }
+              placeholder={`Enter ${f}`}
+              placeholderTextColor={COLORS.textMuted}
+              keyboardType={f === "zipCode" ? "numeric" : "default"}
+            />
+          </FieldGroup>
+        ))}
+      </View>
+    </ModalShell>
+  );
+};
+
+// ─── ShopImageEditModal ───────────────────────────────────────────────────────
+
+const ShopImageEditModal: React.FC<{
+  visible: boolean;
+  cleaner: DryCleaner | null;
+  onClose: () => void;
+  onSave: (d: any) => void;
+  loading: boolean;
+}> = ({ visible, cleaner, onClose, onSave, loading }) => {
   const [shopImages, setShopImages] = useState<string[]>([]);
   const [newImages, setNewImages] = useState<any[]>([]);
-  const [imageUploading, setImageUploading] = useState(false);
   const [deletedImages, setDeletedImages] = useState<string[]>([]);
-
-  const authToken = useSelector((state: RootState) => state.auth.token);
+  const [uploading, setUploading] = useState(false);
+  const authToken = useSelector((s: RootState) => s.auth.token);
 
   useEffect(() => {
     if (cleaner) {
@@ -705,1359 +955,805 @@ const ShopImageEditModal = ({
       setNewImages([]);
       setDeletedImages([]);
     }
-  }, [cleaner]);
+  }, [cleaner, visible]);
 
-  // Request permissions
-  const requestPermissions = async () => {
-    const { status: cameraStatus } = await Camera.requestCameraPermissionsAsync();
-    const { status: mediaStatus } = await MediaLibrary.requestPermissionsAsync();
-    
-    return cameraStatus === 'granted' && mediaStatus === 'granted';
-  };
+  const current = shopImages.filter((i) => !deletedImages.includes(i));
+  const total = current.length + newImages.length;
 
-  // Show image picker options
-  const showImagePicker = async () => {
-  Alert.alert(
-    'Select Image',
-    'Choose an option to select contact person image',
-    [
-      {
-        text: 'Camera',
-        onPress: () => openCamera(),
-      },
-      {
-        text: 'Gallery',
-        onPress: () => openGallery(),
-      },
-      {
-        text: 'Remove Image',
-        onPress: () => removeImage(),
-        style: 'destructive',
-      },
-      {
-        text: 'Cancel',
-        style: 'cancel',
-      },
-    ],
-  );
-};
-
-  // Open camera
-const openCamera = async () => {
-  try {
-    console.log('Opening camera...');
-
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    console.log('Camera permission status:', status);
-
-    if (status !== 'granted') {
-      Alert.alert(
-        'Permission Denied',
-        'Camera permission is required to take photos.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Try Again', onPress: () => openCamera() }
-        ]
-      );
+  const pickImages = () => {
+    if (total >= 5) {
+      Alert.alert("Limit", "Maximum 5 shop images allowed.");
       return;
     }
-
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-
-    console.log('Camera result:', result);
-
-    if (!result.canceled && result.assets?.[0]) {
-      const asset = result.assets[0];
-      setSelectedImageUri(asset.uri);
-      setSelectedImageData(asset);
-    }
-  } catch (error) {
-    console.error('Camera error:', error);
-    Alert.alert('Error', 'Failed to take photo. Please try again.');
-  }
-};
-
-
-
-//  openGallery function
-const openGallery = async () => {
-  try {
-    console.log('Opening gallery...');
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-
-    console.log('Gallery result:', result);
-
-    if (!result.canceled && result.assets?.[0]) {
-      const asset = result.assets[0];
-      setSelectedImageUri(asset.uri);
-      setSelectedImageData(asset);
-    }
-  } catch (error) {
-    console.error('Gallery error:', error);
-    Alert.alert('Error', 'Failed to select image. Please try again.');
-  }
-};
-
-
-  // Remove existing image (mark for deletion)
-  const removeExistingImage = (imageUrl: string) => {
-    Alert.alert(
-      'Remove Image',
-      'Are you sure you want to remove this image?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: () => {
-            setDeletedImages(prev => [...prev, imageUrl]);
-          }
-        }
-      ]
-    );
-  };
-
-  // Remove new image (before upload)
-  const removeNewImage = (index: number) => {
-    setNewImages(prev => prev.filter((_, i) => i !== index));
-  };
-
-  // Restore deleted image
-  const restoreImage = (imageUrl: string) => {
-    setDeletedImages(prev => prev.filter(img => img !== imageUrl));
+    Alert.alert("Add Image", "Source?", [
+      {
+        text: "Camera",
+        onPress: async () => {
+          const r = await ImagePicker.launchCameraAsync({
+            mediaTypes: ["images"],
+            allowsEditing: true,
+            aspect: [4, 3],
+            quality: 0.8,
+          });
+          if (!r.canceled) setNewImages((p) => [...p, r.assets[0]]);
+        },
+      },
+      {
+        text: "Gallery",
+        onPress: async () => {
+          const r = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ["images"],
+            allowsMultipleSelection: true,
+            selectionLimit: 5 - total,
+            quality: 0.8,
+          });
+          if (!r.canceled) setNewImages((p) => [...p, ...r.assets]);
+        },
+      },
+      { text: "Cancel", style: "cancel" },
+    ]);
   };
 
   const handleSave = async () => {
-  if (!cleaner || !authToken) {
-    Alert.alert('Error', 'Authentication required');
-    return;
-  }
-
-  try {
-    setImageUploading(true);
-
-    // Step 1: Delete images if any
-    if (deletedImages.length > 0) {
-      for (const imageUrl of deletedImages) {
+    if (!cleaner || !authToken) return;
+    try {
+      setUploading(true);
+      for (const url of deletedImages) {
         try {
           await axios.delete(
             `${API_BASE_URL}/delete-drycleaner-shop-image/${cleaner._id}`,
             {
-              headers: {
-                'Authorization': `Bearer ${authToken}`,
-                'Content-Type': 'application/json',
-              },
-              data: { imageUrl },
+              headers: { Authorization: `Bearer ${authToken}` },
+              data: { imageUrl: url },
               timeout: 30000,
             }
           );
-        } catch (deleteError) {
-          console.error('Error deleting image:', deleteError);
-        }
+        } catch {}
       }
-    }
-
-    // Step 2: Upload new images if any
-    if (newImages.length > 0) {
-      const formData = new FormData();
-      
-      newImages.forEach((image, index) => {
-        if (image.uri) {
-          // FIXED: Proper file object for React Native
-          const fileExtension = image.uri.split('.').pop() || 'jpg';
-          const fileName = `shop-image-${Date.now()}-${index}.${fileExtension}`;
-          
-          formData.append('shopimage', {
-            uri: image.uri,
-            type: `image/${fileExtension}`,
-            name: fileName,
+      if (newImages.length > 0) {
+        const fd = new FormData();
+        newImages.forEach((img, i) => {
+          const ext = img.uri.split(".").pop() || "jpg";
+          fd.append("shopimage", {
+            uri: img.uri,
+            type: `image/${ext}`,
+            name: `shop-${Date.now()}-${i}.${ext}`,
           } as any);
-        }
-      });
-
-      console.log('Uploading to:', `${API_BASE_URL}/update-drycleaner-shop-images/${cleaner._id}`);
-      console.log('Number of images:', newImages.length);
-
-      const uploadResponse = await axios.put(
-        `${API_BASE_URL}/update-drycleaner-shop-images/${cleaner._id}`,
-        formData,
-        {
-          headers: {
-            'Authorization': `Bearer ${authToken}`,
-            'Content-Type': 'multipart/form-data',
-          },
-          timeout: 60000, // 60 second timeout for multiple images
-        }
-      );
-
-      console.log('Upload response:', uploadResponse.data);
-
-      if (uploadResponse.data.success) {
-        Alert.alert('Success', 'Shop images updated successfully');
-        
-        const updatedData = {
-          shopimage: uploadResponse.data.data?.dryCleaner?.shopimage || [],
-        };
-        
-        onSave(updatedData);
+        });
+        const res = await axios.put(
+          `${API_BASE_URL}/update-drycleaner-shop-images/${cleaner._id}`,
+          fd,
+          {
+            headers: {
+              Authorization: `Bearer ${authToken}`,
+              "Content-Type": "multipart/form-data",
+            },
+            timeout: 60000,
+          }
+        );
+        if (res.data.success)
+          onSave({ shopimage: res.data.data?.dryCleaner?.shopimage || [] });
+      } else if (deletedImages.length > 0) {
+        onSave({ shopimage: current });
+      } else {
+        Alert.alert("No changes", "No images were changed.");
       }
-    } else if (deletedImages.length > 0) {
-      Alert.alert('Success', 'Shop images updated successfully');
-      
-      const remainingImages = shopImages.filter(img => !deletedImages.includes(img));
-      const updatedData = {
-        shopimage: remainingImages,
-      };
-      
-      onSave(updatedData);
-    } else {
-      Alert.alert('Info', 'No changes made to shop images');
+      onClose();
+    } catch (e: any) {
+      Alert.alert("Error", e.response?.data?.message || "Failed to update images");
+    } finally {
+      setUploading(false);
     }
-    
-    onClose();
-    
-  } catch (error: any) {
-    console.error('Error updating shop images:', error);
-    console.error('Error response:', error.response?.data);
-    console.error('Error config:', error.config);
-    
-    if (error.code === 'ECONNABORTED') {
-      Alert.alert('Error', 'Request timed out. Please check your internet connection.');
-    } else if (error.response?.status === 403) {
-      Alert.alert('Access Denied', 'You can only edit dry cleaners that you own.');
-    } else if (error.message === 'Network Error') {
-      Alert.alert('Network Error', 'Cannot connect to server. Please check:\n1. Backend is running\n2. IP address is correct\n3. Device is on same network');
-    } else {
-      const message = error.response?.data?.message || 'Failed to update shop images';
-      Alert.alert('Error', message);
-    }
-  } finally {
-    setImageUploading(false);
-  }
-};
-
-  if (!cleaner) return null;
-
-  // Calculate display counts
-  const currentImages = shopImages.filter(img => !deletedImages.includes(img));
-  const totalImagesAfterSave = currentImages.length + newImages.length;
-
-  return (
-    <Modal
-      visible={visible}
-      animationType="slide"
-      transparent={true}
-      onRequestClose={onClose}
-    >
-      <SafeAreaView style={styles.modalContainer}>
-        <View style={styles.modalHeader}>
-          <TouchableOpacity onPress={onClose}>
-            <MaterialCommunityIcons name="close" size={24} color="#000" />
-          </TouchableOpacity>
-          <Text style={styles.modalTitle}>Edit Shop Images</Text>
-          <TouchableOpacity 
-            onPress={handleSave} 
-            disabled={loading || imageUploading}
-          >
-            <Text style={[styles.saveButton, (loading || imageUploading) && styles.disabledButton]}>
-              {loading || imageUploading ? 'Saving...' : 'Save'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView style={styles.modalContent}>
-          {/* Image Count Info */}
-          <View style={styles.imageCountSection}>
-            <Text style={styles.imageCountText}>
-              Shop Images ({totalImagesAfterSave}/5)
-            </Text>
-            <Text style={styles.imageCountSubText}>
-              Add up to 5 images to showcase your shop
-            </Text>
-            {(deletedImages.length > 0 || newImages.length > 0) && (
-              <Text style={styles.changesText}>
-                {deletedImages.length > 0 && `${deletedImages.length} to remove`}
-                {deletedImages.length > 0 && newImages.length > 0 && ' • '}
-                {newImages.length > 0 && `${newImages.length} to add`}
-              </Text>
-            )}
-          </View>
-
-          {/* Current Images */}
-          {shopImages.length > 0 && (
-            <View style={styles.imageSection}>
-              <Text style={styles.sectionTitle}>Current Images</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={styles.imagesRow}>
-                  {shopImages.map((imageUrl, index) => {
-                    const isDeleted = deletedImages.includes(imageUrl);
-                    return (
-                      <View key={`existing-${index}`} style={styles.imageContainer}>
-                        <Image
-                          source={{ uri: imageUrl }}
-                          style={[
-                            styles.shopImageEdit,
-                            isDeleted && styles.deletedImage
-                          ]}
-                          contentFit="cover"
-                        />
-                        
-                        {isDeleted ? (
-                          <TouchableOpacity
-                            style={styles.restoreImageButton}
-                            onPress={() => restoreImage(imageUrl)}
-                          >
-                            <MaterialCommunityIcons name="restore" size={16} color="#fff" />
-                          </TouchableOpacity>
-                        ) : (
-                          <TouchableOpacity
-                            style={styles.removeImageButton}
-                            onPress={() => removeExistingImage(imageUrl)}
-                          >
-                            <MaterialCommunityIcons name="close" size={16} color="#fff" />
-                          </TouchableOpacity>
-                        )}
-                        
-                        <View style={[
-                          styles.imageLabel,
-                          isDeleted && styles.deletedImageLabel
-                        ]}>
-                          <Text style={styles.imageLabelText}>
-                            {isDeleted ? 'Will Delete' : 'Current'}
-                          </Text>
-                        </View>
-                        
-                        {isDeleted && (
-                          <View style={styles.deletedOverlay}>
-                            <MaterialCommunityIcons name="delete" size={24} color="#fff" />
-                          </View>
-                        )}
-                      </View>
-                    );
-                  })}
-                </View>
-              </ScrollView>
-            </View>
-          )}
-
-          {/* New Images */}
-          {newImages.length > 0 && (
-            <View style={styles.imageSection}>
-              <Text style={styles.sectionTitle}>New Images</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                <View style={styles.imagesRow}>
-                  {newImages.map((image, index) => (
-                    <View key={`new-${index}`} style={styles.imageContainer}>
-                      <Image
-                        source={{ uri: image.uri }}
-                        style={styles.shopImageEdit}
-                        contentFit="cover"
-                      />
-                      <TouchableOpacity
-                        style={styles.removeImageButton}
-                        onPress={() => removeNewImage(index)}
-                      >
-                        <MaterialCommunityIcons name="close" size={16} color="#fff" />
-                      </TouchableOpacity>
-                      <View style={[styles.imageLabel, styles.newImageLabel]}>
-                        <Text style={styles.imageLabelText}>New</Text>
-                      </View>
-                      
-                      {imageUploading && (
-                        <View style={styles.uploadingOverlay}>
-                          <ActivityIndicator size="small" color={colors.brandColor} />
-                        </View>
-                      )}
-                    </View>
-                  ))}
-                </View>
-              </ScrollView>
-            </View>
-          )}
-
-          {/* Add Images Section */}
-          <View style={styles.addImageSection}>
-            {totalImagesAfterSave < 5 ? (
-              <TouchableOpacity 
-                style={styles.addImageButton}
-                onPress={showImagePicker}
-                disabled={imageUploading}
-              >
-                <MaterialCommunityIcons name="camera-plus" size={40} color={colors.brandColor} />
-                <Text style={styles.addImageText}>Add Shop Images</Text>
-                <Text style={styles.addImageSubText}>
-                  Tap to add photos from camera or gallery
-                </Text>
-                <Text style={styles.slotText}>
-                  {5 - totalImagesAfterSave} slot(s) remaining
-                </Text>
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.limitReachedContainer}>
-                <MaterialCommunityIcons name="check-circle" size={40} color="#4CAF50" />
-                <Text style={styles.limitReachedText}>Image limit reached</Text>
-                <Text style={styles.limitReachedSubText}>
-                  You have reached the maximum number of images (5)
-                </Text>
-              </View>
-            )}
-          </View>
-
-          {/* Tips Section */}
-          <View style={styles.tipsSection}>
-            <Text style={styles.tipsTitle}>📷 Photo Tips</Text>
-            <Text style={styles.tipsText}>
-              • Take clear, well-lit photos of your shop{'\n'}
-              • Show your storefront, interior, and equipment{'\n'}
-              • Avoid blurry or dark images{'\n'}
-              • Include photos that showcase cleanliness and professionalism
-            </Text>
-          </View>
-        </ScrollView>
-      </SafeAreaView>
-    </Modal>
-  );
-};
-
-// Address Edit Modal Component
-const AddressEditModal = ({ 
-  visible, 
-  cleaner, 
-  onClose, 
-  onSave,
-  loading 
-}: { 
-  visible: boolean;
-  cleaner: DryCleaner | null;
-  onClose: () => void;
-  onSave: (addressData: any) => void;
-  loading: boolean;
-}) => {
-  const [formData, setFormData] = useState({
-    shopname: '',
-    about: '',
-    address: {
-      street: '',
-      city: '',
-      state: '',
-      zipCode: '',
-      country: '',
-    },
-  });
-
-  useEffect(() => {
-    if (cleaner) {
-      setFormData({
-        shopname: cleaner.shopname || '',
-        about: cleaner.about || '',
-        address: {
-          street: cleaner.address?.street || '',
-          city: cleaner.address?.city || '',
-          state: cleaner.address?.state || '',
-          zipCode: cleaner.address?.zipCode || '',
-          country: cleaner.address?.country || '',
-        },
-      });
-    }
-  }, [cleaner]);
-
-  const handleSave = () => {
-    if (!formData.shopname.trim()) {
-      Alert.alert('Error', 'Shop name is required');
-      return;
-    }
-
-    onSave(formData);
   };
 
   if (!cleaner) return null;
 
   return (
-    <Modal
+    <ModalShell
       visible={visible}
-      animationType="slide"
-      transparent={true}
-      onRequestClose={onClose}
+      title="Shop Images"
+      onClose={onClose}
+      onSave={handleSave}
+      loading={loading || uploading}
     >
-      <SafeAreaView style={styles.modalContainer}>
-        <View style={styles.modalHeader}>
-          <TouchableOpacity onPress={onClose}>
-            <MaterialCommunityIcons name="close" size={24} color="#000" />
-          </TouchableOpacity>
-          <Text style={styles.modalTitle}>Edit Shop Details</Text>
-          <TouchableOpacity onPress={handleSave} disabled={loading}>
-            <Text style={[styles.saveButton, loading && styles.disabledButton]}>
-              {loading ? 'Saving...' : 'Save'}
+      <View style={{ paddingHorizontal: 20, paddingTop: 16 }}>
+        <View style={u.imageCountPill}>
+          <MaterialCommunityIcons name="image-multiple" size={16} color={COLORS.primary} />
+          <Text style={u.imageCountText}>{total}/5 images</Text>
+          {(deletedImages.length > 0 || newImages.length > 0) && (
+            <Text style={u.imageChangesText}>
+              {deletedImages.length > 0 ? `  −${deletedImages.length}` : ""}
+              {newImages.length > 0 ? `  +${newImages.length}` : ""}
+            </Text>
+          )}
+        </View>
+
+        {shopImages.length > 0 && (
+          <>
+            <Text style={u.imgSectionLabel}>Current Images</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ marginBottom: 16 }}
+            >
+              {shopImages.map((url, i) => {
+                const del = deletedImages.includes(url);
+                return (
+                  <View key={i} style={u.imgThumb}>
+                    <Image
+                      source={{ uri: url }}
+                      style={[u.imgThumbImg, del && { opacity: 0.35 }]}
+                      contentFit="cover"
+                    />
+                    <TouchableOpacity
+                      style={[
+                        u.imgThumbBtn,
+                        { backgroundColor: del ? COLORS.success : COLORS.error },
+                      ]}
+                      onPress={() =>
+                        del
+                          ? setDeletedImages((p) => p.filter((x) => x !== url))
+                          : Alert.alert("Remove?", "Mark this image for deletion?", [
+                              { text: "Cancel", style: "cancel" },
+                              {
+                                text: "Remove",
+                                style: "destructive",
+                                onPress: () => setDeletedImages((p) => [...p, url]),
+                              },
+                            ])
+                      }
+                    >
+                      <MaterialCommunityIcons
+                        name={del ? "restore" : "close"}
+                        size={14}
+                        color={COLORS.white}
+                      />
+                    </TouchableOpacity>
+                    <View
+                      style={[
+                        u.imgThumbLabel,
+                        del && { backgroundColor: "rgba(244,67,54,0.85)" },
+                      ]}
+                    >
+                      <Text style={u.imgThumbLabelText}>
+                        {del ? "Will remove" : "Current"}
+                      </Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </ScrollView>
+          </>
+        )}
+
+        {newImages.length > 0 && (
+          <>
+            <Text style={u.imgSectionLabel}>New Images</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={{ marginBottom: 16 }}
+            >
+              {newImages.map((img, i) => (
+                <View key={i} style={u.imgThumb}>
+                  <Image
+                    source={{ uri: img.uri }}
+                    style={u.imgThumbImg}
+                    contentFit="cover"
+                  />
+                  <TouchableOpacity
+                    style={[u.imgThumbBtn, { backgroundColor: COLORS.error }]}
+                    onPress={() =>
+                      setNewImages((p) => p.filter((_, j) => j !== i))
+                    }
+                  >
+                    <MaterialCommunityIcons name="close" size={14} color={COLORS.white} />
+                  </TouchableOpacity>
+                  <View
+                    style={[
+                      u.imgThumbLabel,
+                      { backgroundColor: "rgba(76,175,80,0.85)" },
+                    ]}
+                  >
+                    <Text style={u.imgThumbLabelText}>New</Text>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+          </>
+        )}
+
+        {total < 5 ? (
+          <TouchableOpacity style={u.addImgDashed} onPress={pickImages} activeOpacity={0.8}>
+            <MaterialCommunityIcons name="camera-plus" size={36} color={COLORS.primary} />
+            <Text style={u.addImgText}>Add Photos</Text>
+            <Text style={u.addImgSub}>
+              {5 - total} slot{5 - total !== 1 ? "s" : ""} remaining
             </Text>
           </TouchableOpacity>
-        </View>
-
-        <ScrollView style={styles.modalContent}>
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Shop Name *</Text>
-            <TextInput
-              style={styles.textInput}
-              value={formData.shopname}
-              onChangeText={(text) => setFormData({...formData, shopname: text})}
-              placeholder="Enter shop name"
-            />
+        ) : (
+          <View style={u.addImgFull}>
+            <MaterialCommunityIcons name="check-circle" size={36} color={COLORS.success} />
+            <Text style={u.addImgFullText}>All 5 slots filled</Text>
           </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>About</Text>
-            <TextInput
-              style={[styles.textInput, styles.textArea]}
-              value={formData.about}
-              onChangeText={(text) => setFormData({...formData, about: text})}
-              placeholder="Enter shop description"
-              multiline
-              numberOfLines={4}
-            />
-          </View>
-
-          <Text style={styles.sectionHeader}>Address</Text>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Street</Text>
-            <TextInput
-              style={styles.textInput}
-              value={formData.address.street}
-              onChangeText={(text) => setFormData({
-                ...formData, 
-                address: {...formData.address, street: text}
-              })}
-              placeholder="Enter street address"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>City</Text>
-            <TextInput
-              style={styles.textInput}
-              value={formData.address.city}
-              onChangeText={(text) => setFormData({
-                ...formData, 
-                address: {...formData.address, city: text}
-              })}
-              placeholder="Enter city"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>State</Text>
-            <TextInput
-              style={styles.textInput}
-              value={formData.address.state}
-              onChangeText={(text) => setFormData({
-                ...formData, 
-                address: {...formData.address, state: text}
-              })}
-              placeholder="Enter state"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>ZIP Code</Text>
-            <TextInput
-              style={styles.textInput}
-              value={formData.address.zipCode}
-              onChangeText={(text) => setFormData({
-                ...formData, 
-                address: {...formData.address, zipCode: text}
-              })}
-              placeholder="Enter ZIP code"
-              keyboardType="numeric"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Country</Text>
-            <TextInput
-              style={styles.textInput}
-              value={formData.address.country}
-              onChangeText={(text) => setFormData({
-                ...formData, 
-                address: {...formData.address, country: text}
-              })}
-              placeholder="Enter country"
-            />
-          </View>
-        </ScrollView>
-      </SafeAreaView>
-    </Modal>
-  );
-};
-
-// Merchant's Dry Cleaner Card Component
-const MerchantCleanerCard = ({ 
-  cleaner, 
-  onViewDetails, 
-  onEdit,
-  onDelete,
-  currentUserId
-}: { 
-  cleaner: DryCleaner; 
-  onViewDetails: (cleaner: DryCleaner) => void;
-  onEdit: (cleaner: DryCleaner) => void;
-  onDelete: (cleaner: DryCleaner) => void;
-  currentUserId: string;
-}) => {
-  const canEdit = isOwner(cleaner, currentUserId);
-
-  return (
-    <View style={styles.cleanerCard}>
-      <TouchableOpacity 
-        style={styles.cardContent}
-        onPress={() => onViewDetails(cleaner)}
-      >
-        <View style={styles.iconContainer}>
-          <Image
-            source={require('../../assets/images/washing.png')}
-            style={styles.washingIcon}
-            contentFit="cover"
-          />
-        </View>
-        <View style={styles.cleanerInfo}>
-          <View style={styles.nameRating}>
-            <Text style={styles.cleanerName}>{cleaner.shopname}</Text>
-            <View style={styles.ratingContainer}>
-              <Text style={styles.starIcon}>★</Text>
-              <Text style={styles.rating}>{cleaner.rating || '0.0'}</Text>
-            </View>
-          </View>
-          <Text style={styles.address}>
-            {cleaner.address 
-              ? `${cleaner.address.street}, ${cleaner.address.city}, ${cleaner.address.state}`
-              : 'Address not available'
-            }
-          </Text>
-          <View style={styles.detailsContainer}>
-            <View style={styles.distanceContainer}>
-              <Text style={styles.phoneIcon}>📞</Text>
-              <Text style={styles.phoneText}>{cleaner.phoneNumber}</Text>
-            </View>
-            <View style={styles.timeContainer}>
-              <Text style={styles.clockIcon}>🕐</Text>
-              <Text style={styles.time}>
-                {cleaner.hoursOfOperation && cleaner.hoursOfOperation.length > 0
-                  ? `${cleaner.hoursOfOperation[0].open} - ${cleaner.hoursOfOperation[0].close}`
-                  : '09:00 AM - 07:00 PM'
-                }
-              </Text>
-            </View>
-          </View>
-        </View>
-      </TouchableOpacity>
-      
-      {/* Ownership Status Indicator */}
-      {!canEdit && (
-        <View style={styles.ownershipIndicator}>
-          <MaterialCommunityIcons name="account-multiple" size={14} color="#666" />
-          <Text style={styles.ownershipText}>Other Owner</Text>
-        </View>
-      )}
-      
-      {/* Action Buttons */}
-      <View style={styles.actionButtonsContainer}>
-        {/* <TouchableOpacity 
-          style={[styles.editButton, !canEdit && styles.disabledActionButton]}
-          onPress={() => canEdit ? onEdit(cleaner) : Alert.alert('Access Denied', 'You can only edit dry cleaners that you own.')}
-          disabled={!canEdit}
-        >
-          <MaterialCommunityIcons name="pencil" size={16} color={canEdit ? "#4CAF50" : "#ccc"} />
-          <Text style={[styles.editButtonText, !canEdit && styles.disabledActionText]}>Edit</Text>
-        </TouchableOpacity>
-         */}
-        <TouchableOpacity 
-          style={styles.viewDetailsButton}
-          onPress={() => onViewDetails(cleaner)}
-        >
-          <Text style={styles.viewDetailsText}>View Details</Text>
-          <MaterialCommunityIcons name="chevron-right" size={16} color={colors.brandColor} />
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[styles.deleteButton, !canEdit && styles.disabledActionButton]}
-          onPress={() => canEdit ? onDelete(cleaner) : Alert.alert('Access Denied', 'You can only delete dry cleaners that you own.')}
-          disabled={!canEdit}
-        >
-          <MaterialCommunityIcons name="delete" size={16} color={canEdit ? "#f44336" : "#ccc"} />
-          <Text style={[styles.deleteButtonText, !canEdit && styles.disabledActionText]}>Delete</Text>
-        </TouchableOpacity>
+        )}
       </View>
-    </View>
+    </ModalShell>
   );
 };
 
-// Enhanced Detailed Modal Component with Edit Functionality
-const CleanerDetailsModal = ({ 
-  cleaner, 
-  visible, 
-  onClose, 
-  onEdit,
-  onRefresh,
-  currentUserId
-}: { 
-  cleaner: DryCleaner | null; 
-  visible: boolean; 
+// ─── CleanerDetailsModal ──────────────────────────────────────────────────────
+
+const CleanerDetailsModal: React.FC<{
+  cleaner: DryCleaner | null;
+  visible: boolean;
   onClose: () => void;
-  onEdit: (cleaner: DryCleaner) => void;
+  onEdit: (c: DryCleaner) => void;
   onRefresh: () => void;
   currentUserId: string;
-}) => {
-  const [serviceEditModal, setServiceEditModal] = useState(false);
-  const [selectedService, setSelectedService] = useState<any>(null);
-  const [hoursEditModal, setHoursEditModal] = useState(false);
-  const [profileEditModal, setProfileEditModal] = useState(false);
-  const [addressEditModal, setAddressEditModal] = useState(false);
-  const [shopImageEditModal, setShopImageEditModal] = useState(false);
+}> = ({ cleaner, visible, onClose, onEdit, onRefresh, currentUserId }) => {
+  const [data, setData] = useState<DryCleaner | null>(null);
   const [loading, setLoading] = useState(false);
-  const [currentCleanerData, setCurrentCleanerData] = useState<DryCleaner | null>(null);
-
-  const authToken = useSelector((state: RootState) => state.auth.token);
+  const [modals, setModals] = useState({
+    service: false,
+    addService: false,
+    hours: false,
+    profile: false,
+    address: false,
+    images: false,
+  });
+  const [selectedService, setSelectedService] = useState<ServiceItem | null>(null);
+  const authToken = useSelector((s: RootState) => s.auth.token);
 
   useEffect(() => {
-    if (cleaner) {
-      setCurrentCleanerData(cleaner);
-    }
+    if (cleaner) setData(cleaner);
   }, [cleaner]);
 
-  const canEdit = currentCleanerData ? isOwner(currentCleanerData, currentUserId) : false;
+  const can = data ? isOwner(data, currentUserId) : false;
+  const deny = () =>
+    Alert.alert("Access Denied", "You can only edit your own dry cleaners.");
+  const open = (key: keyof typeof modals) =>
+    can ? setModals((m) => ({ ...m, [key]: true })) : deny();
+  const close = (key: keyof typeof modals) =>
+    setModals((m) => ({ ...m, [key]: false }));
 
-  const showAccessDeniedAlert = () => {
-    Alert.alert(
-      'Access Denied', 
-      'You can only edit dry cleaners that you own. This dry cleaner belongs to another merchant.',
-      [{ text: 'OK' }]
-    );
-  };
-
-  const handleEditService = (service: any) => {
-    if (!canEdit) {
-      showAccessDeniedAlert();
-      return;
-    }
-    setSelectedService(service);
-    setServiceEditModal(true);
-  };
-
-  const handleSaveService = async (serviceData: any) => {
-  if (!currentCleanerData || !authToken) {
-    Alert.alert('Error', 'Authentication required');
-    return;
-  }
-
-  if (!canEdit) {
-    showAccessDeniedAlert();
-    return;
-  }
-
-  try {
-    setLoading(true);
-    
-    // FIXED URL HERE
-    const response = await axios.put(
-      `${API_BASE_URL}/edit-service-drycleaner/${currentCleanerData._id}`,
-      serviceData,
-      {
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-          'Content-Type': 'application/json',
-        }
-      }
-    );
-
-    if (response.data.success) {
-      Alert.alert('Success', 'Service updated successfully');
-      setServiceEditModal(false);
-      
-      const updatedServices = currentCleanerData.services.map(service => 
-        service._id === serviceData.serviceId 
-          ? { ...service, ...serviceData }
-          : service
-      );
-      
-      setCurrentCleanerData({
-        ...currentCleanerData,
-        services: updatedServices
-      });
-      
-      onRefresh();
-    }
-  } catch (error: any) {
-    console.error('Error updating service:', error);
-    console.error('Error details:', error.response?.data);
-    
-    if (error.response?.status === 403) {
-      showAccessDeniedAlert();
-    } else {
-      const message = error.response?.data?.message || 'Failed to update service';
-      Alert.alert('Error', message);
-    }
-  } finally {
-    setLoading(false);
-  }
-};
-
-
-  const handleSaveHours = async (hoursData: any[]) => {
-  if (!currentCleanerData || !authToken) {
-    Alert.alert('Error', 'Authentication required');
-    return;
-  }
-
-  if (!canEdit) {
-    showAccessDeniedAlert();
-    return;
-  }
-
-  try {
-    setLoading(true);
-    
-    // FIXED URL HERE
-    const response = await axios.put(
-      `${API_BASE_URL}/edit-hours-drycleaner/${currentCleanerData._id}`,
-      hoursData,
-      {
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-          'Content-Type': 'application/json',
-        }
-      }
-    );
-
-    if (response.data.success) {
-      Alert.alert('Success', 'Operating hours updated successfully');
-      setHoursEditModal(false);
-      
-      setCurrentCleanerData({
-        ...currentCleanerData,
-        hoursOfOperation: hoursData
-      });
-      
-      onRefresh();
-    }
-  } catch (error: any) {
-    console.error('Error updating hours:', error);
-    console.error('Error details:', error.response?.data);
-    
-    if (error.response?.status === 403) {
-      showAccessDeniedAlert();
-    } else {
-      const message = error.response?.data?.message || 'Failed to update operating hours';
-      Alert.alert('Error', message);
-    }
-  } finally {
-    setLoading(false);
-  }
-};
-
-  const handleSaveProfile = async (profileData: any) => {
-  if (!currentCleanerData || !authToken) {
-    Alert.alert('Error', 'Authentication required');
-    return;
-  }
-
-  if (!canEdit) {
-    showAccessDeniedAlert();
-    return;
-  }
-
-  try {
-    setLoading(true);
-    
-    // FIXED URL HERE
-    const response = await axios.put(
-      `${API_BASE_URL}/edit-profile-drycleaner/${currentCleanerData._id}`,
-      profileData,
-      {
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-          'Content-Type': 'application/json',
-        }
-      }
-    );
-
-    if (response.data.success) {
-      Alert.alert('Success', 'Contact information updated successfully');
-      setProfileEditModal(false);
-      
-      setCurrentCleanerData({
-        ...currentCleanerData,
-        contactPerson: profileData.contactPerson,
-        phoneNumber: profileData.phoneNumber,
-        contactPersonImg: profileData.contactPersonImg
-      });
-      
-      onRefresh();
-    }
-  } catch (error: any) {
-    console.error('Error updating profile:', error);
-    console.error('Error details:', error.response?.data);
-    
-    if (error.response?.status === 403) {
-      showAccessDeniedAlert();
-    } else {
-      Alert.alert('Error', 'Failed to update profile');
-    }
-  } finally {
-    setLoading(false);
-  }
-};
-
-  const handleSaveAddress = async (addressData: any) => {
-  if (!currentCleanerData || !authToken) {
-    Alert.alert('Error', 'Authentication required');
-    return;
-  }
-
-  if (!canEdit) {
-    showAccessDeniedAlert();
-    return;
-  }
-
-  try {
-    setLoading(true);
-    
-    // FIXED URL HERE
-    const response = await axios.put(
-      `${API_BASE_URL}/edit-address-drycleaner/${currentCleanerData._id}`,
-      addressData,
-      {
-        headers: {
-          'Authorization': `Bearer ${authToken}`,
-          'Content-Type': 'application/json',
-        }
-      }
-    );
-
-    if (response.data.success) {
-      Alert.alert('Success', 'Shop details updated successfully');
-      setAddressEditModal(false);
-      
-      setCurrentCleanerData({
-        ...currentCleanerData,
-        shopname: addressData.shopname,
-        about: addressData.about,
-        address: addressData.address
-      });
-      
-      onRefresh();
-    }
-  } catch (error: any) {
-    console.error('Error updating address:', error);
-    console.error('Error details:', error.response?.data);
-    
-    if (error.response?.status === 403) {
-      showAccessDeniedAlert();
-    } else {
-      const message = error.response?.data?.message || 'Failed to update shop details';
-      Alert.alert('Error', message);
-    }
-  } finally {
-    setLoading(false);
-  }
-};
-
-  const handleSaveShopImages = async (imageData: any) => {
-    if (!currentCleanerData || !authToken) {
-      Alert.alert('Error', 'Authentication required');
-      return;
-    }
-
-    if (!canEdit) {
-      showAccessDeniedAlert();
-      return;
-    }
-
+  const saveService = async (serviceData: any) => {
+    if (!data || !authToken) return;
     try {
       setLoading(true);
-      
-      setCurrentCleanerData({
-        ...currentCleanerData,
-        shopimage: imageData.shopimage
-      });
-      
-      setShopImageEditModal(false);
-      Alert.alert('Success', 'Shop images updated successfully');
-      onRefresh();
-      
-    } catch (error: any) {
-      console.error('Error updating shop images:', error);
-      
-      if (error.response?.status === 403) {
-        showAccessDeniedAlert();
-      } else {
-        const message = error.response?.data?.message || 'Failed to update shop images';
-        Alert.alert('Error', message);
+      const res = await axios.put(
+        `${API_BASE_URL}/edit-service-drycleaner/${data._id}`,
+        serviceData,
+        { headers: { Authorization: `Bearer ${authToken}` } }
+      );
+      if (res.data.success) {
+        close("service");
+        setData((d) =>
+          d
+            ? {
+                ...d,
+                services:
+                  res.data.data?.dryCleaner?.services ||
+                  d.services.map((s) =>
+                    s._id === serviceData.serviceId ? { ...s, ...serviceData } : s
+                  ),
+              }
+            : d
+        );
+        onRefresh();
       }
+    } catch (e: any) {
+      Alert.alert("Error", e.response?.data?.message || "Failed to update service");
     } finally {
       setLoading(false);
     }
   };
 
- const handleDeleteShopImage = async (imageUrl: string) => {
-  if (!currentCleanerData || !authToken) return;
+  const addService = async (serviceData: any) => {
+    if (!data || !authToken) return;
+    try {
+      setLoading(true);
+      console.log("📤 Sending service data:", JSON.stringify(serviceData, null, 2));
+      const res = await axios.post(
+        `${API_BASE_URL}/edit-service-drycleaner/${data._id}/add`,
+        serviceData,
+        {
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+      if (res.data.success) {
+        close("addService");
+        setData((d) =>
+          d
+            ? { ...d, services: res.data.data?.dryCleaner?.services || d.services }
+            : d
+        );
+        Alert.alert("✓", "Service added");
+        onRefresh();
+      }
+    } catch (e: any) {
+      console.log("❌ Full error:", JSON.stringify(e.response?.data, null, 2));
+      Alert.alert("Error", e.response?.data?.message || "Failed to add service");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  if (!canEdit) {
-    showAccessDeniedAlert();
-    return;
-  }
+  const deleteService = async (serviceId: string) => {
+    if (!data || !authToken) return;
+    try {
+      setLoading(true);
+      const res = await axios.delete(
+        `${API_BASE_URL}/edit-service-drycleaner/${data._id}/delete`,
+        {
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            "Content-Type": "application/json",
+          },
+          data: { serviceId },
+        }
+      );
+      if (res.data.success) {
+        close("service");
+        setData((d) =>
+          d
+            ? {
+                ...d,
+                services:
+                  res.data.data?.dryCleaner?.services ||
+                  d.services.filter((s) => s._id !== serviceId),
+              }
+            : d
+        );
+        Alert.alert("✓", "Service deleted");
+        onRefresh();
+      }
+    } catch (e: any) {
+      Alert.alert("Error", e.response?.data?.message || "Failed to delete service");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  Alert.alert(
-    'Delete Image',
-    'Are you sure you want to delete this image?',
-    [
-      { text: 'Cancel', style: 'cancel' },
+  const saveHours = async (hoursData: any[]) => {
+    if (!data || !authToken) return;
+    try {
+      setLoading(true);
+      const res = await axios.put(
+        `${API_BASE_URL}/edit-hours-drycleaner/${data._id}`,
+        hoursData,
+        { headers: { Authorization: `Bearer ${authToken}` } }
+      );
+      if (res.data.success) {
+        close("hours");
+        setData((d) => (d ? { ...d, hoursOfOperation: hoursData } : d));
+        onRefresh();
+      }
+    } catch (e: any) {
+      Alert.alert("Error", e.response?.data?.message || "Failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveAddress = async (addressData: any) => {
+    if (!data || !authToken) return;
+    try {
+      setLoading(true);
+      const res = await axios.put(
+        `${API_BASE_URL}/edit-address-drycleaner/${data._id}`,
+        addressData,
+        { headers: { Authorization: `Bearer ${authToken}` } }
+      );
+      if (res.data.success) {
+        close("address");
+        setData((d) => (d ? { ...d, ...addressData } : d));
+        onRefresh();
+      }
+    } catch (e: any) {
+      Alert.alert("Error", e.response?.data?.message || "Failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveImages = (imageData: any) => {
+    setData((d) => (d ? { ...d, shopimage: imageData.shopimage } : d));
+    close("images");
+    onRefresh();
+  };
+
+  const deleteImage = (url: string) => {
+    if (!can) { deny(); return; }
+    Alert.alert("Delete Image", "Remove this image?", [
+      { text: "Cancel", style: "cancel" },
       {
-        text: 'Delete',
-        style: 'destructive',
+        text: "Delete",
+        style: "destructive",
         onPress: async () => {
           try {
-            // FIXED URL HERE
-            const response = await axios.delete(
-              `${API_BASE_URL}/delete-drycleaner-shop-image/${currentCleanerData._id}`,
+            await axios.delete(
+              `${API_BASE_URL}/delete-drycleaner-shop-image/${data!._id}`,
               {
-                headers: {
-                  'Authorization': `Bearer ${authToken}`,
-                  'Content-Type': 'application/json',
-                },
-                data: { imageUrl }
+                headers: { Authorization: `Bearer ${authToken}` },
+                data: { imageUrl: url },
               }
             );
-
-            if (response.data.success) {
-              Alert.alert('Success', 'Image deleted successfully');
-              
-              const updatedImages = currentCleanerData.shopimage.filter(img => img !== imageUrl);
-              setCurrentCleanerData({
-                ...currentCleanerData,
-                shopimage: updatedImages
-              });
-              
-              onRefresh();
-            }
-          } catch (error: any) {
-            console.error('Error deleting image:', error);
-            console.error('Error details:', error.response?.data);
-            
-            if (error.response?.status === 403) {
-              showAccessDeniedAlert();
-            } else {
-              Alert.alert('Error', 'Failed to delete image');
-            }
+            setData((d) =>
+              d ? { ...d, shopimage: d.shopimage.filter((i) => i !== url) } : d
+            );
+            onRefresh();
+          } catch {
+            Alert.alert("Error", "Failed to delete image");
           }
-        }
-      }
-    ]
-  );
-};
+        },
+      },
+    ]);
+  };
 
-  if (!currentCleanerData) return null;
+  if (!data) return null;
+
+  const serviceCardWidth = isSmallScreen
+    ? "100%"
+    : (SCREEN_WIDTH - 32 - 32 - 10) / 2;
 
   return (
     <>
       <Modal
         visible={visible}
         animationType="slide"
-        transparent={true}
+        transparent
         onRequestClose={onClose}
       >
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={onClose}>
-              <MaterialCommunityIcons name="close" size={24} color="#000" />
+        <SafeAreaView style={[u.modalShell, { backgroundColor: COLORS.background }]}>
+          <View style={u.detailModalHeader}>
+            <TouchableOpacity onPress={onClose} style={u.modalHeaderBtn}>
+              <Ionicons name="arrow-back" size={24} color={COLORS.primary} />
             </TouchableOpacity>
-            <Text style={styles.modalTitle}>
-              {canEdit ? 'My Dry Cleaner Details' : 'Dry Cleaner Details'}
+            <Text style={u.detailModalTitle} numberOfLines={1}>
+              {data.shopname}
             </Text>
-            <TouchableOpacity 
-              onPress={() => canEdit ? onEdit(currentCleanerData) : showAccessDeniedAlert()}
-            >
-              <MaterialCommunityIcons name="pencil" size={24} color={canEdit ? colors.brandColor : "#ccc"} />
-            </TouchableOpacity>
           </View>
 
-          {/* Ownership Status Banner */}
-          {!canEdit && (
-            <View style={styles.ownershipBanner}>
-              <MaterialCommunityIcons name="information" size={20} color={colors.brandColor} />
-              <Text style={styles.ownershipBannerText}>
-                This dry cleaner belongs to another merchant. You can view details but cannot make changes.
+          {!can && (
+            <View style={u.ownerBanner}>
+              <MaterialCommunityIcons
+                name="information-outline"
+                size={18}
+                color={COLORS.primary}
+              />
+              <Text style={u.ownerBannerText}>
+                View only — this shop belongs to another merchant.
               </Text>
             </View>
           )}
 
-          <ScrollView style={styles.modalContent}>
-            {/* Shop Images Section */}
-            <View style={styles.detailSection}>
-              <View style={styles.sectionTitleRow}>
-                <Text style={styles.sectionTitle}>Shop Images</Text>
-                <View style={styles.imageActionButtons}>
-                  {canEdit && (
-                    <TouchableOpacity 
-                      onPress={() => setShopImageEditModal(true)}
-                      style={styles.editImagesButton}
-                    >
-                      <MaterialCommunityIcons name="camera-plus" size={16} color={colors.brandColor} />
-                      <Text style={styles.editImagesButtonText}>Manage Images</Text>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: 32 }}
+          >
+            {/* Shop Images */}
+            <View style={u.card}>
+              <SectionHeader
+                title="Shop Images"
+                right={
+                  can ? (
+                    <TouchableOpacity style={u.outlineBtn} onPress={() => open("images")}>
+                      <MaterialCommunityIcons name="camera-plus" size={14} color={COLORS.primary} />
+                      <Text style={u.outlineBtnText}>Manage</Text>
                     </TouchableOpacity>
-                  )}
-                  <Text style={styles.subText}>
-                    {canEdit ? 'Tap to manage images' : 'View only'}
-                  </Text>
-                </View>
-              </View>
-              
-              {currentCleanerData.shopimage && currentCleanerData.shopimage.length > 0 ? (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.imageScrollView}>
-                  {currentCleanerData.shopimage.map((imageUrl, index) => (
+                  ) : undefined
+                }
+              />
+              {data.shopimage?.length > 0 ? (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={{ marginTop: 8 }}
+                >
+                  {data.shopimage.map((url, i) => (
                     <TouchableOpacity
-                      key={index}
-                      style={styles.shopImageContainer}
-                      onPress={() => canEdit ? handleDeleteShopImage(imageUrl) : null}
-                      disabled={!canEdit}
+                      key={i}
+                      style={u.shopImgWrap}
+                      onPress={() => can && deleteImage(url)}
+                      activeOpacity={can ? 0.75 : 1}
                     >
                       <Image
-                        source={{ uri: imageUrl }}
-                        style={styles.shopImage}
+                        source={{ uri: url }}
+                        style={[
+                          u.shopImg,
+                          { width: isSmallScreen ? 120 : 160, height: isSmallScreen ? 90 : 110 },
+                        ]}
                         contentFit="cover"
                       />
-                      {canEdit && (
-                        <View style={styles.deleteImageOverlay}>
-                          <MaterialCommunityIcons name="delete" size={16} color="#fff" />
+                      {can && (
+                        <View style={u.shopImgOverlay}>
+                          <MaterialCommunityIcons name="delete" size={20} color={COLORS.white} />
                         </View>
                       )}
                     </TouchableOpacity>
                   ))}
-                  
-                  {/* Add Image Quick Button */}
-                  {canEdit && currentCleanerData.shopimage.length < 5 && (
-                    <TouchableOpacity 
-                      style={styles.addImageQuickButton}
-                      onPress={() => setShopImageEditModal(true)}
-                    >
-                      <MaterialCommunityIcons name="camera-plus" size={24} color={colors.brandColor} />
-                      <Text style={styles.addImageQuickText}>Add More</Text>
+                  {can && data.shopimage.length < 5 && (
+                    <TouchableOpacity style={u.shopImgAdd} onPress={() => open("images")}>
+                      <MaterialCommunityIcons name="camera-plus" size={24} color={COLORS.primary} />
+                      <Text style={u.shopImgAddText}>Add</Text>
                     </TouchableOpacity>
                   )}
                 </ScrollView>
               ) : (
-                <View style={styles.noImagesContainer}>
-                  <MaterialCommunityIcons name="image-off" size={40} color="#ccc" />
-                  <Text style={styles.noImagesText}>No images uploaded yet</Text>
-                  {canEdit && (
-                    <TouchableOpacity 
-                      style={styles.addFirstImageButton}
-                      onPress={() => setShopImageEditModal(true)}
-                    >
-                      <MaterialCommunityIcons name="camera-plus" size={30} color={colors.brandColor} />
-                      <Text style={styles.addFirstImageText}>Add Shop Images</Text>
-                      <Text style={styles.addFirstImageSubText}>Upload up to 5 photos</Text>
+                <View style={u.emptyImages}>
+                  <MaterialCommunityIcons name="image-off-outline" size={36} color={COLORS.textMuted} />
+                  <Text style={u.emptyImagesText}>No images yet</Text>
+                  {can && (
+                    <TouchableOpacity style={u.outlineBtn} onPress={() => open("images")}>
+                      <MaterialCommunityIcons name="camera-plus" size={14} color={COLORS.primary} />
+                      <Text style={u.outlineBtnText}>Add Photos</Text>
                     </TouchableOpacity>
                   )}
                 </View>
               )}
             </View>
 
-            {/* Contact Information Section */}
-            <View style={styles.detailSection}>
-              <View style={styles.sectionTitleRow}>
-                <View style={styles.sectionTitleWithImage}>
-                  <Text style={styles.sectionTitle}>Contact Information</Text>
-                  {currentCleanerData.contactPersonImg && (
-                    <Image
-                      source={{ uri: currentCleanerData.contactPersonImg }}
-                      style={styles.contactPersonImage}
-                      contentFit="cover"
+            {/* Contact */}
+            <View style={u.card}>
+              <SectionHeader
+                title="Contact"
+                right={
+                  <TouchableOpacity style={u.iconBtn} onPress={() => open("profile")}>
+                    <MaterialCommunityIcons
+                      name="pencil-outline"
+                      size={18}
+                      color={can ? COLORS.primary : COLORS.textMuted}
                     />
-                  )}
+                  </TouchableOpacity>
+                }
+              />
+              <View style={u.contactRow}>
+                {data.contactPersonImg ? (
+                  <Image
+                    source={{ uri: data.contactPersonImg }}
+                    style={u.contactAvatar}
+                    contentFit="cover"
+                  />
+                ) : (
+                  <View style={u.contactAvatarPlaceholder}>
+                    <MaterialCommunityIcons name="account" size={28} color={COLORS.primary} />
+                  </View>
+                )}
+                <View style={{ flex: 1 }}>
+                  <Text style={u.contactName}>{data.contactPerson}</Text>
+                  <Text style={u.contactSub}>{data.phoneNumber}</Text>
                 </View>
-                <TouchableOpacity 
-                  onPress={() => canEdit ? setProfileEditModal(true) : showAccessDeniedAlert()}
-                  disabled={!canEdit}
-                >
-                  <MaterialCommunityIcons name="pencil" size={20} color={canEdit ? colors.brandColor : "#ccc"} />
-                </TouchableOpacity>
               </View>
-              <View style={styles.contactItem}>
-                <MaterialCommunityIcons name="map-marker" size={20} color="#666" />
-                <Text style={styles.contactText}>
-                  {currentCleanerData.address 
-                    ? `${currentCleanerData.address.street}, ${currentCleanerData.address.city}, ${currentCleanerData.address.state} ${currentCleanerData.address.zipCode}`
-                    : 'Address not available'
-                  }
-                </Text>
-              </View>
-              <View style={styles.contactItem}>
-                <MaterialCommunityIcons name="phone" size={20} color="#666" />
-                <Text style={styles.contactText}>{currentCleanerData.phoneNumber}</Text>
-              </View>
-              <View style={styles.contactItem}>
-                <MaterialCommunityIcons name="account" size={20} color="#666" />
-                <Text style={styles.contactText}>{currentCleanerData.contactPerson}</Text>
-              </View>
-            </View>
-
-            {/* Operating Hours */}
-            <View style={styles.detailSection}>
-              <View style={styles.sectionTitleRow}>
-                <Text style={styles.sectionTitle}>Operating Hours</Text>
-                <TouchableOpacity 
-                  onPress={() => canEdit ? setHoursEditModal(true) : showAccessDeniedAlert()}
-                  disabled={!canEdit}
-                >
-                  <MaterialCommunityIcons name="pencil" size={20} color={canEdit ? colors.brandColor : "#ccc"} />
-                </TouchableOpacity>
-              </View>
-              {currentCleanerData.hoursOfOperation.map((hours, index) => (
-                <View key={index} style={styles.contactItem}>
-                  <MaterialCommunityIcons name="clock" size={20} color="#666" />
-                  <Text style={styles.contactText}>
-                    {hours.day}: {hours.open === 'Closed' ? 'Closed' : `${hours.open} - ${hours.close}`}
+              {data.address && (
+                <View style={u.infoRow}>
+                  <MaterialCommunityIcons name="map-marker-outline" size={16} color={COLORS.primary} />
+                  <Text style={u.infoRowText}>
+                    {`${data.address.street}, ${data.address.city}, ${data.address.state} ${data.address.zipCode}`}
                   </Text>
                 </View>
-              ))}
+              )}
             </View>
 
-            {/* Services & Pricing */}
-            <View style={styles.detailSection}>
-              <View style={styles.sectionTitleRow}>
-                <Text style={styles.sectionTitle}>Services & Pricing</Text>
-                <Text style={styles.subText}>
-                  {canEdit ? 'Tap to edit service' : 'View only'}
-                </Text>
-              </View>
-              <View style={styles.servicesContainer}>
-                {currentCleanerData.services.map((service, index) => (
-                  <TouchableOpacity 
-                    key={index} 
-                    style={[styles.serviceTag, !canEdit && styles.disabledServiceTag]}
-                    onPress={() => handleEditService(service)}
-                    disabled={!canEdit}
-                  >
-                    <Text style={styles.serviceText}>{service.name}</Text>
-                    <Text style={styles.servicePriceText}>₹{service.price}</Text>
-                    <Text style={styles.serviceCategoryText}>{service.category}</Text>
-                    {canEdit && (
-                      <View style={styles.serviceEditIcon}>
-                        <MaterialCommunityIcons name="pencil" size={12} color={colors.brandColor} />
-                      </View>
-                    )}
+            {/* Hours */}
+            <View style={u.card}>
+              <SectionHeader
+                title="Operating Hours"
+                right={
+                  <TouchableOpacity style={u.iconBtn} onPress={() => open("hours")}>
+                    <MaterialCommunityIcons
+                      name="pencil-outline"
+                      size={18}
+                      color={can ? COLORS.primary : COLORS.textMuted}
+                    />
                   </TouchableOpacity>
+                }
+              />
+              <View style={{ marginTop: 8 }}>
+                {data.hoursOfOperation.map((h, i) => (
+                  <View key={i} style={u.hourDisplayRow}>
+                    <Text style={u.hourDisplayDay}>{h.day.slice(0, 3)}</Text>
+                    <Text style={u.hourDisplayTime}>
+                      {h.open === "Closed" ? "Closed" : `${h.open} – ${h.close}`}
+                    </Text>
+                  </View>
                 ))}
               </View>
             </View>
 
-            {/* Description */}
-            <View style={styles.detailSection}>
-              <View style={styles.sectionTitleRow}>
-                <Text style={styles.sectionTitle}>About</Text>
-                <TouchableOpacity 
-                  onPress={() => canEdit ? setAddressEditModal(true) : showAccessDeniedAlert()}
-                  disabled={!canEdit}
+            {/* Services */}
+            <View style={u.card}>
+              <SectionHeader
+                title="Services & Pricing"
+                right={
+                  can ? (
+                    <TouchableOpacity style={u.primaryPill} onPress={() => open("addService")}>
+                      <MaterialCommunityIcons name="plus" size={14} color={COLORS.white} />
+                      <Text style={u.primaryPillText}>Add Service</Text>
+                    </TouchableOpacity>
+                  ) : undefined
+                }
+              />
+
+              {data.services.length === 0 ? (
+                <View style={u.emptyServices}>
+                  <MaterialCommunityIcons name="washing-machine" size={40} color={COLORS.textMuted} />
+                  <Text style={u.emptyServicesText}>No services yet</Text>
+                  {can && (
+                    <TouchableOpacity style={u.primaryPill} onPress={() => open("addService")}>
+                      <MaterialCommunityIcons name="plus" size={14} color={COLORS.white} />
+                      <Text style={u.primaryPillText}>Add First Service</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ) : (
+                <View
+                  style={[u.servicesGrid, isSmallScreen && { flexDirection: "column" }]}
                 >
-                  <MaterialCommunityIcons name="pencil" size={20} color={canEdit ? colors.brandColor : "#ccc"} />
-                </TouchableOpacity>
-              </View>
-              <Text style={styles.descriptionText}>
-                {currentCleanerData.about || `${currentCleanerData.shopname} is a professional dry cleaning service.`}
+                  {data.services.map((svc, i) => (
+                    <View
+                      key={i}
+                      style={[u.serviceCard, { width: serviceCardWidth as any }]}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={u.serviceName} numberOfLines={1}>
+                          {svc.name}
+                        </Text>
+                        <Text style={u.serviceCategory}>{svc.category}</Text>
+                        <Text style={u.servicePrice}>${svc.price}</Text>
+
+                        {/* ── Multiple additional service badges ── */}
+                        {Array.isArray(svc.additionalservice) &&
+                          svc.additionalservice.length > 0 && (
+                            <View style={u.additionalBadgeRow}>
+                              {svc.additionalservice.map((add, j) => (
+                                <View key={j} style={u.additionalBadge}>
+                                  <MaterialCommunityIcons
+                                    name="plus-circle-outline"
+                                    size={11}
+                                    color={COLORS.primary}
+                                  />
+                                  <Text style={u.additionalBadgeText}>
+                                    {add.name} ${add.price}
+                                  </Text>
+                                </View>
+                              ))}
+                            </View>
+                          )}
+                      </View>
+
+                      {can && (
+                        <View style={u.serviceCardBtns}>
+                          <TouchableOpacity
+                            style={u.serviceEditBtn}
+                            onPress={() => {
+                              setSelectedService(svc);
+                              setModals((m) => ({ ...m, service: true }));
+                            }}
+                          >
+                            <MaterialCommunityIcons
+                              name="pencil"
+                              size={13}
+                              color={COLORS.primary}
+                            />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={u.serviceDeleteBtn}
+                            onPress={() =>
+                              Alert.alert("Delete", `Delete "${svc.name}"?`, [
+                                { text: "Cancel", style: "cancel" },
+                                {
+                                  text: "Delete",
+                                  style: "destructive",
+                                  onPress: () => deleteService(svc._id),
+                                },
+                              ])
+                            }
+                          >
+                            <MaterialCommunityIcons
+                              name="close"
+                              size={13}
+                              color={COLORS.white}
+                            />
+                          </TouchableOpacity>
+                        </View>
+                      )}
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+
+            {/* About */}
+            <View style={u.card}>
+              <SectionHeader
+                title="About"
+                right={
+                  <TouchableOpacity style={u.iconBtn} onPress={() => open("address")}>
+                    <MaterialCommunityIcons
+                      name="pencil-outline"
+                      size={18}
+                      color={can ? COLORS.primary : COLORS.textMuted}
+                    />
+                  </TouchableOpacity>
+                }
+              />
+              <Text style={u.aboutText}>
+                {data.about || `${data.shopname} is a professional dry cleaning service.`}
               </Text>
             </View>
 
-            {/* Business Metrics */}
-            <View style={styles.detailSection}>
-              <Text style={styles.sectionTitle}>Business Metrics</Text>
-              <View style={styles.metricsContainer}>
-                <View style={styles.metricItem}>
-                  <Text style={styles.metricValue}>15</Text>
-                  <Text style={styles.metricLabel}>Active Orders</Text>
-                </View>
-                <View style={styles.metricItem}>
-                  <Text style={styles.metricValue}>150+</Text>
-                  <Text style={styles.metricLabel}>Total Customers</Text>
-                </View>
-                <View style={styles.metricItem}>
-                  <Text style={styles.metricValue}>4.5</Text>
-                  <Text style={styles.metricLabel}>Avg Rating</Text>
-                </View>
+            {/* Metrics */}
+            <View style={u.card}>
+              <Text style={u.sectionTitle}>Business Metrics</Text>
+              <View
+                style={[u.metricsRow, isSmallScreen && { flexDirection: "column", gap: 12 }]}
+              >
+                {[
+                  ["★", String(data.rating || "0.0"), "Rating"],
+                  ["🧺", `${data.services.length}`, "Services"],
+                  ["📷", `${data.shopimage?.length || 0}/5`, "Photos"],
+                ].map(([icon, val, label]) => (
+                  <View key={label} style={[u.metricBox, isSmallScreen && { width: "100%" }]}>
+                    <Text style={u.metricIcon}>{icon}</Text>
+                    <Text style={u.metricVal}>{val}</Text>
+                    <Text style={u.metricLabel}>{label}</Text>
+                  </View>
+                ))}
               </View>
             </View>
           </ScrollView>
-
-          {/* Bottom Action Buttons */}
-          {canEdit && (
-            <View style={styles.modalActions}>
-              <TouchableOpacity 
-                style={styles.editCleanerButton}
-                onPress={() => {
-                  onEdit(currentCleanerData);
-                  onClose();
-                }}
-              >
-                <Text style={styles.editCleanerButtonText}>Edit All Details</Text>
-              </TouchableOpacity>
-            </View>
-          )}
         </SafeAreaView>
       </Modal>
 
-      {/* All Edit Modals - Only show if user can edit */}
-      {canEdit && (
+      {can && data && (
         <>
-          {/* Service Edit Modal */}
           <ServiceEditModal
-            visible={serviceEditModal}
+            visible={modals.service}
             service={selectedService}
-            onClose={() => setServiceEditModal(false)}
-            onSave={handleSaveService}
+            onClose={() => close("service")}
+            onSave={saveService}
+            onDelete={deleteService}
             loading={loading}
           />
-
-          {/* Hours Edit Modal */}
+          <AddServiceModal
+            visible={modals.addService}
+            onClose={() => close("addService")}
+            onSave={addService}
+            loading={loading}
+          />
           <HoursEditModal
-            visible={hoursEditModal}
-            hours={currentCleanerData.hoursOfOperation}
-            onClose={() => setHoursEditModal(false)}
-            onSave={handleSaveHours}
+            visible={modals.hours}
+            hours={data.hoursOfOperation}
+            onClose={() => close("hours")}
+            onSave={saveHours}
             loading={loading}
           />
-
-          {/* Profile Edit Modal */}
           <ProfileEditModal
-            visible={profileEditModal}
-            cleaner={currentCleanerData}
-            onClose={() => setProfileEditModal(false)}
-            onSave={handleSaveProfile}
+            visible={modals.profile}
+            cleaner={data}
+            onClose={() => close("profile")}
+            onSave={(d) => {
+              setData((prev) => (prev ? { ...prev, ...d } : prev));
+              onRefresh();
+            }}
             loading={loading}
           />
-
-          {/* Address Edit Modal */}
           <AddressEditModal
-            visible={addressEditModal}
-            cleaner={currentCleanerData}
-            onClose={() => setAddressEditModal(false)}
-            onSave={handleSaveAddress}
+            visible={modals.address}
+            cleaner={data}
+            onClose={() => close("address")}
+            onSave={saveAddress}
             loading={loading}
           />
-
-          {/* Shop Image Edit Modal */}
           <ShopImageEditModal
-            visible={shopImageEditModal}
-            cleaner={currentCleanerData}
-            onClose={() => setShopImageEditModal(false)}
-            onSave={handleSaveShopImages}
+            visible={modals.images}
+            cleaner={data}
+            onClose={() => close("images")}
+            onSave={saveImages}
             loading={loading}
           />
         </>
@@ -2066,1324 +1762,568 @@ const CleanerDetailsModal = ({
   );
 };
 
-const MyDryCleaners = () => {
+// ─── CleanerCard ──────────────────────────────────────────────────────────────
+
+const CleanerCard: React.FC<{
+  cleaner: DryCleaner;
+  currentUserId: string;
+  onView: (c: DryCleaner) => void;
+  onDelete: (c: DryCleaner) => void;
+}> = ({ cleaner, currentUserId, onView, onDelete }) => {
+  const can = isOwner(cleaner, currentUserId);
+  const avatarSize = isSmallScreen ? 60 : 80;
+  return (
+    <TouchableOpacity style={u.cleanerCard} onPress={() => onView(cleaner)} activeOpacity={0.88}>
+      <View style={[u.cleanerCardAvatar, { width: avatarSize, height: avatarSize }]}>
+        {cleaner.contactPersonImg ? (
+          <Image
+            source={{ uri: cleaner.contactPersonImg }}
+            style={{ width: "100%", height: "100%", borderRadius: 16 }}
+            contentFit="cover"
+          />
+        ) : (
+          <Image
+            source={require("../../assets/images/washing.png")}
+            style={{ width: avatarSize * 0.65, height: avatarSize * 0.65 }}
+            contentFit="contain"
+          />
+        )}
+      </View>
+      <View style={{ flex: 1 }}>
+        <View style={u.cleanerCardNameRow}>
+          <Text
+            style={[u.cleanerCardName, isSmallScreen && { fontSize: 14 }]}
+            numberOfLines={1}
+          >
+            {cleaner.shopname}
+          </Text>
+          <View style={u.ratingPill}>
+            <Text style={u.ratingPillText}>★ {cleaner.rating || "0.0"}</Text>
+          </View>
+        </View>
+        {cleaner.address && (
+          <Text style={u.cleanerCardAddr} numberOfLines={1}>
+            {`${cleaner.address.city}, ${cleaner.address.state}`}
+          </Text>
+        )}
+        <View style={u.cleanerCardMeta}>
+          <MaterialCommunityIcons name="phone-outline" size={13} color={COLORS.textLight} />
+          <Text style={u.cleanerCardMetaText}>{cleaner.phoneNumber}</Text>
+          {cleaner.services.length > 0 && (
+            <>
+              <Text style={u.cleanerCardMetaDot}>·</Text>
+              <Text style={u.cleanerCardMetaText}>{cleaner.services.length} services</Text>
+            </>
+          )}
+        </View>
+      </View>
+      <View style={u.cleanerCardActions}>
+        <TouchableOpacity style={u.cleanerCardViewBtn} onPress={() => onView(cleaner)}>
+          <Ionicons name="chevron-forward" size={20} color={COLORS.primary} />
+        </TouchableOpacity>
+        {can && (
+          <TouchableOpacity style={u.cleanerCardDeleteBtn} onPress={() => onDelete(cleaner)}>
+            <MaterialCommunityIcons name="delete-outline" size={18} color={COLORS.error} />
+          </TouchableOpacity>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+};
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
+
+const MyDryCleaners: React.FC = () => {
   const router = useRouter();
-  const [dryCleaners, setDryCleaners] = useState<DryCleaner[]>([]);
+  const [cleaners, setCleaners] = useState<DryCleaner[]>([]);
   const [loading, setLoading] = useState(true);
-  const [modalVisible, setModalVisible] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [modalCleaner, setModalCleaner] = useState<DryCleaner | null>(null);
+  const authToken = useSelector((s: RootState) => s.auth.token);
+  const currentUser = useSelector((s: RootState) => s.auth.user);
 
-  // Get auth token and user info from Redux store
-  const authToken = useSelector((state: RootState) => state.auth.token);
-  const currentUser = useSelector((state: RootState) => state.auth.user);
-
-  // Function to verify user permissions
-  const verifyUserPermissions = () => {
+  const fetchCleaners = async (silent = false) => {
     if (!authToken) {
-      Alert.alert('Authentication Error', 'Please login again.');
-      router.replace('/login');
-      return false;
+      Alert.alert("Error", "Please log in again.");
+      router.replace("/login");
+      return;
     }
-
-    if (!currentUser) {
-      Alert.alert('User Error', 'User information not found. Please login again.');
-      router.replace('/login');
-      return false;
-    }
-
-    if (currentUser.userType !== 'merchant') {
-      Alert.alert('Access Denied', 'Only merchants can manage dry cleaners.');
-      return false;
-    }
-
-    return true;
-  };
-
-  // Function to fetch merchant's own dry cleaners from backend
-  const fetchMyDryCleaners = async () => {
     try {
-      setLoading(true);
-
-      if (!verifyUserPermissions()) {
-        return;
-      }
-
-      const response = await axios.get(
-        'https://vervoer-backend2.onrender.com/api/users/get-own-drycleaner',
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${authToken}`
-          }
-        }
-      );
-
-      if (response.data.success) {
-        const cleaners = response.data.data?.dryCleaners || [];
-        
-        const transformedCleaners = cleaners.map((cleaner: any) => ({
-          ...cleaner,
-          ownerId: cleaner.owner || cleaner.ownerId
+      silent ? setRefreshing(true) : setLoading(true);
+      const res = await axios.get(`${API_BASE_URL}/get-own-drycleaner`, {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      if (res.data.success) {
+        const list = (res.data.data?.dryCleaners || []).map((c: any) => ({
+          ...c,
+          ownerId: c.owner || c.ownerId,
         }));
-        
-        setDryCleaners(transformedCleaners);
-
-        // Update modal cleaner if it's currently open
-        if (modalCleaner && modalVisible) {
-          const updatedModalCleaner = transformedCleaners.find((c: DryCleaner) => c._id === modalCleaner._id);
-          if (updatedModalCleaner) {
-            setModalCleaner(updatedModalCleaner);
-          }
+        setCleaners(list);
+        if (modalCleaner) {
+          const updated = list.find((c: DryCleaner) => c._id === modalCleaner._id);
+          if (updated) setModalCleaner(updated);
         }
       }
-    } catch (error: any) {
-      console.error('Error fetching dry cleaners:', error);
-      
-      if (error.response?.status === 401) {
-        Alert.alert('Unauthorized', 'Your session has expired. Please login again.');
-        router.replace('/login');
-      } else if (error.response?.status === 403) {
-        Alert.alert('Access Denied', 'You don\'t have permission to view dry cleaners.');
-      } else {
-        Alert.alert('Error', 'Failed to load dry cleaners. Please try again.');
-      }
+    } catch {
+      Alert.alert("Error", "Failed to load dry cleaners.");
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  // Fetch data when component mounts
   useEffect(() => {
-    fetchMyDryCleaners();
+    fetchCleaners();
   }, [authToken]);
 
-  // Handle view details
-  const handleViewDetails = (cleaner: DryCleaner) => {
-    setModalCleaner(cleaner);
-    setModalVisible(true);
-  };
-
-  // Handle edit cleaner
-  const handleEditCleaner = (cleaner: DryCleaner) => {
-    if (!isOwner(cleaner, currentUser?._id || '')) {
-      Alert.alert('Access Denied', 'You can only edit dry cleaners that you own.');
+  const handleDelete = (cleaner: DryCleaner) => {
+    if (!isOwner(cleaner, currentUser?._id || "")) {
+      Alert.alert("Access Denied", "You can only delete your own dry cleaners.");
       return;
     }
-    // Navigate to edit screen with cleaner data
-    router.push({
-      pathname: '/dryCleanerMerchant/editDryCleaner',
-      params: { cleaner: JSON.stringify(cleaner) }
-    });
-  };
-
-  // Handle delete cleaner
-  const handleDeleteCleaner = (cleaner: DryCleaner) => {
-    if (!isOwner(cleaner, currentUser?._id || '')) {
-      Alert.alert('Access Denied', 'You can only delete dry cleaners that you own.');
-      return;
-    }
-
-    Alert.alert(
-      'Delete Dry Cleaner',
-      `Are you sure you want to delete "${cleaner.shopname}"? This action cannot be undone.`,
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => deleteDryCleaner(cleaner._id),
-        },
-      ]
-    );
-  };
-
-  // Delete dry cleaner function
-  const deleteDryCleaner = async (cleanerId: string) => {
-    try {
-      if (!authToken) {
-        Alert.alert('Authentication Error', 'Please login again.');
-        router.replace('/login');
-        return;
-      }
-
-      const response = await axios.delete(
-        `https://vervoer-backend2.onrender.com/api/users/delete-own-drycleaner/${cleanerId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${authToken}`
+    Alert.alert("Delete", `Delete "${cleaner.shopname}"?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await axios.delete(
+              `${API_BASE_URL}/delete-own-drycleaner/${cleaner._id}`,
+              { headers: { Authorization: `Bearer ${authToken}` } }
+            );
+            Alert.alert("Deleted", "Dry cleaner removed successfully.");
+            fetchCleaners();
+          } catch {
+            Alert.alert("Error", "Failed to delete. Please try again.");
           }
-        }
-      );
-
-      if (response.data.success) {
-        Alert.alert('Success', 'Dry cleaner deleted successfully.');
-        fetchMyDryCleaners(); // Refresh the list
-      }
-    } catch (error: any) {
-      console.error('Error deleting dry cleaner:', error);
-      
-      if (error.response?.status === 401) {
-        Alert.alert('Unauthorized', 'Your session has expired. Please login again.');
-        router.replace('/login');
-      } else if (error.response?.status === 403) {
-        Alert.alert('Access Denied', 'You can only delete dry cleaners that you own.');
-      } else {
-        Alert.alert('Error', 'Failed to delete dry cleaner. Please try again.');
-      }
-    }
+        },
+      },
+    ]);
   };
 
-  // Handle add new dry cleaner
-  const handleAddNewCleaner = () => {
-    router.push('/dryCleanerMerchant/merchantAddDryCleaner');
-  };
-
-  // Handle modal close
-  const handleModalClose = () => {
-    setModalVisible(false);
-    setModalCleaner(null);
-  };
-
-  if (loading) {
+  if (loading)
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.brandColor} />
-          <Text style={styles.loadingText}>Loading your dry cleaners...</Text>
-        </View>
+      <SafeAreaView style={[u.screen, u.center]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={[u.loadingText, { marginTop: 12 }]}>Loading your shops…</Text>
       </SafeAreaView>
     );
-  }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={35} color={colors.brandColor} />
+    <SafeAreaView style={u.screen}>
+      <View style={u.topBar}>
+        <TouchableOpacity onPress={() => router.back()} style={u.topBarBtn}>
+          <Ionicons name="arrow-back" size={24} color={COLORS.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>My Dry Cleaners</Text>
-        <TouchableOpacity onPress={handleAddNewCleaner}>
-          <Ionicons name="add" size={35} color={colors.brandColor} />
+        <Text style={u.topBarTitle}>My Dry Cleaners</Text>
+        <TouchableOpacity
+          onPress={() => router.push("/dryCleanerMerchant/merchantAddDryCleaner")}
+          style={u.topBarBtn}
+        >
+          <Ionicons name="add" size={26} color={COLORS.primary} />
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.scrollView}>
-        <View style={styles.popularSection}>
-          <Text style={styles.popularTitle}>My Dry Cleaners ({dryCleaners.length})</Text>
-          <TouchableOpacity onPress={fetchMyDryCleaners}>
-            <Text style={styles.seeAll}>REFRESH</Text>
+      <ScrollView
+        contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 16, paddingBottom: 32 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={u.summaryRow}>
+          <Text style={u.summaryText}>
+            {cleaners.length} shop{cleaners.length !== 1 ? "s" : ""}
+          </Text>
+          <TouchableOpacity
+            onPress={() => fetchCleaners(true)}
+            style={u.refreshBtn}
+            disabled={refreshing}
+          >
+            {refreshing ? (
+              <ActivityIndicator size="small" color={COLORS.primary} />
+            ) : (
+              <>
+                <MaterialCommunityIcons name="refresh" size={15} color={COLORS.primary} />
+                <Text style={u.refreshText}>Refresh</Text>
+              </>
+            )}
           </TouchableOpacity>
         </View>
 
-        {dryCleaners.map((cleaner) => (
-          <MerchantCleanerCard 
-            key={cleaner._id}
-            cleaner={cleaner} 
-            onViewDetails={handleViewDetails}
-            onEdit={handleEditCleaner}
-            onDelete={handleDeleteCleaner}
-            currentUserId={currentUser?._id || ''}
-          />
-        ))}
-
-        {/* Empty State */}
-        {dryCleaners.length === 0 && (
-          <View style={styles.emptyContainer}>
-            <MaterialCommunityIcons name="store" size={60} color="#ccc" />
-            <Text style={styles.emptyText}>No dry cleaners found</Text>
-            <Text style={styles.emptySubText}>Get started by adding your first dry cleaner</Text>
-            <TouchableOpacity onPress={handleAddNewCleaner} style={styles.addButton}>
-              <Text style={styles.addButtonText}>Add Dry Cleaner</Text>
-            </TouchableOpacity>
+        {cleaners.length === 0 ? (
+          <View style={u.emptyState}>
+            <MaterialCommunityIcons name="store-off-outline" size={72} color={COLORS.secondary} />
+            <Text style={u.emptyTitle}>No dry cleaners yet</Text>
+            <Text style={u.emptySubtitle}>
+              Add your first shop to start accepting orders
+            </Text>
+            <PrimaryBtn
+              label="+ Add Dry Cleaner"
+              onPress={() =>
+                router.push("/dryCleanerMerchant/merchantAddDryCleaner")
+              }
+              style={{ marginTop: 20, paddingHorizontal: 32 }}
+            />
           </View>
+        ) : (
+          cleaners.map((c) => (
+            <CleanerCard
+              key={c._id}
+              cleaner={c}
+              currentUserId={currentUser?._id || ""}
+              onView={(c) => setModalCleaner(c)}
+              onDelete={handleDelete}
+            />
+          ))
         )}
       </ScrollView>
 
-      {/* Details Modal */}
       <CleanerDetailsModal
         cleaner={modalCleaner}
-        visible={modalVisible}
-        onClose={handleModalClose}
-        onEdit={handleEditCleaner}
-        onRefresh={fetchMyDryCleaners}
-        currentUserId={currentUser?._id || ''}
+        visible={!!modalCleaner}
+        onClose={() => setModalCleaner(null)}
+        onEdit={(c) => {
+          setModalCleaner(null);
+          router.push({
+            pathname: "/dryCleanerMerchant/editDryCleaner",
+            params: { cleaner: JSON.stringify(c) },
+          });
+        }}
+        onRefresh={() => fetchCleaners(true)}
+        currentUserId={currentUser?._id || ""}
       />
     </SafeAreaView>
   );
 };
 
-const styles = StyleSheet.create({
-  // ============================================
-  // MAIN CONTAINER & LAYOUT
-  // ============================================
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F5F5',
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
+const u = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: COLORS.background },
+  center: { justifyContent: "center", alignItems: "center" },
+  loadingText: { color: COLORS.textLight, fontSize: 14 },
+  row: { flexDirection: "row" },
+
+  topBar: {
+    flexDirection: "row", alignItems: "center", paddingHorizontal: 12,
+    paddingVertical: 10, backgroundColor: COLORS.white,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
-  
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 16,
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 3,
+  topBarBtn: {
+    width: 40, height: 40, borderRadius: 20, justifyContent: "center",
+    alignItems: "center", backgroundColor: COLORS.primaryLight,
   },
-  
-  headerTitle: {
-    fontSize: 20,
-    color: '#000000',
-    fontWeight: '700',
+  topBarTitle: {
+    flex: 1, textAlign: "center", fontSize: 18, fontWeight: "700", color: COLORS.text,
   },
-  
-  scrollView: {
-    flex: 1,
-    paddingTop: 16,
+
+  summaryRow: {
+    flexDirection: "row", justifyContent: "space-between",
+    alignItems: "center", marginBottom: 16,
   },
-  
-  // ============================================
-  // SECTION HEADERS
-  // ============================================
-  popularSection: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingBottom: 16,
+  summaryText: { fontSize: 14, fontWeight: "600", color: COLORS.textLight },
+  refreshBtn: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    paddingHorizontal: 12, paddingVertical: 6,
+    backgroundColor: COLORS.primaryLight, borderRadius: 20,
   },
-  
-  popularTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#000000',
-  },
-  
-  seeAll: {
-    fontSize: 14,
-    color: colors.brandColor,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  
-  // ============================================
-  // LOADING STATE
-  // ============================================
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F5F5F5',
-  },
-  
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: colors.brandColor,
-    fontWeight: '600',
-  },
-  
-  // ============================================
-  // DRY CLEANER CARD (MATCHING YOUR DESIGN)
-  // ============================================
+  refreshText: { fontSize: 13, color: COLORS.primary, fontWeight: "600" },
+
   cleanerCard: {
-    backgroundColor: '#FFFFFF',
-    marginHorizontal: 16,
-    marginBottom: 16,
-    borderRadius: 20,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
+    flexDirection: "row", alignItems: "center", backgroundColor: COLORS.white,
+    borderRadius: 18, padding: 14, marginBottom: 14,
+    shadowColor: COLORS.primary, shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08, shadowRadius: 6, elevation: 3, gap: 12,
   },
-  
-  cardContent: {
-    flexDirection: 'row',
-    marginBottom: 16,
+  cleanerCardAvatar: {
+    borderRadius: 16, backgroundColor: COLORS.primaryLight,
+    justifyContent: "center", alignItems: "center", overflow: "hidden",
   },
-  
-  iconContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 16,
-    backgroundColor: '#E8F4FD',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
+  cleanerCardNameRow: {
+    flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4,
   },
-  
-  washingIcon: {
-    width: 60,
-    height: 60,
+  cleanerCardName: { fontSize: 16, fontWeight: "700", color: COLORS.text, flex: 1 },
+  ratingPill: {
+    backgroundColor: "#FFF3D6", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12,
   },
-  
-  cleanerInfo: {
-    flex: 1,
-    justifyContent: 'center',
+  ratingPillText: { fontSize: 12, fontWeight: "700", color: "#E6A000" },
+  cleanerCardAddr: { fontSize: 13, color: COLORS.textLight, marginBottom: 6 },
+  cleanerCardMeta: { flexDirection: "row", alignItems: "center", gap: 4 },
+  cleanerCardMetaText: { fontSize: 12, color: COLORS.textMuted },
+  cleanerCardMetaDot: { fontSize: 12, color: COLORS.textMuted },
+  cleanerCardActions: { justifyContent: "center", alignItems: "center", gap: 8 },
+  cleanerCardViewBtn: {
+    width: 36, height: 36, borderRadius: 18, backgroundColor: COLORS.primaryLight,
+    justifyContent: "center", alignItems: "center",
   },
-  
-  nameRating: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 8,
+  cleanerCardDeleteBtn: {
+    width: 36, height: 36, borderRadius: 18, backgroundColor: "#FFEBEE",
+    justifyContent: "center", alignItems: "center",
   },
-  
-  cleanerName: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#000000',
-    flex: 1,
-    marginRight: 8,
+
+  emptyState: { alignItems: "center", paddingTop: 60, paddingHorizontal: 32 },
+  emptyTitle: { fontSize: 20, fontWeight: "700", color: COLORS.text, marginTop: 16 },
+  emptySubtitle: {
+    fontSize: 14, color: COLORS.textLight, textAlign: "center", marginTop: 8, lineHeight: 21,
   },
-  
-  ratingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFF9E6',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  
-  starIcon: {
-    color: '#FF9500',
-    fontSize: 16,
-    marginRight: 4,
-  },
-  
-  rating: {
-    fontSize: 16,
-    color: '#000000',
-    fontWeight: '700',
-  },
-  
-  address: {
-    fontSize: 15,
-    color: '#666666',
-    marginBottom: 12,
-    lineHeight: 20,
-  },
-  
-  detailsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  
-  distanceContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  
-  phoneIcon: {
-    fontSize: 16,
-    marginRight: 6,
-  },
-  
-  phoneText: {
-    fontSize: 14,
-    color: '#666666',
-    fontWeight: '500',
-  },
-  
-  timeContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  
-  clockIcon: {
-    fontSize: 16,
-    marginRight: 6,
-  },
-  
-  time: {
-    fontSize: 14,
-    color: '#666666',
-    fontWeight: '500',
-  },
-  
-  // ============================================
-  // OWNERSHIP INDICATOR
-  // ============================================
-  ownershipIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 12,
-    marginBottom: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: '#FFF3E0',
-    borderRadius: 8,
-    alignSelf: 'flex-start',
-  },
-  
-  ownershipText: {
-    fontSize: 12,
-    color: '#E65100',
-    marginLeft: 6,
-    fontWeight: '600',
-  },
-  
-  // ============================================
-  // ACTION BUTTONS (MATCHING YOUR DESIGN)
-  // ============================================
-  actionButtonsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 16,
-    gap: 10,
-  },
-  
-  editButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    backgroundColor: '#E8F5E9',
-    borderRadius: 16,
-    flex: 1,
-  },
-  
-  editButtonText: {
-    fontSize: 15,
-    color: '#2E7D32',
-    fontWeight: '700',
-    marginLeft: 6,
-  },
-  
-  viewDetailsButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    backgroundColor: '#E3F2FD',
-    borderRadius: 16,
-    flex: 1,
-  },
-  
-  viewDetailsText: {
-    fontSize: 15,
-    color: '#1976D2',
-    fontWeight: '700',
-    marginRight: 4,
-  },
-  
-  deleteButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    backgroundColor: '#FFEBEE',
-    borderRadius: 16,
-    flex: 1,
-  },
-  
-  deleteButtonText: {
-    fontSize: 15,
-    color: '#D32F2F',
-    fontWeight: '700',
-    marginLeft: 6,
-  },
-  
-  disabledActionButton: {
-    backgroundColor: '#F5F5F5',
-    opacity: 0.6,
-  },
-  
-  disabledActionText: {
-    color: '#999999',
-  },
-  
-  // ============================================
-  // EMPTY STATE
-  // ============================================
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 80,
-    paddingHorizontal: 32,
-  },
-  
-  emptyText: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#666666',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  
-  emptySubText: {
-    fontSize: 15,
-    color: '#999999',
-    textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 22,
-  },
-  
-  addButton: {
-    backgroundColor: colors.brandColor,
-    paddingHorizontal: 32,
-    paddingVertical: 14,
-    borderRadius: 16,
-    shadowColor: colors.brandColor,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  
-  addButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  
-  // ============================================
-  // MODAL STYLES (MATCHING DETAIL VIEW)
-  // ============================================
-  modalContainer: {
-    flex: 1,
-    backgroundColor: '#F5F5F5',
-  },
-  
+
+  modalShell: { flex: 1, backgroundColor: COLORS.background },
   modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 16,
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    elevation: 3,
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    paddingHorizontal: 12, marginTop: 16, paddingVertical: 10,
+    backgroundColor: COLORS.white, borderBottomWidth: 1, borderBottomColor: COLORS.border,
   },
-  
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#000000',
+  modalHeaderBtn: {
+    width: 40, height: 40, borderRadius: 20, justifyContent: "center", alignItems: "center",
   },
-  
-  saveButton: {
-    fontSize: 16,
-    color: colors.brandColor,
-    fontWeight: '700',
+  modalHeaderTitle: {
+    flex: 1, textAlign: "center", fontSize: 17, fontWeight: "700", color: COLORS.text,
   },
-  
-  disabledButton: {
-    opacity: 0.4,
+  modalSaveText: { fontSize: 15, fontWeight: "700", color: COLORS.primary },
+
+  detailModalHeader: {
+    flexDirection: "row", alignItems: "center", paddingHorizontal: 12,
+    paddingVertical: 12, backgroundColor: COLORS.white,
+    borderBottomWidth: 1, borderBottomColor: COLORS.border, gap: 8,
   },
-  
-  modalContent: {
-    flex: 1,
-    paddingTop: 16,
+  detailModalTitle: { flex: 1, fontSize: 18, fontWeight: "700", color: COLORS.text },
+
+  ownerBanner: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: COLORS.primaryLight, marginHorizontal: 16, marginTop: 12,
+    padding: 12, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border,
   },
-  
-  // ============================================
-  // FORM INPUTS
-  // ============================================
-  inputGroup: {
-    marginBottom: 20,
-    paddingHorizontal: 20,
+  ownerBannerText: { flex: 1, fontSize: 13, color: COLORS.primary, fontWeight: "500" },
+
+  card: {
+    backgroundColor: COLORS.white, marginHorizontal: 16, marginTop: 14,
+    borderRadius: 18, padding: 18, shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2,
   },
-  
-  inputLabel: {
-    fontSize: 15,
-    color: '#000000',
-    marginBottom: 10,
-    fontWeight: '600',
-  },
-  
-  textInput: {
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 16,
-    color: '#000000',
-    backgroundColor: '#FFFFFF',
-  },
-  
-  textArea: {
-    height: 100,
-    textAlignVertical: 'top',
-    paddingTop: 14,
-  },
-  
-  switchGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-    backgroundColor: '#FFFFFF',
-    padding: 16,
-    marginHorizontal: 20,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-  },
-  
-  // ============================================
-  // HOURS EDITING
-  // ============================================
-  hourRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    marginHorizontal: 20,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-  },
-  
-  dayLabel: {
-    fontSize: 15,
-    color: '#000000',
-    fontWeight: '600',
-    width: 100,
-  },
-  
-  timeInputs: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  
-  timeInput: {
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    fontSize: 14,
-    color: '#000000',
-    textAlign: 'center',
-    flex: 1,
-    marginHorizontal: 4,
-    backgroundColor: '#F5F5F5',
-    fontWeight: '500',
-  },
-  
-  timeSeparator: {
-    fontSize: 14,
-    color: '#999999',
-    marginHorizontal: 8,
-    fontWeight: '600',
-  },
-  
-  sectionHeader: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#000000',
-    marginTop: 12,
-    marginBottom: 16,
-    paddingHorizontal: 20,
-  },
-  
-  // ============================================
-  // IMAGE MANAGEMENT (MATCHING YOUR DESIGN)
-  // ============================================
-  imageSection: {
-    marginBottom: 20,
-    paddingHorizontal: 20,
-  },
-  
-  imageContainer: {
-    alignItems: 'center',
-  },
-  
-  imagePickerButton: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: '#E8F4FD',
-    justifyContent: 'center',
-    alignItems: 'center',
-    position: 'relative',
-    borderWidth: 2,
-    borderColor: '#BBDEFB',
-  },
-  
-  contactPersonImageLarge: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-  },
-  
-  placeholderImage: {
-    alignItems: 'center',
-  },
-  
-  placeholderText: {
-    fontSize: 12,
-    color: '#999999',
-    marginTop: 4,
-    fontWeight: '500',
-  },
-  
-  uploadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    borderRadius: 60,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  
-  editImageIcon: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    backgroundColor: colors.brandColor,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
-  },
-  
-  imageHint: {
-    fontSize: 13,
-    color: '#999999',
-    marginTop: 12,
-    textAlign: 'center',
-    fontWeight: '500',
-  },
-  
-  imageSelectedText: {
-    fontSize: 13,
-    color: '#2E7D32',
-    marginTop: 6,
-    textAlign: 'center',
-    fontWeight: '600',
-  },
-  
-  // ============================================
-  // SHOP IMAGES (MATCHING YOUR DESIGN)
-  // ============================================
-  imageCountSection: {
-    marginBottom: 20,
-    padding: 16,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    marginHorizontal: 20,
-    borderWidth: 1,
-    borderColor: '#E0E0E0',
-  },
-  
-  imageCountText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#000000',
-  },
-  
-  imageCountSubText: {
-    fontSize: 14,
-    color: '#666666',
-    marginTop: 4,
-  },
-  
-  changesText: {
-    fontSize: 13,
-    color: colors.brandColor,
-    marginTop: 8,
-    fontWeight: '600',
-  },
-  
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#000000',
-    marginBottom: 12,
-  },
-  
-  imagesRow: {
-    flexDirection: 'row',
-    paddingVertical: 8,
-  },
-  
-  shopImageEdit: {
-    width: 180,
-    height: 120,
-    borderRadius: 16,
-    marginRight: 12,
-  },
-  
-  deletedImage: {
-    opacity: 0.4,
-  },
-  
-  restoreImageButton: {
-    position: 'absolute',
-    top: 8,
-    right: 20,
-    backgroundColor: '#2E7D32',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-  },
-  
-  removeImageButton: {
-    position: 'absolute',
-    top: 8,
-    right: 20,
-    backgroundColor: '#D32F2F',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
-  },
-  
-  imageLabel: {
-    position: 'absolute',
-    bottom: 8,
-    left: 8,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  
-  deletedImageLabel: {
-    backgroundColor: 'rgba(211, 47, 47, 0.85)',
-  },
-  
-  newImageLabel: {
-    backgroundColor: 'rgba(46, 125, 50, 0.85)',
-  },
-  
-  imageLabelText: {
-    fontSize: 11,
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-  
-  deletedOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  
-  addImageSection: {
-    alignItems: 'center',
-    marginVertical: 20,
-    paddingHorizontal: 20,
-  },
-  
-  addImageButton: {
-    alignItems: 'center',
-    padding: 24,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    width: '100%',
-    borderWidth: 2,
-    borderColor: colors.brandColor,
-    borderStyle: 'dashed',
-  },
-  
-  addImageText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: colors.brandColor,
-    marginTop: 8,
-  },
-  
-  addImageSubText: {
-    fontSize: 13,
-    color: '#666666',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  
-  slotText: {
-    fontSize: 13,
-    color: colors.brandColor,
-    marginTop: 6,
-    fontWeight: '700',
-  },
-  
-  limitReachedContainer: {
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#E8F5E9',
-    borderRadius: 16,
-    marginHorizontal: 20,
-  },
-  
-  limitReachedText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#2E7D32',
-    marginTop: 8,
-  },
-  
-  limitReachedSubText: {
-    fontSize: 13,
-    color: '#666666',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  
-  tipsSection: {
-    padding: 16,
-    backgroundColor: '#FFFBF0',
-    borderRadius: 16,
-    marginBottom: 20,
-    marginHorizontal: 20,
-    borderWidth: 1,
-    borderColor: '#FFE082',
-  },
-  
-  tipsTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#000000',
-    marginBottom: 8,
-  },
-  
-  tipsText: {
-    fontSize: 13,
-    color: '#666666',
-    lineHeight: 20,
-  },
-  
-  // ============================================
-  // DETAIL SECTIONS (MATCHING YOUR DESIGN)
-  // ============================================
-  detailSection: {
-    marginBottom: 16,
-    padding: 20,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    marginHorizontal: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  
+
   sectionTitleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
+    flexDirection: "row", justifyContent: "space-between",
+    alignItems: "center", marginBottom: 4,
   },
-  
-  sectionTitleWithImage: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  sectionTitle: { fontSize: 16, fontWeight: "700", color: COLORS.text },
+
+  primaryBtn: {
+    backgroundColor: COLORS.primary, borderRadius: 14, paddingVertical: 14,
+    paddingHorizontal: 20, alignItems: "center", justifyContent: "center",
+    flexDirection: "row", gap: 6,
   },
-  
-  contactPersonImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    marginLeft: 12,
-    borderWidth: 2,
-    borderColor: '#E8F4FD',
+  primaryBtnText: { color: COLORS.white, fontSize: 15, fontWeight: "700" },
+  btnDisabled: { opacity: 0.5 },
+  dangerBtn: {
+    backgroundColor: COLORS.error, borderRadius: 14, paddingVertical: 14,
+    paddingHorizontal: 20, alignItems: "center", justifyContent: "center",
+    flexDirection: "row", gap: 8, marginTop: 8,
   },
-  
-  imageActionButtons: {
-    alignItems: 'flex-end',
+  dangerBtnText: { color: COLORS.white, fontSize: 15, fontWeight: "700" },
+  outlineBtn: {
+    flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 12,
+    paddingVertical: 6, borderRadius: 20, borderWidth: 1.5,
+    borderColor: COLORS.primary, backgroundColor: COLORS.primaryLight,
   },
-  
-  editImagesButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    backgroundColor: '#FFE8CC',
-    borderRadius: 16,
+  outlineBtnText: { fontSize: 13, color: COLORS.primary, fontWeight: "600" },
+  iconBtn: {
+    width: 34, height: 34, borderRadius: 17, backgroundColor: COLORS.primaryLight,
+    justifyContent: "center", alignItems: "center",
   },
-  
-  editImagesButtonText: {
-    fontSize: 14,
-    color: colors.brandColor,
-    marginLeft: 6,
-    fontWeight: '700',
+  primaryPill: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: COLORS.primary, paddingHorizontal: 14,
+    paddingVertical: 7, borderRadius: 20,
   },
-  
-  subText: {
-    fontSize: 12,
-    color: '#999999',
-    marginTop: 4,
+  primaryPillText: { fontSize: 13, color: COLORS.white, fontWeight: "700" },
+
+  fieldGroup: { marginBottom: 18 },
+  fieldLabel: { fontSize: 13, fontWeight: "600", color: COLORS.text, marginBottom: 7 },
+  input: {
+    borderWidth: 1.5, borderColor: COLORS.border, borderRadius: 12,
+    paddingHorizontal: 14, paddingVertical: Platform.OS === "ios" ? 13 : 11,
+    fontSize: 15, color: COLORS.text, backgroundColor: COLORS.white,
   },
-  
-  imageScrollView: {
-    marginHorizontal: -20,
-    paddingHorizontal: 20,
+  groupHeader: {
+    fontSize: 15, fontWeight: "700", color: COLORS.text, marginTop: 8,
+    marginBottom: 14, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: COLORS.borderLight,
   },
-  
-  shopImageContainer: {
-    position: 'relative',
-    marginRight: 12,
+  toggleRow: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    paddingVertical: 14, paddingHorizontal: 14, backgroundColor: COLORS.primaryLight,
+    borderRadius: 12, marginBottom: 18, borderWidth: 1, borderColor: COLORS.border,
   },
-  
-  shopImage: {
-    width: 180,
-    height: 120,
-    borderRadius: 16,
+  toggleSub: { fontSize: 12, color: COLORS.textLight, marginTop: 2 },
+
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  chip: {
+    paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
+    borderWidth: 1.5, borderColor: COLORS.border, backgroundColor: COLORS.white,
   },
-  
-  deleteImageOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
+  chipActive: { borderColor: COLORS.primary, backgroundColor: COLORS.primaryLight },
+  chipText: { fontSize: 13, color: COLORS.textLight, fontWeight: "500" },
+  chipTextActive: { color: COLORS.primary, fontWeight: "700" },
+
+  // ── Additional service price row in ServiceForm ──
+  additionalPriceRow: {
+    marginTop: 12, padding: 12, backgroundColor: COLORS.primaryLight,
+    borderRadius: 12, borderWidth: 1, borderColor: COLORS.border,
   },
-  
-  addImageQuickButton: {
-    width: 180,
-    height: 120,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: colors.brandColor,
-    borderStyle: 'dashed',
+  additionalPriceLabel: {
+    flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8,
   },
-  
-  addImageQuickText: {
-    fontSize: 13,
-    color: colors.brandColor,
-    marginTop: 6,
-    fontWeight: '700',
+  additionalPriceLabelText: { fontSize: 13, fontWeight: "600", color: COLORS.text },
+
+  infoBanner: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    backgroundColor: COLORS.primaryLight, marginHorizontal: 20, marginTop: 16,
+    padding: 12, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border,
   },
-  
-  noImagesContainer: {
-    alignItems: 'center',
-    padding: 24,
-    backgroundColor: '#F8F8F8',
-    borderRadius: 12,
+  infoBannerText: { flex: 1, fontSize: 13, color: COLORS.primary, fontWeight: "500" },
+
+  hourRow: {
+    flexDirection: "row", alignItems: "center", backgroundColor: COLORS.white,
+    borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10,
+    marginBottom: 10, borderWidth: 1, borderColor: COLORS.border,
   },
-  
-  noImagesText: {
-    fontSize: 15,
-    color: '#999999',
-    marginTop: 12,
-    marginBottom: 16,
-    fontWeight: '500',
+  hourDay: { width: 36, fontSize: 13, fontWeight: "700", color: COLORS.text },
+  hourInput: {
+    flex: 1, borderWidth: 1, borderColor: COLORS.border, borderRadius: 8,
+    paddingHorizontal: 10, paddingVertical: Platform.OS === "ios" ? 8 : 6,
+    fontSize: 13, color: COLORS.text, textAlign: "center", backgroundColor: COLORS.background,
   },
-  
-  addFirstImageButton: {
-    alignItems: 'center',
-    padding: 16,
-    backgroundColor: '#FFE8CC',
-    borderRadius: 16,
+  hourSep: { marginHorizontal: 8, color: COLORS.textMuted, fontWeight: "700" },
+
+  hourDisplayRow: {
+    flexDirection: "row", justifyContent: "space-between", paddingVertical: 6,
+    borderBottomWidth: 1, borderBottomColor: COLORS.borderLight,
   },
-  
-  addFirstImageText: {
-    fontSize: 16,
-    color: colors.brandColor,
-    fontWeight: '700',
-    marginTop: 8,
+  hourDisplayDay: { fontSize: 13, fontWeight: "700", color: COLORS.text, width: 36 },
+  hourDisplayTime: { fontSize: 13, color: COLORS.textLight },
+
+  avatarWrap: { alignItems: "center", marginBottom: 24 },
+  avatarCircle: {
+    width: 110, height: 110, borderRadius: 55, backgroundColor: COLORS.primaryLight,
+    justifyContent: "center", alignItems: "center", borderWidth: 3,
+    borderColor: COLORS.border, overflow: "hidden", position: "relative",
   },
-  
-  addFirstImageSubText: {
-    fontSize: 13,
-    color: '#666666',
-    marginTop: 4,
+  avatarImg: { width: 110, height: 110 },
+  avatarOverlay: {
+    position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", alignItems: "center",
   },
-  
-  contactItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
+  avatarCameraBtn: {
+    position: "absolute", bottom: 4, right: 4, backgroundColor: COLORS.primary,
+    width: 28, height: 28, borderRadius: 14, justifyContent: "center",
+    alignItems: "center", borderWidth: 2, borderColor: COLORS.white,
   },
-  
-  contactText: {
-    fontSize: 15,
-    color: '#666666',
-    marginLeft: 12,
-    flex: 1,
+  avatarHint: { fontSize: 12, color: COLORS.textMuted, marginTop: 10 },
+  avatarSelected: { fontSize: 12, color: COLORS.success, marginTop: 4, fontWeight: "600" },
+
+  contactRow: {
+    flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 12, marginTop: 8,
   },
-  
-  // ============================================
-  // SERVICES
-  // ============================================
-  servicesContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
+  contactAvatar: { width: 54, height: 54, borderRadius: 27, borderWidth: 2, borderColor: COLORS.border },
+  contactAvatarPlaceholder: {
+    width: 54, height: 54, borderRadius: 27, backgroundColor: COLORS.primaryLight,
+    justifyContent: "center", alignItems: "center",
   },
-  
-  serviceTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F0F8FF',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 20,
-    position: 'relative',
-    borderWidth: 1,
-    borderColor: '#BBDEFB',
+  contactName: { fontSize: 15, fontWeight: "700", color: COLORS.text },
+  contactSub: { fontSize: 13, color: COLORS.textLight, marginTop: 2 },
+  infoRow: { flexDirection: "row", alignItems: "flex-start", gap: 6, marginTop: 4 },
+  infoRowText: { flex: 1, fontSize: 13, color: COLORS.textLight, lineHeight: 19 },
+
+  servicesGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 12 },
+  serviceCard: {
+    flexDirection: "row", alignItems: "flex-start", backgroundColor: COLORS.primaryLight,
+    borderRadius: 14, padding: 12, borderWidth: 1.5, borderColor: COLORS.border,
   },
-  
-  disabledServiceTag: {
-    backgroundColor: '#F5F5F5',
-    borderColor: '#E0E0E0',
-    opacity: 0.7,
+  serviceName: { fontSize: 13, fontWeight: "700", color: COLORS.text },
+  serviceCategory: { fontSize: 11, color: COLORS.textLight, marginTop: 2 },
+  servicePrice: { fontSize: 14, fontWeight: "800", color: COLORS.primary, marginTop: 6 },
+  serviceCardBtns: { gap: 6, marginLeft: 6 },
+  serviceEditBtn: {
+    width: 26, height: 26, borderRadius: 13, backgroundColor: COLORS.white,
+    justifyContent: "center", alignItems: "center", borderWidth: 1, borderColor: COLORS.border,
   },
-  
-  serviceText: {
-    fontSize: 15,
-    color: '#000000',
-    fontWeight: '600',
+  serviceDeleteBtn: {
+    width: 26, height: 26, borderRadius: 13, backgroundColor: COLORS.error,
+    justifyContent: "center", alignItems: "center",
   },
-  
-  servicePriceText: {
-    fontSize: 15,
-    color: colors.brandColor,
-    fontWeight: '700',
-    marginLeft: 8,
+  emptyServices: { alignItems: "center", paddingVertical: 24, gap: 10 },
+  emptyServicesText: { fontSize: 14, color: COLORS.textMuted },
+
+  // ── Additional service badges row on service card (multiple) ──
+  additionalBadgeRow: {
+    flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 6,
   },
-  
-  serviceCategoryText: {
-    fontSize: 13,
-    color: '#666666',
-    marginLeft: 8,
+  additionalBadge: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    backgroundColor: COLORS.white, borderRadius: 8, paddingHorizontal: 6,
+    paddingVertical: 3, alignSelf: "flex-start", borderWidth: 1, borderColor: COLORS.border,
   },
-  
-  serviceEditIcon: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
-    backgroundColor: colors.brandColor,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
+  additionalBadgeText: { fontSize: 10, color: COLORS.primary, fontWeight: "600" },
+
+  aboutText: { fontSize: 14, color: COLORS.textLight, lineHeight: 22, marginTop: 8 },
+
+  metricsRow: { flexDirection: "row", justifyContent: "space-around", marginTop: 14 },
+  metricBox: {
+    alignItems: "center", backgroundColor: COLORS.primaryLight, borderRadius: 14,
+    paddingVertical: 14, paddingHorizontal: 10, flex: 1, marginHorizontal: 5,
   },
-  
-  descriptionText: {
-    fontSize: 15,
-    color: '#666666',
-    lineHeight: 22,
+  metricIcon: { fontSize: 20, marginBottom: 4 },
+  metricVal: { fontSize: 18, fontWeight: "800", color: COLORS.text },
+  metricLabel: { fontSize: 11, color: COLORS.textLight, marginTop: 2 },
+
+  shopImgWrap: { position: "relative", marginRight: 10 },
+  shopImg: { borderRadius: 14 },
+  shopImgOverlay: {
+    position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: "rgba(0,0,0,0.35)", borderRadius: 14,
+    justifyContent: "center", alignItems: "center",
   },
-  
-  // ============================================
-  // METRICS
-  // ============================================
-  metricsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingVertical: 8,
+  shopImgAdd: {
+    width: 110, height: 110, backgroundColor: COLORS.primaryLight, borderRadius: 14,
+    justifyContent: "center", alignItems: "center", borderWidth: 2,
+    borderColor: COLORS.primary, borderStyle: "dashed",
   },
-  
-  metricItem: {
-    alignItems: 'center',
+  shopImgAddText: { fontSize: 12, color: COLORS.primary, fontWeight: "700", marginTop: 4 },
+  emptyImages: {
+    alignItems: "center", paddingVertical: 24, gap: 10,
+    backgroundColor: COLORS.background, borderRadius: 12,
   },
-  
-  metricValue: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#000000',
+  emptyImagesText: { fontSize: 14, color: COLORS.textMuted },
+
+  imageCountPill: {
+    flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: COLORS.primaryLight,
+    padding: 12, borderRadius: 12, marginBottom: 16, borderWidth: 1, borderColor: COLORS.border,
   },
-  
-  metricLabel: {
-    fontSize: 13,
-    color: '#999999',
-    marginTop: 4,
-    fontWeight: '500',
+  imageCountText: { fontSize: 14, fontWeight: "700", color: COLORS.text },
+  imageChangesText: { fontSize: 13, color: COLORS.primary, fontWeight: "600" },
+  imgSectionLabel: {
+    fontSize: 13, fontWeight: "700", color: COLORS.textLight, marginBottom: 8,
+    textTransform: "uppercase", letterSpacing: 0.5,
   },
-  
-  // ============================================
-  // OWNERSHIP & ACTIONS
-  // ============================================
-  ownershipBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFF3E0',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    marginHorizontal: 16,
-    marginTop: 8,
-    marginBottom: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#FFE0B2',
+  imgThumb: { position: "relative", marginRight: 10 },
+  imgThumbImg: { width: 150, height: 105, borderRadius: 12 },
+  imgThumbBtn: {
+    position: "absolute", top: 6, right: 6, width: 26, height: 26, borderRadius: 13,
+    justifyContent: "center", alignItems: "center", borderWidth: 1.5, borderColor: COLORS.white,
   },
-  
-  ownershipBannerText: {
-    fontSize: 14,
-    color: '#E65100',
-    marginLeft: 12,
-    flex: 1,
-    lineHeight: 20,
-    fontWeight: '500',
+  imgThumbLabel: {
+    position: "absolute", bottom: 6, left: 6, backgroundColor: "rgba(0,0,0,0.6)",
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8,
   },
-  
-  modalActions: {
-    padding: 20,
-    backgroundColor: '#FFFFFF',
+  imgThumbLabelText: { fontSize: 10, color: COLORS.white, fontWeight: "700" },
+  addImgDashed: {
+    alignItems: "center", padding: 28, backgroundColor: COLORS.white, borderRadius: 16,
+    borderWidth: 2, borderColor: COLORS.primary, borderStyle: "dashed", gap: 6, marginTop: 8,
   },
-  
-  editCleanerButton: {
-    backgroundColor: colors.brandColor,
-    paddingVertical: 16,
-    borderRadius: 16,
-    alignItems: 'center',
-    shadowColor: colors.brandColor,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
+  addImgText: { fontSize: 15, fontWeight: "700", color: COLORS.primary },
+  addImgSub: { fontSize: 13, color: COLORS.textMuted },
+  addImgFull: {
+    alignItems: "center", padding: 20, backgroundColor: "#E8F5E9", borderRadius: 16, gap: 8,
   },
-  
-  editCleanerButtonText: {
-    color: '#FFFFFF',
-    fontSize: 17,
-    fontWeight: '700',
-  },
+  addImgFullText: { fontSize: 14, fontWeight: "700", color: COLORS.success },
 });
 
 export default MyDryCleaners;

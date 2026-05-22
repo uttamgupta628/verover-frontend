@@ -70,7 +70,7 @@ export default function ForgotPassword() {
         {
           email: data.email,
           userType: selectedUserType,
-        }
+        },
       );
 
       if (response.data.success) {

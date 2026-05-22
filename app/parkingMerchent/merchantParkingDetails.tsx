@@ -11,7 +11,9 @@ import {
   ArrowLeft,
   ChevronLeft,
   ChevronRight,
+  Clock,
   Plus,
+  Repeat,
   Trash2,
   X,
 } from "lucide-react-native";
@@ -40,6 +42,9 @@ import axiosInstance from "../../api/axios";
 import colors from "../../assets/color";
 import { images } from "../../assets/images/images";
 import { RootState } from "../../components/redux/store";
+import TimeWheelPicker from "./Timewheelpicker";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface SpaceInfo {
   count: number;
@@ -54,6 +59,14 @@ interface WorkingHours {
   is24Hours: boolean;
 }
 
+interface IDailyRateSlot {
+  _id?: string;
+  label: string;
+  fromTime: string;
+  toTime: string;
+  price: number;
+}
+
 interface IParkingLot {
   _id: string;
   parkingName: string;
@@ -66,12 +79,27 @@ interface IParkingLot {
   spacesList: Record<string, SpaceInfo>;
   generalAvailable: WorkingHours[];
   is24x7: boolean;
-  gpsLocation: {
-    type: "Point";
-    coordinates: [number, number];
-  };
+  gpsLocation: { type: "Point"; coordinates: [number, number] };
   isActive: boolean;
+  monthlyChargeEnabled: boolean;
+  monthlyRate: number;
+  dailyRateEnabled: boolean;
+  dailyRates: IDailyRateSlot[];
 }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+const isValidTime = (t: string) =>
+  /^([01]\d|2[0-3]):[0-5]\d$|^00:00$/.test(t);
+
+const emptySlot = (): IDailyRateSlot => ({
+  label: "",
+  fromTime: "06:00",
+  toTime: "18:00",
+  price: 0,
+});
+
+// ── Component ─────────────────────────────────────────────────────────────────
 
 const ParkingDetails = () => {
   const router = useRouter();
@@ -82,11 +110,11 @@ const ParkingDetails = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [parkingLotDetails, setParkingLotDetails] =
-    useState<IParkingLot | null>(null);
+  const [parkingLotDetails, setParkingLotDetails] = useState<IParkingLot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState<Partial<IParkingLot>>({});
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isDailyRateSaving, setIsDailyRateSaving] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState<{
     day: string;
     field: "open" | "close";
@@ -96,115 +124,89 @@ const ParkingDetails = () => {
   >([]);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
+  // ── Time Wheel Picker state ───────────────────────────────────────────────
+  const [timePickerVisible, setTimePickerVisible] = useState(false);
+  const [timePickerTarget, setTimePickerTarget] = useState<{
+    slotIndex: number;
+    field: "fromTime" | "toTime";
+  } | null>(null);
+  const [timePickerValue, setTimePickerValue] = useState("06:00");
+
   const parkingLotId = params.parkingLotId as string;
   const parkingLotDataString = params.parkingLotData as string | undefined;
   const parkingLotData = parkingLotDataString
     ? JSON.parse(parkingLotDataString)
     : undefined;
 
-  // Prevent navigation loss when editing
+  // ── Guard unsaved changes ──────────────────────────────────────────────────
   useEffect(() => {
     const unsubscribe = navigation.addListener("beforeRemove", (e: any) => {
-      if (isEditing) {
-        e.preventDefault();
-        Alert.alert(
-          "Discard changes?",
-          "You have unsaved changes. Are you sure you want to discard them and leave?",
-          [
-            { text: "Don't leave", style: "cancel", onPress: () => {} },
-            {
-              text: "Discard",
-              style: "destructive",
-              onPress: () => navigation.dispatch(e.data.action),
-            },
-          ]
-        );
-      }
+      if (!isEditing) return;
+      e.preventDefault();
+      Alert.alert(
+        "Discard changes?",
+        "You have unsaved changes. Are you sure you want to discard them?",
+        [
+          { text: "Stay", style: "cancel" },
+          {
+            text: "Discard",
+            style: "destructive",
+            onPress: () => navigation.dispatch(e.data.action),
+          },
+        ]
+      );
     });
-
     return unsubscribe;
   }, [navigation, isEditing]);
 
+  // ── Fetch ──────────────────────────────────────────────────────────────────
   const fetchParkingLotDetails = useCallback(
     async (showLoader = true) => {
-      // Don't fetch if user is editing
-      if (isEditing) {
-        console.log("Skipping fetch - user is editing");
-        return;
-      }
-
-      if (!parkingLotId) {
-        setError("No parking lot ID provided.");
-        return;
-      }
-
+      if (isEditing) return;
+      if (!parkingLotId) { setError("No parking lot ID provided."); return; }
       try {
         if (showLoader) setIsLoading(true);
         setError(null);
-
         const response = await axiosInstance.get(
           `/merchants/parkinglot/${parkingLotId}`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
+          { headers: { Authorization: `Bearer ${token}` } }
         );
-
-        if (response.data && response.data.success && response.data.data) {
-          const fetchedData = response.data.data;
-          const formattedSpacesList = fetchedData.spacesList
+        if (response.data?.success && response.data.data) {
+          const fd = response.data.data;
+          const formattedSpacesList = fd.spacesList
             ? Object.fromEntries(
-                Object.entries(fetchedData.spacesList).map(
-                  ([key, value]: [string, any]) => [
-                    key,
-                    { count: value.count, price: value.price },
-                  ]
-                )
+                Object.entries(fd.spacesList).map(([k, v]: [string, any]) => [
+                  k,
+                  { count: v.count, price: v.price },
+                ])
               )
             : {};
-
-          const fullParkingLotData: IParkingLot = {
-            ...fetchedData,
+          const fullData: IParkingLot = {
+            ...fd,
             spacesList: formattedSpacesList,
-            generalAvailable: fetchedData.generalAvailable || [],
-            images: fetchedData.images || [],
-            gpsLocation: fetchedData.gpsLocation || {
-              type: "Point",
-              coordinates: [0, 0],
-            },
-            price: fetchedData.price || 0,
+            generalAvailable: fd.generalAvailable || [],
+            images: fd.images || [],
+            gpsLocation: fd.gpsLocation || { type: "Point", coordinates: [0, 0] },
+            price: fd.price || 0,
+            monthlyChargeEnabled: fd.monthlyChargeEnabled ?? false,
+            monthlyRate: fd.monthlyRate ?? 0,
+            dailyRateEnabled: fd.dailyRateEnabled ?? false,
+            dailyRates: fd.dailyRates ?? [],
           };
-
-          setParkingLotDetails(fullParkingLotData);
-          // Only update formData if not editing
-          if (!isEditing) {
-            setFormData(fullParkingLotData);
-          }
+          setParkingLotDetails(fullData);
+          if (!isEditing) setFormData(fullData);
           setLocalImages(
-            fullParkingLotData.images.map((uri) => ({
+            fullData.images.map((uri) => ({
               uri,
               name: uri.split("/").pop() || "image.jpg",
               type: "image/jpeg",
             }))
           );
         } else {
-          throw new Error(
-            response.data?.message ||
-              "Invalid response structure or parking lot not found."
-          );
+          throw new Error(response.data?.message || "Invalid response.");
         }
       } catch (err: any) {
-        console.error(
-          "Error fetching parking lot details:",
-          err.response?.data || err.message
-        );
-        setError(
-          "Failed to load parking lot details: " +
-            (err.response?.data?.message ||
-              err.message ||
-              "An unexpected error occurred.")
-        );
+        setError("Failed to load: " + (err.response?.data?.message || err.message));
       } finally {
         if (showLoader) setIsLoading(false);
         setRefreshing(false);
@@ -213,15 +215,53 @@ const ParkingDetails = () => {
     [parkingLotId, token, isEditing]
   );
 
-  const handleDeleteParkingLot = async () => {
-    if (!parkingLotId) {
-      Alert.alert("Error", "Parking Lot ID not found. Cannot delete.");
-      return;
-    }
+  // ── Focus effect ───────────────────────────────────────────────────────────
+  useFocusEffect(
+    useCallback(() => {
+      if (isEditing) return;
+      if (parkingLotId) {
+        fetchParkingLotDetails();
+      } else if (parkingLotData) {
+        const formattedSpacesList = parkingLotData.spacesList
+          ? Object.fromEntries(
+              Object.entries(parkingLotData.spacesList).map(
+                ([k, v]: [string, any]) => [k, { count: v.count, price: v.price }]
+              )
+            )
+          : {};
+        const fullData: IParkingLot = {
+          ...parkingLotData,
+          spacesList: formattedSpacesList,
+          generalAvailable: parkingLotData.generalAvailable || [],
+          images: parkingLotData.images || [],
+          gpsLocation: parkingLotData.gpsLocation || { type: "Point", coordinates: [0, 0] },
+          price: parkingLotData.price || 0,
+          monthlyChargeEnabled: parkingLotData.monthlyChargeEnabled ?? false,
+          monthlyRate: parkingLotData.monthlyRate ?? 0,
+          dailyRateEnabled: parkingLotData.dailyRateEnabled ?? false,
+          dailyRates: parkingLotData.dailyRates ?? [],
+        };
+        setParkingLotDetails(fullData);
+        if (!isEditing) setFormData(fullData);
+        setLocalImages(
+          fullData.images.map((uri) => ({
+            uri,
+            name: uri.split("/").pop() || "image.jpg",
+            type: "image/jpeg",
+          }))
+        );
+      } else {
+        setError("No parking lot information provided.");
+      }
+    }, [fetchParkingLotDetails, parkingLotId, parkingLotData, isEditing])
+  );
 
+  // ── Delete ─────────────────────────────────────────────────────────────────
+  const handleDeleteParkingLot = () => {
+    if (!parkingLotId) { Alert.alert("Error", "Parking Lot ID not found."); return; }
     Alert.alert(
       "Confirm Delete",
-      "Are you sure you want to delete this parking lot? This action cannot be undone.",
+      "Are you sure you want to delete this parking lot? This cannot be undone.",
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -232,21 +272,11 @@ const ParkingDetails = () => {
             try {
               await axiosInstance.delete(
                 `/merchants/parkinglot/delete/${parkingLotId}`,
-                {
-                  headers: {
-                    Authorization: `Bearer ${token}`,
-                  },
-                }
+                { headers: { Authorization: `Bearer ${token}` } }
               );
-
-              Alert.alert(
-                "Success",
-                "Parking Lot has been deleted successfully."
-              );
-
+              Alert.alert("Success", "Parking Lot deleted successfully.");
               router.back();
             } catch (err: any) {
-              console.error("Deletion Error:", err.response?.data || err);
               Alert.alert(
                 "Deletion Failed",
                 err.response?.data?.message || "Something went wrong"
@@ -260,20 +290,17 @@ const ParkingDetails = () => {
     );
   };
 
-  const handleNextImage = () => {
-    setCurrentImageIndex((prevIndex) =>
-      prevIndex === localImages.length - 1 ? 0 : prevIndex + 1
+  // ── Image helpers ──────────────────────────────────────────────────────────
+  const handleNextImage = () =>
+    setCurrentImageIndex((prev) =>
+      prev === localImages.length - 1 ? 0 : prev + 1
     );
-  };
-
-  const handlePrevImage = () => {
-    setCurrentImageIndex((prevIndex) =>
-      prevIndex === 0 ? localImages.length - 1 : prevIndex - 1
+  const handlePrevImage = () =>
+    setCurrentImageIndex((prev) =>
+      prev === 0 ? localImages.length - 1 : prev - 1
     );
-  };
 
   const handleRefresh = useCallback(async () => {
-    // Don't refresh if user is editing
     if (isEditing) {
       Alert.alert(
         "Cannot Refresh",
@@ -281,96 +308,35 @@ const ParkingDetails = () => {
         [
           { text: "Cancel", style: "cancel" },
           {
-            text: "Discard Changes & Refresh",
+            text: "Discard & Refresh",
             style: "destructive",
             onPress: async () => {
               setIsEditing(false);
               setRefreshing(true);
               await fetchParkingLotDetails(false);
-              setRefreshing(false);
             },
           },
         ]
       );
       return;
     }
-
     setRefreshing(true);
     await fetchParkingLotDetails(false);
-    setRefreshing(false);
   }, [fetchParkingLotDetails, isEditing]);
 
-  useFocusEffect(
-    useCallback(() => {
-      // Don't reload if user is editing
-      if (isEditing) {
-        console.log("Skipping focus reload - user is editing");
-        return;
-      }
-
-      if (parkingLotId) {
-        fetchParkingLotDetails();
-      } else if (parkingLotData) {
-        const formattedSpacesList = parkingLotData.spacesList
-          ? Object.fromEntries(
-              Object.entries(parkingLotData.spacesList).map(
-                ([key, value]: [string, any]) => [
-                  key,
-                  { count: value.count, price: value.price },
-                ]
-              )
-            )
-          : {};
-
-        const fullParkingLotData: IParkingLot = {
-          ...parkingLotData,
-          spacesList: formattedSpacesList,
-          generalAvailable: parkingLotData.generalAvailable || [],
-          images: parkingLotData.images || [],
-          gpsLocation: parkingLotData.gpsLocation || {
-            type: "Point",
-            coordinates: [0, 0],
-          },
-          price: parkingLotData.price || 0,
-        };
-
-        setParkingLotDetails(fullParkingLotData);
-        // Only update formData if not editing
-        if (!isEditing) {
-          setFormData(fullParkingLotData);
-        }
-        setLocalImages(
-          fullParkingLotData.images.map((uri) => ({
-            uri,
-            name: uri.split("/").pop() || "image.jpg",
-            type: "image/jpeg",
-          }))
-        );
-      } else {
-        setError("No parking lot information provided.");
-      }
-    }, [fetchParkingLotDetails, parkingLotId, parkingLotData, isEditing])
-  );
-
-  const handleInputChange = (field: keyof IParkingLot, value: any) => {
-    setFormData((prev) => ({
-      ...prev,
-      [field]: value,
-    }));
-  };
+  // ── Form helpers ───────────────────────────────────────────────────────────
+  const handleInputChange = (field: keyof IParkingLot, value: any) =>
+    setFormData((prev) => ({ ...prev, [field]: value }));
 
   const handleDayChange = (index: number, field: string, value: any) => {
-    const updatedDays = [...(formData.generalAvailable || [])];
-    updatedDays[index] = {
-      ...updatedDays[index],
-      [field]: value,
-    };
-    handleInputChange("generalAvailable", updatedDays);
+    const updated = [...(formData.generalAvailable || [])];
+    updated[index] = { ...updated[index], [field]: value };
+    handleInputChange("generalAvailable", updated);
   };
 
   const handleTimeChange = (event: any, selectedTime?: Date) => {
     if (selectedTime && showTimePicker) {
-      const timeString = `${selectedTime
+      const timeStr = `${selectedTime
         .getHours()
         .toString()
         .padStart(2, "0")}:${selectedTime
@@ -380,16 +346,12 @@ const ParkingDetails = () => {
       const dayIndex =
         formData.generalAvailable?.findIndex(
           (d) => d.day === showTimePicker.day
-        ) || -1;
-
+        ) ?? -1;
       if (dayIndex !== -1 && formData.generalAvailable) {
-        const newGeneralAvailable = [...formData.generalAvailable];
-        if (showTimePicker.field === "open") {
-          newGeneralAvailable[dayIndex].openTime = timeString;
-        } else {
-          newGeneralAvailable[dayIndex].closeTime = timeString;
-        }
-        handleInputChange("generalAvailable", newGeneralAvailable);
+        const newGA = [...formData.generalAvailable];
+        if (showTimePicker.field === "open") newGA[dayIndex].openTime = timeStr;
+        else newGA[dayIndex].closeTime = timeStr;
+        handleInputChange("generalAvailable", newGA);
       }
     }
     setShowTimePicker(null);
@@ -415,80 +377,218 @@ const ParkingDetails = () => {
   };
 
   const handleImagePickerForEdit = async () => {
-  try {
-    // Request permission first
-    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-
-    if (!granted) {
-      Alert.alert(
-        "Permission Required",
-        "You need to grant permission to access the photo library."
-      );
-      return;
-    }
-
-    // Open gallery
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsMultipleSelection: true,
-      quality: 0.8,
-      selectionLimit: Math.max(0, 5 - localImages.length), // avoids negative values
-    });
-
-    if (result.canceled) return;
-
-    // Convert assets to valid upload objects
-    const newImages = result.assets.map((asset) => ({
-      uri: asset.uri,
-      name: asset.uri?.split("/").pop() || `image_${Date.now()}.jpg`,
-      type: asset.mimeType || "image/jpeg",
-    }));
-
-    // Update state
-    setLocalImages((prev) => [...prev, ...newImages]);
-  } catch (error) {
-    console.error("Image picker error:", error);
-    Alert.alert("Error", "Failed to select images");
-  }
-};
-
-
-  const removeLocalImage = (index: number) => {
-    const newImages = [...localImages];
-    newImages.splice(index, 1);
-    setLocalImages(newImages);
-
-    if (currentImageIndex >= newImages.length && newImages.length > 0) {
-      setCurrentImageIndex(newImages.length - 1);
-    } else if (newImages.length === 0) {
-      setCurrentImageIndex(0);
+    try {
+      const { granted } =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!granted) {
+        Alert.alert(
+          "Permission Required",
+          "You need to grant permission to access the photo library."
+        );
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsMultipleSelection: true,
+        quality: 0.8,
+        selectionLimit: Math.max(0, 5 - localImages.length),
+      });
+      if (result.canceled) return;
+      const newImages = result.assets.map((asset) => ({
+        uri: asset.uri,
+        name: asset.uri?.split("/").pop() || `image_${Date.now()}.jpg`,
+        type: asset.mimeType || "image/jpeg",
+      }));
+      setLocalImages((prev) => [...prev, ...newImages]);
+    } catch {
+      Alert.alert("Error", "Failed to select images");
     }
   };
 
+  const removeLocalImage = (index: number) => {
+    const updated = [...localImages];
+    updated.splice(index, 1);
+    setLocalImages(updated);
+    if (currentImageIndex >= updated.length && updated.length > 0)
+      setCurrentImageIndex(updated.length - 1);
+    else if (updated.length === 0) setCurrentImageIndex(0);
+  };
+
+  // ── Daily Rate helpers ─────────────────────────────────────────────────────
+  const handleDailyRateSlotChange = (
+    index: number,
+    field: keyof IDailyRateSlot,
+    value: any
+  ) => {
+    const slots = [...(formData.dailyRates || [])];
+    slots[index] = { ...slots[index], [field]: value };
+    handleInputChange("dailyRates", slots);
+  };
+
+  const addDailyRateSlot = () =>
+    handleInputChange("dailyRates", [
+      ...(formData.dailyRates || []),
+      emptySlot(),
+    ]);
+
+  const removeDailyRateSlot = (index: number) => {
+    const slots = [...(formData.dailyRates || [])];
+    slots.splice(index, 1);
+    handleInputChange("dailyRates", slots);
+  };
+
+  // ── Time Wheel Picker helpers ──────────────────────────────────────────────
+  const openTimePicker = (
+    slotIndex: number,
+    field: "fromTime" | "toTime"
+  ) => {
+    const slot = formData.dailyRates?.[slotIndex];
+    setTimePickerValue(
+      (field === "fromTime" ? slot?.fromTime : slot?.toTime) || "06:00"
+    );
+    setTimePickerTarget({ slotIndex, field });
+    setTimePickerVisible(true);
+  };
+
+  const handleTimeConfirm = (time: string) => {
+    if (timePickerTarget) {
+      handleDailyRateSlotChange(
+        timePickerTarget.slotIndex,
+        timePickerTarget.field,
+        time
+      );
+    }
+    setTimePickerVisible(false);
+    setTimePickerTarget(null);
+  };
+
+  // ── Save daily rate ────────────────────────────────────────────────────────
+  const handleSaveDailyRate = async () => {
+    if (!parkingLotId) return;
+    const slots: IDailyRateSlot[] = formData.dailyRates || [];
+
+    if (formData.dailyRateEnabled) {
+      if (slots.length === 0) {
+        Alert.alert(
+          "Validation Error",
+          "Add at least one time slot when daily rate is enabled."
+        );
+        return;
+      }
+      for (let i = 0; i < slots.length; i++) {
+        const s = slots[i];
+        if (!s.label.trim()) {
+          Alert.alert("Validation Error", `Slot ${i + 1}: label is required.`);
+          return;
+        }
+        if (!isValidTime(s.fromTime)) {
+          Alert.alert(
+            "Validation Error",
+            `Slot ${i + 1}: fromTime must be HH:MM (e.g. "06:00").`
+          );
+          return;
+        }
+        if (!isValidTime(s.toTime)) {
+          Alert.alert(
+            "Validation Error",
+            `Slot ${i + 1}: toTime must be HH:MM. Use "00:00" for midnight.`
+          );
+          return;
+        }
+        if (s.price < 0) {
+          Alert.alert("Validation Error", `Slot ${i + 1}: price must be ≥ 0.`);
+          return;
+        }
+      }
+    }
+
+    try {
+      setIsDailyRateSaving(true);
+      const response = await axiosInstance.patch(
+        "/merchants/daily-rate-settings",
+        {
+          venueType: "parking",
+          venueId: parkingLotId,
+          dailyRateEnabled: formData.dailyRateEnabled ?? false,
+          dailyRates: slots.map(({ _id, ...rest }) => rest),
+        },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      if (response.data?.success) {
+        Alert.alert("Success", "Daily rate settings saved.");
+        await fetchParkingLotDetails(false);
+      } else {
+        throw new Error(response.data?.message || "Save failed");
+      }
+    } catch (err: any) {
+      const responseData = err.response?.data;
+      const issues: any[] =
+        responseData?.issues ||
+        responseData?.data?.issues ||
+        responseData?.errors ||
+        [];
+
+      let msg: string;
+
+      if (Array.isArray(issues) && issues.length > 0) {
+        msg = issues
+          .map((issue: any) => {
+            const pathStr =
+              Array.isArray(issue.path) && issue.path.length > 0
+                ? issue.path
+                    .map((p: any) =>
+                      typeof p === "number" ? `Slot ${p + 1}` : p
+                    )
+                    .filter(
+                      (p: any) =>
+                        p !== "dailyRates" &&
+                        p !== "fromTime" &&
+                        p !== "toTime"
+                    )
+                    .join(" → ")
+                : null;
+            return pathStr ? `${pathStr}: ${issue.message}` : issue.message;
+          })
+          .join("\n");
+      } else {
+        msg =
+          responseData?.message ||
+          err.message ||
+          "Failed to save daily rate settings.";
+      }
+
+      Alert.alert("Error", msg);
+    } finally {
+      setIsDailyRateSaving(false);
+    }
+  };
+
+  // ── Update main details ────────────────────────────────────────────────────
   const handleUpdateParkingLot = async () => {
     if (!parkingLotId || !formData) return;
-
+    if (formData.monthlyChargeEnabled && (formData.monthlyRate ?? 0) <= 0) {
+      Alert.alert(
+        "Validation Error",
+        "Please enter a valid Monthly/Permit rate greater than 0."
+      );
+      return;
+    }
     try {
       setIsUpdating(true);
       setError(null);
 
       const data = new FormData();
-
-      // Add all fields to FormData
       data.append("parkingName", formData.parkingName || "");
       data.append("about", formData.about || "");
       data.append("address", formData.address || "");
       data.append("contactNumber", formData.contactNumber || "");
       if (formData.email) data.append("email", formData.email);
-      data.append("is24x7", (formData.is24x7 || false).toString());
-      data.append("price", (formData.price || 0).toString());
-      data.append("isActive", (formData.isActive || false).toString());
-
-      // Append JSON data
-      data.append(
-        "generalAvailable",
-        JSON.stringify(formData.generalAvailable || [])
-      );
+      data.append("is24x7", String(formData.is24x7 || false));
+      data.append("price", String(formData.price || 0));
+      data.append("isActive", String(formData.isActive || false));
+      data.append("monthlyChargeEnabled", String(formData.monthlyChargeEnabled || false));
+      data.append("monthlyRate", String(formData.monthlyRate || 0));
+      data.append("generalAvailable", JSON.stringify(formData.generalAvailable || []));
       data.append("spacesList", JSON.stringify(formData.spacesList || {}));
       data.append(
         "gpsLocation",
@@ -497,25 +597,18 @@ const ParkingDetails = () => {
         )
       );
 
-      // Handle images
-      const newLocalFiles = localImages.filter(
-        (img) => !img.uri.startsWith("http")
-      );
-      const existingImages = localImages
+      const newFiles = localImages.filter((img) => !img.uri.startsWith("http"));
+      const existingUrls = localImages
         .filter((img) => img.uri.startsWith("http"))
         .map((img) => img.uri);
-
-      // Append existing image URLs as string array
-      data.append("existingImages", JSON.stringify(existingImages));
-
-      // Append new images
-      newLocalFiles.forEach((image) => {
+      data.append("existingImages", JSON.stringify(existingUrls));
+      newFiles.forEach((image) =>
         data.append("images", {
           uri: image.uri,
           name: image.name,
           type: image.type,
-        } as any);
-      });
+        } as any)
+      );
 
       const response = await axiosInstance.put(
         `/merchants/parkinglot/update/${parkingLotId}`,
@@ -529,6 +622,7 @@ const ParkingDetails = () => {
       );
 
       if (response.data?.success) {
+        await handleSaveDailyRate();
         Alert.alert("Success", "Parking Lot updated successfully");
         setIsEditing(false);
         await fetchParkingLotDetails(false);
@@ -536,53 +630,70 @@ const ParkingDetails = () => {
         throw new Error(response.data?.message || "Update failed");
       }
     } catch (err: any) {
-      console.error(
-        "Error updating parking lot:",
-        err.response?.data || err.message
-      );
-      let errorMessage = "Failed to update parking lot";
-      if (err.response?.data?.message) {
-        errorMessage = err.response.data.message;
-      } else if (
-        err.response?.data?.errors &&
-        err.response.data.errors.length > 0
-      ) {
-        errorMessage =
-          "Validation Errors:\n" +
-          err.response.data.errors.map((e: any) => e.message).join("\n");
-      } else if (err.message) {
-        errorMessage = err.message;
+      const responseData = err.response?.data;
+      const issues: any[] =
+        responseData?.issues ||
+        responseData?.data?.issues ||
+        responseData?.errors ||
+        [];
+
+      let msg: string;
+
+      if (Array.isArray(issues) && issues.length > 0) {
+        msg = issues
+          .map((issue: any) => {
+            const pathStr =
+              Array.isArray(issue.path) && issue.path.length > 0
+                ? issue.path
+                    .map((p: any) =>
+                      typeof p === "number" ? `Slot ${p + 1}` : p
+                    )
+                    .filter(
+                      (p: any) =>
+                        p !== "dailyRates" &&
+                        p !== "fromTime" &&
+                        p !== "toTime"
+                    )
+                    .join(" → ")
+                : null;
+            return pathStr ? `${pathStr}: ${issue.message}` : issue.message;
+          })
+          .join("\n");
+      } else {
+        msg =
+          responseData?.message ||
+          err.message ||
+          "Failed to update parking lot.";
       }
-      setError(errorMessage);
-      Alert.alert("Error", errorMessage);
+
+      setError(msg);
+      Alert.alert("Error", msg);
     } finally {
       setIsUpdating(false);
     }
   };
 
   const handleCancelEdit = () => {
-    if (parkingLotDetails) {
-      setIsEditing(false);
-      setFormData({ ...parkingLotDetails });
-      setLocalImages(
-        parkingLotDetails.images.map((uri) => ({
-          uri,
-          name: uri.split("/").pop() || "image.jpg",
-          type: "image/jpeg",
-        }))
-      );
-      setError(null);
-    }
+    if (!parkingLotDetails) return;
+    setIsEditing(false);
+    setFormData({ ...parkingLotDetails });
+    setLocalImages(
+      parkingLotDetails.images.map((uri) => ({
+        uri,
+        name: uri.split("/").pop() || "image.jpg",
+        type: "image/jpeg",
+      }))
+    );
+    setError(null);
   };
 
   const handleStartEditing = () => {
-    // Make sure formData is populated with current details before editing
-    if (parkingLotDetails && !formData.parkingName) {
+    if (parkingLotDetails && !formData.parkingName)
       setFormData({ ...parkingLotDetails });
-    }
     setIsEditing(true);
   };
 
+  // ── Loading / Error guards ─────────────────────────────────────────────────
   if (isLoading && !parkingLotDetails) {
     return (
       <View style={styles.loadingContainer}>
@@ -644,164 +755,168 @@ const ParkingDetails = () => {
     );
   }
 
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <ScrollView
-      style={styles.container}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={handleRefresh}
-          enabled={!isEditing && !isUpdating}
-        />
-      }
-    >
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => {
-            if (isEditing) {
-              Alert.alert(
-                "Discard changes?",
-                "You have unsaved changes. Are you sure you want to leave?",
-                [
-                  { text: "Stay", style: "cancel" },
-                  {
-                    text: "Discard",
-                    style: "destructive",
-                    onPress: () => router.back(),
-                  },
-                ]
-              );
-            } else {
-              router.back();
-            }
-          }}
-        >
-          <ArrowLeft size={35} color={colors.brandColor} />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          {isEditing ? "Edit Parking Lot" : parkingLotDetails.parkingName}
-        </Text>
-        <View style={styles.headerActions}>
-          {isEditing ? (
-            <>
-              <TouchableOpacity
-                onPress={handleCancelEdit}
-                disabled={isUpdating}
-              >
-                <Text
-                  style={[styles.cancelText, isUpdating && styles.disabledText]}
-                >
-                  Cancel
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={handleUpdateParkingLot}
-                disabled={isUpdating}
-                style={[
-                  styles.saveButton,
-                  isUpdating && styles.saveButtonDisabled,
-                ]}
-              >
-                <Text style={styles.saveText}>
-                  {isUpdating ? "Saving..." : "Save"}
-                </Text>
-              </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              <TouchableOpacity onPress={handleStartEditing}>
-                <Text style={styles.editText}>Edit</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handleDeleteParkingLot}>
-                <Trash2 size={25} color={colors.error} />
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
-      </View>
-
-      {/* Error Banner */}
-      {error && (
-        <View style={styles.errorBanner}>
-          <AlertCircle size={20} color={colors.error} />
-          <Text style={styles.errorBannerText}>{error}</Text>
-          <TouchableOpacity onPress={() => setError(null)}>
-            <X size={20} color={colors.error} />
+    <>
+      <ScrollView
+        style={styles.container}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            enabled={!isEditing && !isUpdating}
+          />
+        }
+      >
+        {/* ── Header ──────────────────────────────────────────────────────── */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            onPress={() => {
+              if (isEditing) {
+                Alert.alert(
+                  "Discard changes?",
+                  "You have unsaved changes. Leave anyway?",
+                  [
+                    { text: "Stay", style: "cancel" },
+                    {
+                      text: "Discard",
+                      style: "destructive",
+                      onPress: () => router.back(),
+                    },
+                  ]
+                );
+              } else {
+                router.back();
+              }
+            }}
+          >
+            <ArrowLeft size={35} color={colors.brandColor} />
           </TouchableOpacity>
-        </View>
-      )}
-
-      {/* Main Image & Image Gallery with Carousel */}
-      <View style={styles.imageGalleryContainer}>
-        {localImages.length > 0 ? (
-          <View style={styles.imageWrapper}>
-            <Image
-              source={{ uri: localImages[currentImageIndex].uri }}
-              style={styles.galleryImage}
-              resizeMode="cover"
-            />
-            {isEditing && (
-              <TouchableOpacity
-                style={styles.deleteGalleryImageButton}
-                onPress={() => removeLocalImage(currentImageIndex)}
-              >
-                <X size={20} color={colors.error} />
-              </TouchableOpacity>
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            {isEditing ? "Edit Parking Lot" : parkingLotDetails.parkingName}
+          </Text>
+          <View style={styles.headerActions}>
+            {isEditing ? (
+              <>
+                <TouchableOpacity
+                  onPress={handleCancelEdit}
+                  disabled={isUpdating}
+                >
+                  <Text
+                    style={[
+                      styles.cancelText,
+                      isUpdating && styles.disabledText,
+                    ]}
+                  >
+                    Cancel
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleUpdateParkingLot}
+                  disabled={isUpdating}
+                  style={[
+                    styles.saveButton,
+                    isUpdating && styles.saveButtonDisabled,
+                  ]}
+                >
+                  <Text style={styles.saveText}>
+                    {isUpdating ? "Saving..." : "Save"}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <TouchableOpacity onPress={handleStartEditing}>
+                  <Text style={styles.editText}>Edit</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={handleDeleteParkingLot}>
+                  <Trash2 size={25} color={colors.error} />
+                </TouchableOpacity>
+              </>
             )}
           </View>
-        ) : (
-          <Image
-            source={images.defaultParkingLot}
-            style={styles.mainImagePlaceholder}
-            resizeMode="cover"
-          />
-        )}
+        </View>
 
-        {/* Carousel Arrow Buttons */}
-        {localImages.length > 1 && (
-          <>
-            <TouchableOpacity
-              style={[styles.arrowButton, styles.leftArrow]}
-              onPress={handlePrevImage}
-            >
-              <ChevronLeft size={24} color="#FFF" />
+        {/* ── Error Banner ────────────────────────────────────────────────── */}
+        {error && (
+          <View style={styles.errorBanner}>
+            <AlertCircle size={20} color={colors.error} />
+            <Text style={styles.errorBannerText}>{error}</Text>
+            <TouchableOpacity onPress={() => setError(null)}>
+              <X size={20} color={colors.error} />
             </TouchableOpacity>
+          </View>
+        )}
+
+        {/* ── Image Gallery ────────────────────────────────────────────────── */}
+        <View style={styles.imageGalleryContainer}>
+          {localImages.length > 0 ? (
+            <View style={styles.imageWrapper}>
+              <Image
+                source={{ uri: localImages[currentImageIndex].uri }}
+                style={styles.galleryImage}
+                resizeMode="cover"
+              />
+              {isEditing && (
+                <TouchableOpacity
+                  style={styles.deleteGalleryImageButton}
+                  onPress={() => removeLocalImage(currentImageIndex)}
+                >
+                  <X size={20} color={colors.error} />
+                </TouchableOpacity>
+              )}
+            </View>
+          ) : (
+            <Image
+              source={images.defaultParkingLot}
+              style={styles.mainImagePlaceholder}
+              resizeMode="cover"
+            />
+          )}
+          {localImages.length > 1 && (
+            <>
+              <TouchableOpacity
+                style={[styles.arrowButton, styles.leftArrow]}
+                onPress={handlePrevImage}
+              >
+                <ChevronLeft size={24} color="#FFF" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.arrowButton, styles.rightArrow]}
+                onPress={handleNextImage}
+              >
+                <ChevronRight size={24} color="#FFF" />
+              </TouchableOpacity>
+              <View style={styles.imageCounter}>
+                <Text style={styles.imageCounterText}>
+                  {currentImageIndex + 1} / {localImages.length}
+                </Text>
+              </View>
+            </>
+          )}
+          {isEditing && (
             <TouchableOpacity
-              style={[styles.arrowButton, styles.rightArrow]}
-              onPress={handleNextImage}
+              style={styles.addImagesButton}
+              onPress={handleImagePickerForEdit}
             >
-              <ChevronRight size={24} color="#FFF" />
+              <Text style={styles.addImagesText}>Add/Replace Images</Text>
             </TouchableOpacity>
-          </>
-        )}
+          )}
+        </View>
 
-        {isEditing && (
-          <TouchableOpacity
-            style={styles.addImagesButton}
-            onPress={handleImagePickerForEdit}
-          >
-            <Text style={styles.addImagesText}>Add/Replace Images</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Basic Info Card */}
-      <View style={styles.card}>
-        <View style={styles.infoContent}>
+        {/* ── Basic Info ──────────────────────────────────────────────────── */}
+        <View style={styles.card}>
           <Text style={styles.label}>Parking Lot Name</Text>
           {isEditing ? (
             <TextInput
               style={styles.input}
               value={formData.parkingName || ""}
-              onChangeText={(text) => handleInputChange("parkingName", text)}
+              onChangeText={(t) => handleInputChange("parkingName", t)}
               placeholder="Enter parking lot name"
               editable={!isUpdating}
             />
           ) : (
-            <Text style={styles.displayValue}>
-              {parkingLotDetails.parkingName}
-            </Text>
+            <Text style={styles.displayValue}>{parkingLotDetails.parkingName}</Text>
           )}
 
           <Text style={styles.label}>Address</Text>
@@ -809,7 +924,7 @@ const ParkingDetails = () => {
             <TextInput
               style={styles.input}
               value={formData.address || ""}
-              onChangeText={(text) => handleInputChange("address", text)}
+              onChangeText={(t) => handleInputChange("address", t)}
               placeholder="Enter address"
               multiline
               editable={!isUpdating}
@@ -823,8 +938,8 @@ const ParkingDetails = () => {
             <TextInput
               style={styles.input}
               value={formData.price?.toString() || ""}
-              onChangeText={(text) =>
-                handleInputChange("price", parseFloat(text) || 0)
+              onChangeText={(t) =>
+                handleInputChange("price", parseFloat(t) || 0)
               }
               keyboardType="numeric"
               placeholder="Enter price"
@@ -832,7 +947,7 @@ const ParkingDetails = () => {
             />
           ) : (
             <Text style={styles.priceValue}>
-              ${parkingLotDetails.price?.toFixed(2) || "0.00"}/hr
+              ₹{parkingLotDetails.price?.toFixed(2) || "0.00"}/hr
             </Text>
           )}
 
@@ -841,7 +956,7 @@ const ParkingDetails = () => {
             {isEditing ? (
               <Switch
                 value={formData.is24x7 || false}
-                onValueChange={(value) => handleInputChange("is24x7", value)}
+                onValueChange={(v) => handleInputChange("is24x7", v)}
                 trackColor={{ false: "#767577", true: colors.brandColor }}
                 disabled={isUpdating}
               />
@@ -851,12 +966,13 @@ const ParkingDetails = () => {
               </Text>
             )}
           </View>
+
           <View style={styles.switchContainer}>
             <Text style={styles.label}>Active Listing</Text>
             {isEditing ? (
               <Switch
                 value={formData.isActive || false}
-                onValueChange={(value) => handleInputChange("isActive", value)}
+                onValueChange={(v) => handleInputChange("isActive", v)}
                 trackColor={{ false: "#767577", true: colors.brandColor }}
                 disabled={isUpdating}
               />
@@ -867,313 +983,599 @@ const ParkingDetails = () => {
             )}
           </View>
         </View>
-      </View>
 
-      {/* About Section */}
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>About</Text>
-        {isEditing ? (
-          <TextInput
-            style={[styles.input, styles.aboutInput]}
-            value={formData.about || ""}
-            onChangeText={(text) => handleInputChange("about", text)}
-            multiline
-            placeholder="Describe your parking lot"
-            editable={!isUpdating}
-          />
-        ) : (
-          <Text style={styles.aboutText}>
-            {parkingLotDetails.about || "No description provided"}
-          </Text>
-        )}
-      </View>
+        {/* ── About ───────────────────────────────────────────────────────── */}
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>About</Text>
+          {isEditing ? (
+            <TextInput
+              style={[styles.input, styles.aboutInput]}
+              value={formData.about || ""}
+              onChangeText={(t) => handleInputChange("about", t)}
+              multiline
+              placeholder="Describe your parking lot"
+              editable={!isUpdating}
+            />
+          ) : (
+            <Text style={styles.aboutText}>
+              {parkingLotDetails.about || "No description provided"}
+            </Text>
+          )}
+        </View>
 
-      {/* Contact Info */}
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Contact Information</Text>
+        {/* ── Contact ─────────────────────────────────────────────────────── */}
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Contact Information</Text>
+          <Text style={styles.label}>Contact Number</Text>
+          {isEditing ? (
+            <TextInput
+              style={styles.input}
+              value={formData.contactNumber || ""}
+              onChangeText={(t) => handleInputChange("contactNumber", t)}
+              placeholder="Contact number"
+              keyboardType="phone-pad"
+              editable={!isUpdating}
+            />
+          ) : (
+            <Text style={styles.displayValue}>
+              {parkingLotDetails.contactNumber}
+            </Text>
+          )}
+          <Text style={styles.label}>Email</Text>
+          {isEditing ? (
+            <TextInput
+              style={styles.input}
+              value={formData.email || ""}
+              onChangeText={(t) => handleInputChange("email", t)}
+              placeholder="Email"
+              keyboardType="email-address"
+              editable={!isUpdating}
+            />
+          ) : (
+            <Text style={styles.displayValue}>
+              {parkingLotDetails.email || "Not provided"}
+            </Text>
+          )}
+        </View>
 
-        <Text style={styles.label}>Contact Number</Text>
-        {isEditing ? (
-          <TextInput
-            style={styles.input}
-            value={formData.contactNumber || ""}
-            onChangeText={(text) => handleInputChange("contactNumber", text)}
-            placeholder="Contact number"
-            keyboardType="phone-pad"
-            editable={!isUpdating}
-          />
-        ) : (
-          <Text style={styles.displayValue}>
-            {parkingLotDetails.contactNumber}
-          </Text>
-        )}
+        {/* ── Monthly Plan ────────────────────────────────────────────────── */}
+        <View style={styles.card}>
+          <View style={styles.planCardHeader}>
+            <View style={styles.planIconWrap}>
+              <Repeat size={18} color={colors.brandColor} />
+            </View>
+            <Text style={styles.sectionTitle}>Monthly/Permit Plan</Text>
+          </View>
 
-        <Text style={styles.label}>Email</Text>
-        {isEditing ? (
-          <TextInput
-            style={styles.input}
-            value={formData.email || ""}
-            onChangeText={(text) => handleInputChange("email", text)}
-            placeholder="Email"
-            keyboardType="email-address"
-            editable={!isUpdating}
-          />
-        ) : (
-          <Text style={styles.displayValue}>
-            {parkingLotDetails.email || "Not provided"}
-          </Text>
-        )}
-      </View>
-
-      {/* Parking Zones */}
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Parking Zones & Spaces</Text>
-
-        {Object.entries(
-          formData.spacesList || parkingLotDetails.spacesList || {}
-        ).map(([zone, spaceInfo]) => (
-          <View key={zone} style={styles.zoneContainer}>
-            <Text style={styles.zoneLabel}>Zone {zone}</Text>
-
+          <View style={styles.switchContainer}>
+            <Text style={styles.label}>Enable Monthly/Permit Plans</Text>
             {isEditing ? (
-              <View style={styles.spaceInputRow}>
-                <View style={styles.spaceInputGroup}>
-                  <Text style={styles.label}>Number of Slots</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={spaceInfo?.count?.toString() || "0"}
-                    onChangeText={(text) =>
-                      handleSpaceChange(zone, "count", text)
-                    }
-                    keyboardType="numeric"
-                    placeholder="Number of slots"
-                    editable={!isUpdating}
-                  />
-                </View>
-
-                <View style={styles.spaceInputGroup}>
-                  <Text style={styles.label}>Price for Zone ($)</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={spaceInfo?.price?.toString() || "0"}
-                    onChangeText={(text) =>
-                      handleSpaceChange(zone, "price", text)
-                    }
-                    keyboardType="decimal-pad"
-                    placeholder="Price for zone"
-                    editable={!isUpdating}
-                  />
-                </View>
-              </View>
+              <Switch
+                value={formData.monthlyChargeEnabled || false}
+                onValueChange={(v) => {
+                  handleInputChange("monthlyChargeEnabled", v);
+                  if (!v) handleInputChange("monthlyRate", 0);
+                }}
+                trackColor={{ false: "#767577", true: colors.brandColor }}
+                disabled={isUpdating}
+              />
             ) : (
-              <View style={styles.spaceInfoRow}>
-                <View style={styles.spaceInfoItem}>
-                  <Text style={styles.spaceInfoLabel}>Slots:</Text>
-                  <Text style={styles.spaceInfoValue}>
-                    {spaceInfo?.count || 0}
-                  </Text>
-                </View>
-                <View style={styles.spaceInfoItem}>
-                  <Text style={styles.spaceInfoLabel}>Price:</Text>
-                  <Text style={styles.spaceInfoValue}>
-                    ${spaceInfo?.price?.toFixed(2) || "0.00"}
-                  </Text>
-                </View>
+              <View
+                style={[
+                  styles.statusPill,
+                  {
+                    backgroundColor: parkingLotDetails.monthlyChargeEnabled
+                      ? "#F0FDF4"
+                      : "#F5F5F5",
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.statusPillText,
+                    {
+                      color: parkingLotDetails.monthlyChargeEnabled
+                        ? "#22C55E"
+                        : colors.gray,
+                    },
+                  ]}
+                >
+                  {parkingLotDetails.monthlyChargeEnabled ? "Enabled" : "Disabled"}
+                </Text>
               </View>
             )}
           </View>
-        ))}
 
-        {isEditing && (
-          <TouchableOpacity
-            style={[
-              styles.editZonesButton,
-              isUpdating && styles.disabledButton,
-            ]}
-            onPress={() =>
-              router.push({
-                pathname: "/parkingMerchent/registerParkingLot",
-                params: { parkingLotId },
-              })
-            }
-            disabled={isUpdating}
-          >
-            <Text style={styles.editZonesText}>Add/Remove Zones</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Working Hours */}
-      {!formData.is24x7 && !parkingLotDetails.is24x7 && (
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Working Hours</Text>
-          {(
-            formData.generalAvailable || parkingLotDetails.generalAvailable
-          )?.map((day, index) => (
-            <View key={day.day} style={styles.dayContainer}>
-              <Text style={styles.dayLabel}>{day.day}</Text>
-
-              <View style={styles.switchContainer}>
-                <Text style={styles.label}>Open</Text>
-                {isEditing ? (
-                  <Switch
-                    value={day.isOpen || false}
-                    onValueChange={(value) =>
-                      handleDayChange(index, "isOpen", value)
-                    }
-                    trackColor={{ false: "#767577", true: colors.brandColor }}
-                    disabled={isUpdating}
-                  />
-                ) : (
-                  <Text style={styles.displayValue}>
-                    {day.isOpen || false ? "Yes" : "No"}
-                  </Text>
-                )}
+          {isEditing && formData.monthlyChargeEnabled && (
+            <View style={styles.rateContainer}>
+              <Text style={styles.label}>Monthly/Permit Rate per Slot</Text>
+              <View style={styles.rateInputRow}>
+                <Text style={styles.ratePrefix}>₹</Text>
+                <TextInput
+                  style={styles.rateInput}
+                  value={
+                    formData.monthlyRate && formData.monthlyRate > 0
+                      ? formData.monthlyRate.toString()
+                      : ""
+                  }
+                  onChangeText={(t) =>
+                    handleInputChange("monthlyRate", parseFloat(t) || 0)
+                  }
+                  placeholder="0.00"
+                  keyboardType="decimal-pad"
+                  placeholderTextColor={colors.gray}
+                  editable={!isUpdating}
+                />
+                <Text style={styles.rateSuffix}>/mo</Text>
               </View>
-
-              {day.isOpen && !day.is24Hours && (
-                <>
-                  <Text style={styles.label}>Open Time</Text>
-                  {isEditing ? (
-                    <TouchableOpacity
-                      style={[
-                        styles.timeInputButton,
-                        isUpdating && styles.disabledButton,
-                      ]}
-                      onPress={() =>
-                        !isUpdating &&
-                        setShowTimePicker({ day: day.day, field: "open" })
-                      }
-                      disabled={isUpdating}
-                    >
-                      <Text
-                        style={[
-                          styles.timeInputText,
-                          isUpdating && styles.disabledText,
-                        ]}
-                      >
-                        {day.openTime || "Select open time"}
-                      </Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <Text style={styles.displayValue}>
-                      {day.openTime || "Not set"}
+              {(formData.monthlyRate ?? 0) > 0 && (
+                <View style={styles.ratePreview}>
+                  <View style={styles.ratePreviewRow}>
+                    <Text style={styles.ratePreviewLabel}>Monthly/Permit Rate</Text>
+                    <Text style={styles.ratePreviewValue}>
+                      ₹{(formData.monthlyRate ?? 0).toFixed(2)}/mo per slot
                     </Text>
-                  )}
-
-                  <Text style={styles.label}>Close Time</Text>
-                  {isEditing ? (
-                    <TouchableOpacity
-                      style={[
-                        styles.timeInputButton,
-                        isUpdating && styles.disabledButton,
-                      ]}
-                      onPress={() =>
-                        !isUpdating &&
-                        setShowTimePicker({ day: day.day, field: "close" })
-                      }
-                      disabled={isUpdating}
-                    >
-                      <Text
-                        style={[
-                          styles.timeInputText,
-                          isUpdating && styles.disabledText,
-                        ]}
-                      >
-                        {day.closeTime || "Select close time"}
-                      </Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <Text style={styles.displayValue}>
-                      {day.closeTime || "Not set"}
+                  </View>
+                  <View style={styles.ratePreviewRow}>
+                    <Text style={styles.ratePreviewLabel}>Annual per slot</Text>
+                    <Text style={styles.ratePreviewValue}>
+                      ₹{((formData.monthlyRate ?? 0) * 12).toFixed(2)}/yr
                     </Text>
-                  )}
-                </>
+                  </View>
+                </View>
               )}
+            </View>
+          )}
 
-              {day.isOpen && (
+          {!isEditing && parkingLotDetails.monthlyChargeEnabled && (
+            <View style={styles.planViewRow}>
+              <Text style={styles.label}>Monthly/Permit Rate</Text>
+              <Text style={styles.planRateDisplay}>
+                ₹{parkingLotDetails.monthlyRate.toFixed(2)}
+                <Text style={styles.planRateSuffix}>/mo per slot</Text>
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* ── Daily Rate ──────────────────────────────────────────────────── */}
+        <View style={styles.card}>
+          <View style={styles.planCardHeader}>
+            <View style={styles.planIconWrap}>
+              <Clock size={18} color={colors.brandColor} />
+            </View>
+            <Text style={styles.sectionTitle}>Daily Rate (Time Slots)</Text>
+          </View>
+
+          <Text style={styles.dailyRateHint}>
+            Define flat-fee time windows. Each window is charged once the
+            booking enters it, regardless of duration. The last slot repeats
+            for any overflow beyond midnight.
+          </Text>
+
+          <View style={styles.switchContainer}>
+            <Text style={styles.label}>Enable Daily Rate Slots</Text>
+            {isEditing ? (
+              <Switch
+                value={formData.dailyRateEnabled || false}
+                onValueChange={(v) => {
+                  handleInputChange("dailyRateEnabled", v);
+                  if (!v) handleInputChange("dailyRates", []);
+                }}
+                trackColor={{ false: "#767577", true: colors.brandColor }}
+                disabled={isUpdating}
+              />
+            ) : (
+              <View
+                style={[
+                  styles.statusPill,
+                  {
+                    backgroundColor: parkingLotDetails.dailyRateEnabled
+                      ? "#F0FDF4"
+                      : "#F5F5F5",
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.statusPillText,
+                    {
+                      color: parkingLotDetails.dailyRateEnabled
+                        ? "#22C55E"
+                        : colors.gray,
+                    },
+                  ]}
+                >
+                  {parkingLotDetails.dailyRateEnabled ? "Enabled" : "Disabled"}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* ── Edit mode — slot builder ── */}
+          {isEditing && formData.dailyRateEnabled && (
+            <View>
+              {(formData.dailyRates || []).map((slot, index) => (
+                <View key={index} style={styles.slotCard}>
+                  <View style={styles.slotHeader}>
+                    <Text style={styles.slotIndex}>Slot {index + 1}</Text>
+                    <TouchableOpacity onPress={() => removeDailyRateSlot(index)}>
+                      <X size={18} color={colors.error} />
+                    </TouchableOpacity>
+                  </View>
+
+                  <Text style={styles.label}>Label</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={slot.label}
+                    onChangeText={(t) =>
+                      handleDailyRateSlotChange(index, "label", t)
+                    }
+                    placeholder="e.g. Morning, Peak Hours"
+                    editable={!isUpdating}
+                  />
+
+                  {/* ── Time row with wheel picker buttons ── */}
+                  <View style={styles.slotTimeRow}>
+                    <View style={styles.slotTimeGroup}>
+                      <Text style={styles.label}>From</Text>
+                      <TouchableOpacity
+                        style={styles.timePickerButton}
+                        onPress={() => openTimePicker(index, "fromTime")}
+                        activeOpacity={0.7}
+                        disabled={isUpdating}
+                      >
+                        <Clock
+                          size={15}
+                          color={colors.brandColor}
+                          style={{ marginRight: 6 }}
+                        />
+                        <Text style={styles.timePickerButtonText}>
+                          {slot.fromTime || "Set time"}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                    <View style={styles.slotTimeDivider}>
+                      <Text style={styles.slotTimeDividerText}>→</Text>
+                    </View>
+                    <View style={styles.slotTimeGroup}>
+                      <Text style={styles.label}>To</Text>
+                      <TouchableOpacity
+                        style={styles.timePickerButton}
+                        onPress={() => openTimePicker(index, "toTime")}
+                        activeOpacity={0.7}
+                        disabled={isUpdating}
+                      >
+                        <Clock
+                          size={15}
+                          color={colors.brandColor}
+                          style={{ marginRight: 6 }}
+                        />
+                        <Text style={styles.timePickerButtonText}>
+                          {slot.toTime || "Set time"}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  <Text style={styles.label}>Flat Fee (₹)</Text>
+                  <View style={styles.rateInputRow}>
+                    <Text style={styles.ratePrefix}>₹</Text>
+                    <TextInput
+                      style={styles.rateInput}
+                      value={slot.price > 0 ? slot.price.toString() : ""}
+                      onChangeText={(t) =>
+                        handleDailyRateSlotChange(
+                          index,
+                          "price",
+                          parseFloat(t) || 0
+                        )
+                      }
+                      placeholder="0.00"
+                      keyboardType="decimal-pad"
+                      placeholderTextColor={colors.gray}
+                      editable={!isUpdating}
+                    />
+                  </View>
+                </View>
+              ))}
+
+              <TouchableOpacity
+                style={styles.addSlotButton}
+                onPress={addDailyRateSlot}
+                disabled={isUpdating}
+              >
+                <Plus size={18} color={colors.brandColor} />
+                <Text style={styles.addSlotText}>Add Time Slot</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.saveDailyRateButton,
+                  isDailyRateSaving && styles.saveButtonDisabled,
+                ]}
+                onPress={handleSaveDailyRate}
+                disabled={isDailyRateSaving || isUpdating}
+              >
+                {isDailyRateSaving ? (
+                  <ActivityIndicator color="#FFF" size="small" />
+                ) : (
+                  <Text style={styles.saveDailyRateText}>Save Daily Rate</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* ── View mode — slot list ── */}
+          {!isEditing && parkingLotDetails.dailyRateEnabled && (
+            <View>
+              {parkingLotDetails.dailyRates.length === 0 ? (
+                <Text style={styles.noSlotsText}>No slots configured yet.</Text>
+              ) : (
+                parkingLotDetails.dailyRates.map((slot, index) => (
+                  <View key={index} style={styles.slotViewRow}>
+                    <View style={styles.slotViewLeft}>
+                      <Text style={styles.slotViewLabel}>{slot.label}</Text>
+                      <Text style={styles.slotViewTime}>
+                        {slot.fromTime} – {slot.toTime}
+                      </Text>
+                    </View>
+                    <Text style={styles.slotViewPrice}>
+                      ₹{slot.price.toFixed(2)}
+                    </Text>
+                  </View>
+                ))
+              )}
+            </View>
+          )}
+        </View>
+
+        {/* ── Parking Zones ───────────────────────────────────────────────── */}
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Parking Zones & Spaces</Text>
+          {Object.entries(
+            formData.spacesList || parkingLotDetails.spacesList || {}
+          ).map(([zone, spaceInfo]) => (
+            <View key={zone} style={styles.zoneContainer}>
+              <Text style={styles.zoneLabel}>Zone {zone}</Text>
+              {isEditing ? (
+                <View style={styles.spaceInputRow}>
+                  <View style={styles.spaceInputGroup}>
+                    <Text style={styles.label}>Number of Slots</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={spaceInfo?.count?.toString() || "0"}
+                      onChangeText={(t) => handleSpaceChange(zone, "count", t)}
+                      keyboardType="numeric"
+                      editable={!isUpdating}
+                    />
+                  </View>
+                  <View style={styles.spaceInputGroup}>
+                    <Text style={styles.label}>Price for Zone (₹)</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={spaceInfo?.price?.toString() || "0"}
+                      onChangeText={(t) => handleSpaceChange(zone, "price", t)}
+                      keyboardType="decimal-pad"
+                      editable={!isUpdating}
+                    />
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.spaceInfoRow}>
+                  <View style={styles.spaceInfoItem}>
+                    <Text style={styles.spaceInfoLabel}>Slots:</Text>
+                    <Text style={styles.spaceInfoValue}>
+                      {spaceInfo?.count || 0}
+                    </Text>
+                  </View>
+                  <View style={styles.spaceInfoItem}>
+                    <Text style={styles.spaceInfoLabel}>Price:</Text>
+                    <Text style={styles.spaceInfoValue}>
+                      ₹{spaceInfo?.price?.toFixed(2) || "0.00"}
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </View>
+          ))}
+          {isEditing && (
+            <TouchableOpacity
+              style={[styles.editZonesButton, isUpdating && styles.disabledButton]}
+              onPress={() =>
+                router.push({
+                  pathname: "/parkingMerchent/registerParkingLot",
+                  params: { parkingLotId },
+                })
+              }
+              disabled={isUpdating}
+            >
+              <Text style={styles.editZonesText}>Add/Remove Zones</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* ── Working Hours ────────────────────────────────────────────────── */}
+        {!formData.is24x7 && !parkingLotDetails.is24x7 && (
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Working Hours</Text>
+            {(
+              formData.generalAvailable || parkingLotDetails.generalAvailable
+            )?.map((day, index) => (
+              <View key={day.day} style={styles.dayContainer}>
+                <Text style={styles.dayLabel}>{day.day}</Text>
                 <View style={styles.switchContainer}>
-                  <Text style={styles.label}>24 Hours for this day</Text>
+                  <Text style={styles.label}>Open</Text>
                   {isEditing ? (
                     <Switch
-                      value={day.is24Hours}
-                      onValueChange={(value) =>
-                        handleDayChange(index, "is24Hours", value)
-                      }
+                      value={day.isOpen || false}
+                      onValueChange={(v) => handleDayChange(index, "isOpen", v)}
                       trackColor={{ false: "#767577", true: colors.brandColor }}
                       disabled={isUpdating}
                     />
                   ) : (
                     <Text style={styles.displayValue}>
-                      {day.is24Hours ? "Yes" : "No"}
+                      {day.isOpen ? "Yes" : "No"}
                     </Text>
                   )}
                 </View>
-              )}
-            </View>
-          ))}
+                {day.isOpen && !day.is24Hours && (
+                  <>
+                    <Text style={styles.label}>Open Time</Text>
+                    {isEditing ? (
+                      <TouchableOpacity
+                        style={[
+                          styles.timeInputButton,
+                          isUpdating && styles.disabledButton,
+                        ]}
+                        onPress={() =>
+                          !isUpdating &&
+                          setShowTimePicker({ day: day.day, field: "open" })
+                        }
+                        disabled={isUpdating}
+                      >
+                        <Text
+                          style={[
+                            styles.timeInputText,
+                            isUpdating && styles.disabledText,
+                          ]}
+                        >
+                          {day.openTime || "Select open time"}
+                        </Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={styles.displayValue}>
+                        {day.openTime || "Not set"}
+                      </Text>
+                    )}
+                    <Text style={styles.label}>Close Time</Text>
+                    {isEditing ? (
+                      <TouchableOpacity
+                        style={[
+                          styles.timeInputButton,
+                          isUpdating && styles.disabledButton,
+                        ]}
+                        onPress={() =>
+                          !isUpdating &&
+                          setShowTimePicker({ day: day.day, field: "close" })
+                        }
+                        disabled={isUpdating}
+                      >
+                        <Text
+                          style={[
+                            styles.timeInputText,
+                            isUpdating && styles.disabledText,
+                          ]}
+                        >
+                          {day.closeTime || "Select close time"}
+                        </Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <Text style={styles.displayValue}>
+                        {day.closeTime || "Not set"}
+                      </Text>
+                    )}
+                  </>
+                )}
+                {day.isOpen && (
+                  <View style={styles.switchContainer}>
+                    <Text style={styles.label}>24 Hours for this day</Text>
+                    {isEditing ? (
+                      <Switch
+                        value={day.is24Hours}
+                        onValueChange={(v) =>
+                          handleDayChange(index, "is24Hours", v)
+                        }
+                        trackColor={{ false: "#767577", true: colors.brandColor }}
+                        disabled={isUpdating}
+                      />
+                    ) : (
+                      <Text style={styles.displayValue}>
+                        {day.is24Hours ? "Yes" : "No"}
+                      </Text>
+                    )}
+                  </View>
+                )}
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* ── Location ────────────────────────────────────────────────────── */}
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Location Information</Text>
+          <Text style={styles.label}>GPS Coordinates</Text>
+          <Text style={styles.displayValue}>
+            {parkingLotDetails.gpsLocation?.coordinates[1]?.toFixed(6)},{" "}
+            {parkingLotDetails.gpsLocation?.coordinates[0]?.toFixed(6)}
+          </Text>
         </View>
-      )}
 
-      {/* Location Information */}
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Location Information</Text>
-        <Text style={styles.label}>GPS Coordinates</Text>
-        <Text style={styles.displayValue}>
-          {parkingLotDetails.gpsLocation?.coordinates[1]?.toFixed(6)},{" "}
-          {parkingLotDetails.gpsLocation?.coordinates[0]?.toFixed(6)}
-        </Text>
-      </View>
-
-      {/* Bottom Actions (Only show in edit mode) */}
-      {isEditing && (
-        <View style={styles.bottomActions}>
-          <TouchableOpacity
-            style={[styles.cancelButton, isUpdating && styles.disabledButton]}
-            onPress={handleCancelEdit}
-            disabled={isUpdating}
-          >
-            <Text
-              style={[
-                styles.cancelButtonText,
-                isUpdating && styles.disabledText,
-              ]}
+        {/* ── Bottom Actions ───────────────────────────────────────────────── */}
+        {isEditing && (
+          <View style={styles.bottomActions}>
+            <TouchableOpacity
+              style={[styles.cancelButton, isUpdating && styles.disabledButton]}
+              onPress={handleCancelEdit}
+              disabled={isUpdating}
             >
-              Cancel
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.updateButton, isUpdating && styles.disabledButton]}
-            onPress={handleUpdateParkingLot}
-            disabled={isUpdating}
-          >
-            {isUpdating ? (
-              <ActivityIndicator color="#FFF" size="small" />
-            ) : (
-              <Text style={styles.updateButtonText}>Update Parking Lot</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      )}
+              <Text
+                style={[
+                  styles.cancelButtonText,
+                  isUpdating && styles.disabledText,
+                ]}
+              >
+                Cancel
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.updateButton, isUpdating && styles.disabledButton]}
+              onPress={handleUpdateParkingLot}
+              disabled={isUpdating}
+            >
+              {isUpdating ? (
+                <ActivityIndicator color="#FFF" size="small" />
+              ) : (
+                <Text style={styles.updateButtonText}>Update Parking Lot</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
 
-      {/* Time Picker Modal */}
-      {showTimePicker && (
-        <DateTimePicker
-          value={new Date()}
-          mode="time"
-          display={Platform.OS === "ios" ? "spinner" : "default"}
-          onChange={handleTimeChange}
-        />
-      )}
-    </ScrollView>
+        {/* Native DateTimePicker for working hours */}
+        {showTimePicker && (
+          <DateTimePicker
+            value={new Date()}
+            mode="time"
+            display={Platform.OS === "ios" ? "spinner" : "default"}
+            onChange={handleTimeChange}
+          />
+        )}
+      </ScrollView>
+
+      {/* ── Time Wheel Picker Modal for Daily Rate Slots ── */}
+      <TimeWheelPicker
+        visible={timePickerVisible}
+        value={timePickerValue}
+        title={
+          timePickerTarget?.field === "fromTime"
+            ? "Select Start Time"
+            : "Select End Time"
+        }
+        accentColor={colors.brandColor}
+        onConfirm={handleTimeConfirm}
+        onCancel={() => {
+          setTimePickerVisible(false);
+          setTimePickerTarget(null);
+        }}
+      />
+    </>
   );
 };
 
+// ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F7F8FA",
-  },
+  container: { flex: 1, backgroundColor: "#F7F8FA" },
   loadingContainer: {
     flex: 1,
     justifyContent: "center",
@@ -1194,8 +1596,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFF",
     borderBottomWidth: 1,
     borderBottomColor: "#EEE",
-    marginTop:
-      Platform.OS === "ios" ? responsiveHeight(6) : responsiveHeight(0),
+    marginTop: Platform.OS === "ios" ? responsiveHeight(6) : 0,
   },
   headerTitle: {
     fontSize: responsiveFontSize(2.5),
@@ -1225,20 +1626,10 @@ const styles = StyleSheet.create({
     paddingVertical: responsiveHeight(0.8),
     borderRadius: 6,
   },
-  saveButtonDisabled: {
-    opacity: 0.5,
-  },
-  saveText: {
-    color: "#FFF",
-    fontSize: responsiveFontSize(1.8),
-    fontWeight: "600",
-  },
-  disabledText: {
-    opacity: 0.5,
-  },
-  disabledButton: {
-    opacity: 0.5,
-  },
+  saveButtonDisabled: { opacity: 0.5 },
+  saveText: { color: "#FFF", fontSize: responsiveFontSize(1.8), fontWeight: "600" },
+  disabledText: { opacity: 0.5 },
+  disabledButton: { opacity: 0.5 },
   errorContainer: {
     flex: 1,
     justifyContent: "center",
@@ -1301,16 +1692,13 @@ const styles = StyleSheet.create({
     flex: 1,
     color: colors.error,
     fontSize: responsiveFontSize(1.6),
-    marginLeft: responsiveWidth(2),
-    marginRight: responsiveWidth(2),
+    marginHorizontal: responsiveWidth(2),
   },
   imageGalleryContainer: {
     position: "relative",
     marginBottom: responsiveHeight(2),
   },
-  imageWrapper: {
-    position: "relative",
-  },
+  imageWrapper: { position: "relative" },
   galleryImage: {
     width: "100%",
     height: responsiveHeight(30),
@@ -1320,28 +1708,31 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: responsiveHeight(1),
     right: responsiveWidth(4),
-    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    backgroundColor: "rgba(255,255,255,0.9)",
     borderRadius: 20,
     padding: responsiveWidth(1.5),
   },
-  mainImagePlaceholder: {
-    width: "100%",
-    height: responsiveHeight(30),
-  },
+  mainImagePlaceholder: { width: "100%", height: responsiveHeight(30) },
   arrowButton: {
     position: "absolute",
     top: "50%",
     transform: [{ translateY: -20 }],
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    backgroundColor: "rgba(0,0,0,0.5)",
     borderRadius: 25,
     padding: responsiveWidth(2),
   },
-  leftArrow: {
-    left: responsiveWidth(3),
+  leftArrow: { left: responsiveWidth(3) },
+  rightArrow: { right: responsiveWidth(3) },
+  imageCounter: {
+    position: "absolute",
+    bottom: responsiveHeight(1),
+    alignSelf: "center",
+    backgroundColor: "rgba(0,0,0,0.5)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
-  rightArrow: {
-    right: responsiveWidth(3),
-  },
+  imageCounterText: { color: "#FFF", fontSize: responsiveFontSize(1.4) },
   addImagesButton: {
     position: "absolute",
     bottom: responsiveHeight(2),
@@ -1350,8 +1741,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: responsiveWidth(3),
     paddingVertical: responsiveHeight(1),
     borderRadius: 6,
-    flexDirection: "row",
-    alignItems: "center",
   },
   addImagesText: {
     color: "#FFF",
@@ -1369,9 +1758,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 3,
     elevation: 3,
-  },
-  infoContent: {
-    paddingVertical: responsiveHeight(0.5),
   },
   label: {
     fontSize: responsiveFontSize(1.6),
@@ -1417,10 +1803,7 @@ const styles = StyleSheet.create({
     borderBottomColor: "#EEE",
     paddingBottom: responsiveHeight(1),
   },
-  aboutInput: {
-    height: responsiveHeight(12),
-    textAlignVertical: "top",
-  },
+  aboutInput: { height: responsiveHeight(12), textAlignVertical: "top" },
   aboutText: {
     fontSize: responsiveFontSize(1.8),
     color: colors.black,
@@ -1443,9 +1826,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: responsiveWidth(2),
   },
-  spaceInputGroup: {
-    flex: 1,
-  },
+  spaceInputGroup: { flex: 1 },
   spaceInfoRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1453,10 +1834,7 @@ const styles = StyleSheet.create({
     padding: responsiveWidth(3),
     borderRadius: 8,
   },
-  spaceInfoItem: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
+  spaceInfoItem: { flexDirection: "row", alignItems: "center" },
   spaceInfoLabel: {
     fontSize: responsiveFontSize(1.6),
     color: colors.gray,
@@ -1500,10 +1878,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: responsiveWidth(4),
     marginBottom: responsiveHeight(2),
   },
-  timeInputText: {
-    fontSize: responsiveFontSize(1.8),
-    color: colors.black,
-  },
+  timeInputText: { fontSize: responsiveFontSize(1.8), color: colors.black },
   bottomActions: {
     flexDirection: "row",
     paddingHorizontal: responsiveWidth(4),
@@ -1538,6 +1913,202 @@ const styles = StyleSheet.create({
     color: "#FFF",
     fontSize: responsiveFontSize(1.9),
     fontWeight: "bold",
+  },
+
+  // ── Plan shared ────────────────────────────────────────────────────────────
+  planCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: responsiveWidth(2),
+    marginBottom: responsiveHeight(0.5),
+  },
+  planIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: "#FFF3E5",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  statusPill: {
+    paddingHorizontal: responsiveWidth(3),
+    paddingVertical: 4,
+    borderRadius: 20,
+  },
+  statusPillText: { fontSize: responsiveFontSize(1.5), fontWeight: "700" },
+  rateContainer: { marginTop: responsiveHeight(0.5) },
+  rateInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1.5,
+    borderColor: colors.lightGray,
+    borderRadius: 10,
+    paddingHorizontal: responsiveWidth(4),
+    height: 52,
+    backgroundColor: "#F5F5F5",
+    marginBottom: responsiveHeight(1),
+  },
+  ratePrefix: {
+    fontSize: responsiveFontSize(2.2),
+    fontWeight: "700",
+    color: colors.gray,
+    marginRight: 6,
+  },
+  rateInput: {
+    flex: 1,
+    fontSize: responsiveFontSize(2.2),
+    fontWeight: "700",
+    color: colors.black,
+  },
+  rateSuffix: { fontSize: responsiveFontSize(1.6), color: colors.gray },
+  ratePreview: {
+    backgroundColor: "#F5F5F5",
+    borderRadius: 10,
+    padding: responsiveWidth(4),
+    marginTop: responsiveHeight(0.5),
+    gap: 8,
+  },
+  ratePreviewRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  ratePreviewLabel: { fontSize: responsiveFontSize(1.6), color: colors.gray },
+  ratePreviewValue: {
+    fontSize: responsiveFontSize(1.6),
+    fontWeight: "700",
+    color: colors.black,
+  },
+  planViewRow: { marginTop: responsiveHeight(0.5) },
+  planRateDisplay: {
+    fontSize: responsiveFontSize(2.2),
+    fontWeight: "900",
+    color: colors.brandColor,
+    marginTop: 2,
+  },
+  planRateSuffix: {
+    fontSize: responsiveFontSize(1.4),
+    fontWeight: "400",
+    color: colors.gray,
+  },
+
+  // ── Daily rate ─────────────────────────────────────────────────────────────
+  dailyRateHint: {
+    fontSize: responsiveFontSize(1.5),
+    color: colors.gray,
+    marginBottom: responsiveHeight(1.5),
+    lineHeight: responsiveHeight(2.2),
+  },
+  slotCard: {
+    backgroundColor: "#F9F9FF",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E8E8F0",
+    padding: responsiveWidth(3.5),
+    marginBottom: responsiveHeight(1.5),
+  },
+  slotHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: responsiveHeight(1),
+  },
+  slotIndex: {
+    fontSize: responsiveFontSize(1.7),
+    fontWeight: "700",
+    color: colors.black,
+  },
+  slotTimeRow: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: responsiveWidth(2),
+    marginBottom: responsiveHeight(1),
+  },
+  slotTimeGroup: { flex: 1 },
+  slotTimeDivider: {
+    paddingBottom: responsiveHeight(1.2),
+    justifyContent: "flex-end",
+  },
+  slotTimeDividerText: {
+    fontSize: responsiveFontSize(2),
+    color: colors.gray,
+    fontWeight: "700",
+  },
+  timePickerButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: colors.brandColor,
+    paddingHorizontal: responsiveWidth(3),
+    paddingVertical: responsiveHeight(1.2),
+    marginBottom: responsiveHeight(1),
+  },
+  timePickerButtonText: {
+    fontSize: responsiveFontSize(1.9),
+    fontWeight: "700",
+    color: colors.brandColor,
+  },
+  addSlotButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1.5,
+    borderColor: colors.brandColor,
+    borderStyle: "dashed",
+    borderRadius: 10,
+    paddingVertical: responsiveHeight(1.5),
+    gap: responsiveWidth(2),
+    marginTop: responsiveHeight(0.5),
+    marginBottom: responsiveHeight(1.5),
+  },
+  addSlotText: {
+    fontSize: responsiveFontSize(1.7),
+    color: colors.brandColor,
+    fontWeight: "600",
+  },
+  saveDailyRateButton: {
+    backgroundColor: colors.brandColor,
+    borderRadius: 10,
+    paddingVertical: responsiveHeight(1.5),
+    alignItems: "center",
+    marginTop: responsiveHeight(0.5),
+  },
+  saveDailyRateText: {
+    color: "#FFF",
+    fontSize: responsiveFontSize(1.8),
+    fontWeight: "700",
+  },
+  slotViewRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: responsiveHeight(1.2),
+    borderBottomWidth: 1,
+    borderBottomColor: "#F0F0F0",
+  },
+  slotViewLeft: { flex: 1 },
+  slotViewLabel: {
+    fontSize: responsiveFontSize(1.8),
+    fontWeight: "600",
+    color: colors.black,
+  },
+  slotViewTime: {
+    fontSize: responsiveFontSize(1.5),
+    color: colors.gray,
+    marginTop: 2,
+  },
+  slotViewPrice: {
+    fontSize: responsiveFontSize(2),
+    fontWeight: "800",
+    color: colors.brandColor,
+  },
+  noSlotsText: {
+    fontSize: responsiveFontSize(1.7),
+    color: colors.gray,
+    textAlign: "center",
+    paddingVertical: responsiveHeight(1),
   },
 });
 

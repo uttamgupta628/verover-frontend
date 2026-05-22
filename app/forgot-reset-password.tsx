@@ -75,14 +75,14 @@ export default function ForgetResetPasswordScreen() {
           otp,
           password,
           confirmPassword,
-        }
+        },
       );
 
       if (response.data.success) {
         Alert.alert("Success", "Password reset successfully", [
           {
             text: "OK",
-            onPress: () => router.replace("/forgot-success"),
+            onPress: () => router.replace("/login"),
           },
         ]);
       } else {

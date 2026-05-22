@@ -6,7 +6,7 @@ import { StyleSheet, View } from "react-native";
 
 import MenuGrid from "../../components/MenuGrid";
 import ParkingTitle from "../../components/ParkingTitle";
-import { ParkingViewType } from "../../components/Types";
+import { ParkingViewType } from "../../types";
 
 const Parking: React.FC = () => {
   const router = useRouter();

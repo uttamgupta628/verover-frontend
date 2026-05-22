@@ -34,6 +34,7 @@ interface SignupFormInputs {
   state: string;
   zipCode: string;
   userType: string;
+  vehicleNumber?: string;
 }
 
 const colors = {
@@ -74,6 +75,7 @@ export default function Signup() {
       state: "",
       zipCode: "",
       userType: "user",
+      vehicleNumber: "",
     },
   });
 
@@ -82,7 +84,7 @@ export default function Signup() {
   const sendOTP = async (data: SignupFormInputs) => {
     setLoading(true);
 
-    const payload = {
+    const payload: any = {
       phoneNumber: `${countryCode}${data.phoneNumber}`,
       password: data.password,
       firstName: data.firstName,
@@ -93,6 +95,11 @@ export default function Signup() {
       zipCode: data.zipCode,
       userType: data.userType,
     };
+
+    // Only include vehicleNumber for regular users, and only if provided
+    if (data.userType === "user" && data.vehicleNumber?.trim()) {
+      payload.vehicleNumber = data.vehicleNumber.trim().toUpperCase();
+    }
 
     console.log("Calling Registration with payload:", payload);
 
@@ -120,7 +127,6 @@ export default function Signup() {
       if (error.response?.data) {
         const errorData = error.response.data;
 
-        // Handle HTML responses with error codes
         if (typeof errorData === "string") {
           if (errorData.includes("USER_ALREADY_EXISTS")) {
             errorMessage = "This email or phone number is already registered.";
@@ -144,7 +150,6 @@ export default function Signup() {
         }
       }
 
-      // Offer to navigate to login if user exists
       if (errorMessage.toLowerCase().includes("already")) {
         Alert.alert(
           "Account Exists",
@@ -152,7 +157,7 @@ export default function Signup() {
           [
             { text: "Cancel", style: "cancel" },
             { text: "Go to Login", onPress: () => router.replace("/login") },
-          ],
+          ]
         );
       } else {
         Alert.alert("Registration Error", errorMessage);
@@ -322,9 +327,7 @@ export default function Signup() {
           <Controller
             control={control}
             name="country"
-            rules={{
-              required: "Country is required",
-            }}
+            rules={{ required: "Country is required" }}
             render={({ field: { onChange, value } }) => (
               <TextInput
                 placeholder="Enter Country"
@@ -346,9 +349,7 @@ export default function Signup() {
           <Controller
             control={control}
             name="state"
-            rules={{
-              required: "State is required",
-            }}
+            rules={{ required: "State is required" }}
             render={({ field: { onChange, value } }) => (
               <TextInput
                 placeholder="Enter State"
@@ -393,11 +394,45 @@ export default function Signup() {
           <Text style={styles.errorText}>{errors.zipCode.message}</Text>
         )}
 
-        {/* Phone Number Input */}
+        {/* Vehicle Number — only for regular users */}
+        {selectedUserType === "user" && (
+          <>
+            <View style={styles.formContainer}>
+              <Text style={styles.inputLabel}>Vehicle Number (optional)</Text>
+              <View style={styles.vehicleInputRow}>
+                <Icon
+                  name="car"
+                  size={20}
+                  color={colors.gray}
+                  style={styles.vehicleIcon}
+                />
+                <Controller
+                  control={control}
+                  name="vehicleNumber"
+                  render={({ field: { onChange, value } }) => (
+                    <TextInput
+                      placeholder="e.g., WB 01 AB 1234"
+                      placeholderTextColor={colors.gray}
+                      style={styles.vehicleInput}
+                      value={value}
+                      onChangeText={(t) => onChange(t.toUpperCase())}
+                      autoCapitalize="characters"
+                    />
+                  )}
+                />
+              </View>
+            </View>
+            <Text style={styles.vehicleHint}>
+              💡 Save your vehicle number now to skip entering it at every
+              booking.
+            </Text>
+          </>
+        )}
+
+        {/* Phone Number */}
         <View style={styles.formContainer}>
           <Text style={styles.inputLabel}>Phone Number *</Text>
           <View style={styles.phoneInputContainer}>
-            {/* Country Code Input */}
             <TextInput
               style={styles.countryCodeInput}
               value={countryCode}
@@ -406,8 +441,6 @@ export default function Signup() {
               placeholderTextColor={colors.gray}
               keyboardType="phone-pad"
             />
-
-            {/* Phone Number Input */}
             <Controller
               control={control}
               name="phoneNumber"
@@ -435,7 +468,7 @@ export default function Signup() {
           <Text style={styles.errorText}>{errors.phoneNumber.message}</Text>
         )}
 
-        {/* Password Field */}
+        {/* Password */}
         <View style={styles.formContainer}>
           <Text style={styles.inputLabel}>Create Password *</Text>
           <View style={styles.passwordContainer}>
@@ -611,6 +644,28 @@ const styles = StyleSheet.create({
     fontSize: responsiveFontSize(2),
     color: colors.black,
     paddingVertical: responsiveHeight(1),
+  },
+  vehicleInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  vehicleIcon: {
+    marginRight: responsiveWidth(2),
+    marginBottom: responsiveHeight(0.5),
+  },
+  vehicleInput: {
+    flex: 1,
+    fontSize: responsiveFontSize(2),
+    color: colors.black,
+    paddingVertical: responsiveHeight(1),
+    letterSpacing: 1,
+  },
+  vehicleHint: {
+    fontSize: responsiveFontSize(1.5),
+    color: colors.primary,
+    marginTop: responsiveHeight(0.8),
+    marginBottom: responsiveHeight(0.5),
+    paddingHorizontal: responsiveWidth(1),
   },
   phoneInputContainer: {
     flexDirection: "row",

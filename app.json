@@ -3,7 +3,7 @@
     "scheme": "vervoer",
     "name": "vervoer",
     "slug": "vervoer",
-    "version": "1.4.8",
+    "version": "1.4.18",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "splash": {
@@ -40,13 +40,15 @@
         "NSPrivacyAccessedAPITypes": [
           {
             "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
-            "NSPrivacyAccessedAPITypeReasons": ["CA92.1"]
+            "NSPrivacyAccessedAPITypeReasons": [
+              "CA92.1"
+            ]
           }
         ]
       }
     },
     "android": {
-      "versionCode": 9,
+      "versionCode": 19,
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyBn5c5hk6ko6gEwZ3IyWK6AkU4_U_tp_4g"
@@ -62,17 +64,28 @@
         "android.permission.INTERNET",
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
-
-        { "android.permission.READ_MEDIA_IMAGES": false },
-        { "android.permission.READ_MEDIA_VIDEO": false },
-        { "android.permission.READ_MEDIA_AUDIO": false },
-        { "android.permission.READ_EXTERNAL_STORAGE": false }
+        {
+          "android.permission.READ_MEDIA_IMAGES": false
+        },
+        {
+          "android.permission.READ_MEDIA_VIDEO": false
+        },
+        {
+          "android.permission.READ_MEDIA_AUDIO": false
+        },
+        {
+          "android.permission.READ_EXTERNAL_STORAGE": false
+        }
       ],
       "experimental": {
         "useSystemPhotoPicker": true
       },
       "package": "com.uttam.verover"
     },
-    "plugins": ["expo-router", "expo-font"]
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-web-browser"
+    ]
   }
 }

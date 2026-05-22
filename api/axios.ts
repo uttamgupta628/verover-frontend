@@ -24,7 +24,7 @@ axiosInstance.interceptors.request.use(
     }
     return config;
   },
-  (error) => Promise.reject(error)
+  (error) => Promise.reject(error),
 );
 
 axiosInstance.interceptors.response.use(
@@ -34,7 +34,7 @@ axiosInstance.interceptors.response.use(
       await AsyncStorage.removeItem("loginKey");
     }
     return Promise.reject(error);
-  }
+  },
 );
 
 export default axiosInstance;

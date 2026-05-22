@@ -40,7 +40,7 @@ export default function DriverMainHome() {
     onPress: () => void,
     imageSource: any,
     text: string,
-    imageStyle?: any
+    imageStyle?: any,
   ) => (
     <TouchableOpacity style={styles.button} onPress={onPress}>
       <Image
@@ -89,7 +89,7 @@ export default function DriverMainHome() {
         <CarRentalSlider />
       </View>
 
-      {/* Buttons Grid - Responsive layout */}
+      {/* Buttons Grid - Responsive layout with 2 cards per row */}
       <View style={styles.buttonsGrid}>
         {/* Row 1 */}
         <View style={styles.buttonRow}>
@@ -102,24 +102,24 @@ export default function DriverMainHome() {
             () => router.push("/dryCleanerDriver/orderRequest"),
             images.Cleaning,
             "Dry Cleaning",
-            styles.cleaningImage
+            styles.cleaningImage,
           )}
           {renderButton(
             () => router.push("/dryCleanerDriver/driverHistory"),
             images.Cleaning,
             "Driver History",
-            styles.cleaningImage
+            styles.cleaningImage,
           )}
           {renderButton(
             () => router.push("/dryCleanerDriver/Vehicleinfo"),
             images.Ride,
-            "Driver Registration"
+            "Driver Registration",
           )}
           {renderButton(
             () => router.push("dryCleanerDriver/driver"),
             images.Ride,
             "My Info",
-            styles.foodImage
+            styles.foodImage,
           )}
         </View>
 
@@ -167,17 +167,16 @@ const createStyles = ({
   const isMediumScreen = width >= 768 && width < 1024;
   const isLargeScreen = width >= 1024;
 
-  const buttonWidth = isSmallScreen
-    ? responsiveWidth(30)
-    : isMediumScreen
-    ? responsiveWidth(28)
-    : responsiveWidth(25);
+  // Fixed 2 cards per row on all screen sizes
+  // Each button takes about 44-46% width with space for margins
+  const buttonWidth = "44%";
+  const buttonMarginHorizontal = "3%";
 
-  const buttonHeight = isSmallScreen
+  const buttonMinHeight = isSmallScreen
     ? responsiveHeight(12)
     : isMediumScreen
-    ? responsiveHeight(10)
-    : responsiveHeight(8);
+      ? responsiveHeight(11)
+      : responsiveHeight(10);
 
   return StyleSheet.create({
     container: {
@@ -189,25 +188,26 @@ const createStyles = ({
       alignItems: "center",
       paddingBottom: responsiveHeight(5),
       paddingHorizontal: isSmallScreen
-        ? responsiveWidth(5)
+        ? responsiveWidth(4)
         : isMediumScreen
-        ? responsiveWidth(10)
-        : responsiveWidth(15),
+          ? responsiveWidth(8)
+          : responsiveWidth(12),
     },
     header: {
       flexDirection: "row",
       alignItems: "center",
       justifyContent: "space-between",
       width: "100%",
-      marginTop: responsiveHeight(isSmallScreen ? 3 : 5),
+      marginTop: responsiveHeight(isSmallScreen ? 4 : 5),
       marginBottom: responsiveHeight(2),
+      paddingHorizontal: responsiveWidth(1),
     },
     titleContainer: {
       flex: 1,
     },
     title: {
       fontSize: responsiveFontSize(
-        isSmallScreen ? 5 : isMediumScreen ? 4.5 : 4
+        isSmallScreen ? 5.5 : isMediumScreen ? 5 : 4.5,
       ),
       color: colors.black,
       fontWeight: "600",
@@ -217,20 +217,21 @@ const createStyles = ({
       justifyContent: "center",
       padding: responsiveWidth(2),
       marginLeft: responsiveWidth(2),
+      minWidth: responsiveWidth(12),
     },
     scanImage: {
-      width: responsiveWidth(isSmallScreen ? 8 : 7),
-      height: responsiveHeight(isSmallScreen ? 4 : 3.5),
+      width: responsiveWidth(isSmallScreen ? 9 : 7.5),
+      height: responsiveHeight(isSmallScreen ? 4.5 : 4),
       marginBottom: responsiveHeight(0.5),
     },
     scanText: {
       color: colors.text,
-      fontSize: responsiveFontSize(isSmallScreen ? 3 : 2.8),
+      fontSize: responsiveFontSize(isSmallScreen ? 3.2 : 2.8),
       textAlign: "center",
     },
     sliderContainer: {
       width: "100%",
-      height: responsiveHeight(isSmallScreen ? 20 : isMediumScreen ? 18 : 16),
+      height: responsiveHeight(isSmallScreen ? 22 : isMediumScreen ? 20 : 18),
       marginBottom: responsiveHeight(3),
     },
     buttonsGrid: {
@@ -241,12 +242,12 @@ const createStyles = ({
     buttonRow: {
       flexDirection: "row",
       justifyContent: "center",
-      alignItems: "center",
+      alignItems: "flex-start",
       flexWrap: "wrap",
       width: "100%",
-      marginBottom: responsiveHeight(3),
+      marginBottom: responsiveHeight(2),
+      gap: responsiveWidth(2),
     },
-
     singleButtonRow: {
       flexDirection: "row",
       justifyContent: "center",
@@ -259,6 +260,10 @@ const createStyles = ({
       alignItems: "center",
       justifyContent: "center",
       borderRadius: responsiveWidth(4),
+
+      width: "48%", // ✅ FIXED
+      marginBottom: responsiveHeight(2),
+
       shadowColor: "#000",
       shadowOffset: {
         width: responsiveWidth(0.5),
@@ -267,42 +272,40 @@ const createStyles = ({
       shadowOpacity: 0.2,
       shadowRadius: responsiveWidth(2),
       elevation: 5,
-      padding: responsiveWidth(3),
-      width: buttonWidth,
-      height: buttonHeight,
-      minHeight: responsiveHeight(10),
 
-      alignSelf: "center",
-      marginBottom: isSmallScreen ? responsiveHeight(3) : responsiveHeight(1),
+      paddingVertical: responsiveHeight(2),
+      paddingHorizontal: responsiveWidth(2),
     },
+
     buttonImage: {
-      width: responsiveWidth(isSmallScreen ? 12 : 10),
-      height: responsiveHeight(isSmallScreen ? 6 : 5),
+      width: responsiveWidth(isSmallScreen ? 13 : 11),
+      height: responsiveHeight(isSmallScreen ? 6.5 : 5.5),
       marginBottom: responsiveHeight(1),
     },
     cleaningImage: {
-      width: responsiveWidth(isSmallScreen ? 10 : 9),
-      height: responsiveHeight(isSmallScreen ? 6 : 5.5),
-    },
-    foodImage: {
-      width: responsiveWidth(isSmallScreen ? 11 : 10),
-      height: responsiveHeight(isSmallScreen ? 6 : 5.5),
-    },
-    microImage: {
       width: responsiveWidth(isSmallScreen ? 11 : 10),
       height: responsiveHeight(isSmallScreen ? 6.5 : 6),
     },
+    foodImage: {
+      width: responsiveWidth(isSmallScreen ? 12 : 11),
+      height: responsiveHeight(isSmallScreen ? 6.5 : 6),
+    },
+    microImage: {
+      width: responsiveWidth(isSmallScreen ? 12 : 11),
+      height: responsiveHeight(isSmallScreen ? 7 : 6.5),
+    },
     scanButtonImage: {
-      width: responsiveWidth(isSmallScreen ? 10 : 9),
-      height: responsiveHeight(isSmallScreen ? 5 : 4.5),
+      width: responsiveWidth(isSmallScreen ? 11 : 10),
+      height: responsiveHeight(isSmallScreen ? 5.5 : 5),
     },
     buttonText: {
       color: colors.black,
-      fontSize: responsiveFontSize(isSmallScreen ? 3.5 : 3.2),
+      fontSize: responsiveFontSize(isSmallScreen ? 3.8 : 3.5),
       fontWeight: "500",
       textAlign: "center",
-      lineHeight: responsiveFontSize(4),
+      lineHeight: responsiveFontSize(4.5),
       marginTop: responsiveHeight(0.5),
+      flexShrink: 1,
     },
   });
 };

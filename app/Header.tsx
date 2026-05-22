@@ -6,7 +6,7 @@ import colors from "../assets/color";
 import { images } from "../assets/images/images";
 import { setProfileImage } from "../components/redux/profileSlice";
 import { RootState } from "../components/redux/store";
-import NotificationView from "./NotifivationView";
+import NotificationView from "./NotificationView";
 import ProfileDrawer from "./ProfileDrawer";
 import SearchView from "./SearchView";
 import WalletView from "./WalletView";
@@ -16,16 +16,13 @@ import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
 import { useFocusEffect, useRouter, useSegments } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import axiosInstance from "../api/axios";
 
 interface HeaderProps {
-  notificationCount?: number;
   renderContent?: () => React.ReactNode;
 }
 
-const Header: React.FC<HeaderProps> = ({
-  notificationCount = 0,
-  renderContent,
-}) => {
+const Header: React.FC<HeaderProps> = ({ renderContent }) => {
   const router = useRouter();
   const segments = useSegments();
   const dispatch = useDispatch();
@@ -41,6 +38,9 @@ const Header: React.FC<HeaderProps> = ({
   const [activeView, setActiveView] = useState<
     "none" | "search" | "wallet" | "notifications"
   >("none");
+
+  // Real unread count fetched from backend — NOT a prop
+  const [unreadCount, setUnreadCount] = useState(0);
 
   // Don't render if we're on an auth screen
   const hideHeaderOnScreens = [
@@ -58,20 +58,15 @@ const Header: React.FC<HeaderProps> = ({
 
   const shouldHideHeader = hideHeaderOnScreens.includes(segments[0] as string);
 
-  // Fetch profile on component focus to keep image updated
+  // Fetch profile AND unread notification count every time the header gains focus
   useFocusEffect(
     useCallback(() => {
-      if (shouldHideHeader) return; // Don't fetch if header is hidden
+      if (shouldHideHeader) return;
 
+      // ── Profile fetch ──────────────────────────────────────────────────────
       const fetchProfile = async () => {
-        if (!token) {
-          console.log("No token available, skipping profile fetch");
-          return;
-        }
-
+        if (!token) return;
         try {
-          console.log("Fetching profile from:", `${baseUrl}/users/get-profile`);
-
           const response = await fetch(`${baseUrl}/users/get-profile`, {
             method: "GET",
             headers: {
@@ -80,68 +75,57 @@ const Header: React.FC<HeaderProps> = ({
             },
           });
 
-          // Check content type before parsing
           const contentType = response.headers.get("content-type");
-
           if (!contentType || !contentType.includes("application/json")) {
-            console.error(
-              "Server returned non-JSON response. Content-Type:",
-              contentType
-            );
-
-            // If we have user data in Redux, use that profile image instead
-            if (user) {
-              const userProfileImage =
-                user.profileImage || user.driveProfileImage;
-              if (userProfileImage && userProfileImage !== profileImage) {
-                console.log("Using profile image from Redux user data");
-                dispatch(setProfileImage(userProfileImage));
-              }
+            // Fall back to Redux user data
+            const fallback = user?.profileImage || user?.driveProfileImage;
+            if (fallback && fallback !== profileImage) {
+              dispatch(setProfileImage(fallback));
             }
             return;
           }
 
           const data = await response.json();
-
-          if (response.ok && data?.data?.profileImage) {
-            console.log("Profile image fetched successfully");
-            dispatch(setProfileImage(data.data.profileImage));
-          } else if (response.ok && data?.profileImage) {
-            console.log("Profile image found in alternate location");
-            dispatch(setProfileImage(data.profileImage));
+          const img = data?.data?.profileImage || data?.profileImage;
+          if (response.ok && img) {
+            dispatch(setProfileImage(img));
           } else {
-            console.log(
-              "No profile image in response, using user data from Redux"
-            );
-
-            // Fallback to user data from Redux
-            if (user) {
-              const userProfileImage =
-                user.profileImage || user.driveProfileImage;
-              if (userProfileImage && userProfileImage !== profileImage) {
-                dispatch(setProfileImage(userProfileImage));
-              }
+            const fallback = user?.profileImage || user?.driveProfileImage;
+            if (fallback && fallback !== profileImage) {
+              dispatch(setProfileImage(fallback));
             }
           }
-        } catch (error: any) {
-          console.error("Header fetch profile error:", error.message);
-
-          // Fallback: Use profile image from Redux user data
-          if (user) {
-            const userProfileImage =
-              user.profileImage || user.driveProfileImage;
-            if (userProfileImage && userProfileImage !== profileImage) {
-              console.log(
-                "Using profile image from Redux user data (fallback)"
-              );
-              dispatch(setProfileImage(userProfileImage));
-            }
+        } catch {
+          const fallback = user?.profileImage || user?.driveProfileImage;
+          if (fallback && fallback !== profileImage) {
+            dispatch(setProfileImage(fallback));
           }
         }
       };
 
+      // ── Unread notification count fetch ────────────────────────────────────
+      // Backend route: GET /notifications  (axiosInstance auto-attaches Bearer token)
+      const fetchUnreadCount = async () => {
+        try {
+          const response = await axiosInstance.get("notifications");
+          const payload = response.data?.data ?? response.data;
+          const list: any[] = Array.isArray(payload)
+            ? payload
+            : Array.isArray(payload?.notifications)
+              ? payload.notifications
+              : [];
+
+          const count = list.filter((n: any) => !n.isRead).length;
+          setUnreadCount(count);
+        } catch {
+          // Silently fail — don't show stale or wrong count
+          setUnreadCount(0);
+        }
+      };
+
       fetchProfile();
-    }, [token, user, profileImage, dispatch, shouldHideHeader, baseUrl])
+      fetchUnreadCount();
+    }, [token, user, profileImage, dispatch, shouldHideHeader]),
   );
 
   if (shouldHideHeader) {
@@ -155,7 +139,7 @@ const Header: React.FC<HeaderProps> = ({
   };
 
   const handleViewChange = async (
-    view: "none" | "search" | "wallet" | "notifications"
+    view: "none" | "search" | "wallet" | "notifications",
   ): Promise<void> => {
     await Haptics.selectionAsync();
     setActiveView((prevView) => (prevView === view ? "none" : view));
@@ -163,6 +147,24 @@ const Header: React.FC<HeaderProps> = ({
 
   const handleCloseView = (): void => {
     setActiveView("none");
+  };
+
+  // When the user closes the NotificationView, re-fetch the count
+  // so the badge immediately reflects any reads/deletes they performed
+  const handleNotificationsClose = async (): Promise<void> => {
+    handleCloseView();
+    try {
+      const response = await axiosInstance.get("notifications");
+      const payload = response.data?.data ?? response.data;
+      const list: any[] = Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload?.notifications)
+          ? payload.notifications
+          : [];
+      setUnreadCount(list.filter((n: any) => !n.isRead).length);
+    } catch {
+      setUnreadCount(0);
+    }
   };
 
   const renderActiveContent = () => {
@@ -176,10 +178,9 @@ const Header: React.FC<HeaderProps> = ({
       case "notifications":
         return (
           <NotificationView
-            onBack={handleCloseView}
+            onBack={handleNotificationsClose}
             onNavigate={(screen) => {
               handleCloseView();
-              // Convert screen navigation to Expo Router format
               router.push(screen as any);
             }}
           />
@@ -191,7 +192,6 @@ const Header: React.FC<HeaderProps> = ({
 
   // Determine which profile image to use
   const getDisplayProfileImage = () => {
-    // Priority: profileImage from Redux > user.driveProfileImage > user.profileImage > default
     if (profileImage) return { uri: profileImage };
     if (user?.driveProfileImage) return { uri: user.driveProfileImage };
     if (user?.profileImage) return { uri: user.profileImage };
@@ -206,7 +206,7 @@ const Header: React.FC<HeaderProps> = ({
         { paddingTop: insets.top },
       ]}
     >
-      {/* Header Bar - Only show when not in overlay mode */}
+      {/* Header Bar */}
       {!isOverlayActive && (
         <View style={styles.header}>
           <TouchableOpacity
@@ -254,9 +254,10 @@ const Header: React.FC<HeaderProps> = ({
                 style={styles.icon}
                 iconColor={colors.black}
               />
-              {notificationCount > 0 && (
+              {/* Badge only renders when there are real unread notifications */}
+              {unreadCount > 0 && (
                 <Badge size={16} style={styles.badge}>
-                  {getNotificationBadgeText(notificationCount)}
+                  {getNotificationBadgeText(unreadCount)}
                 </Badge>
               )}
             </View>

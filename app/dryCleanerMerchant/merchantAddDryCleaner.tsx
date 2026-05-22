@@ -26,11 +26,6 @@ import colors from "../../assets/color";
 import { Image } from "expo-image";
 import { Picker } from "@react-native-picker/picker";
 
-// NOTE: If you get an error about @react-native-picker/picker, install it with:
-// npm install @react-native-picker/picker
-// or
-// yarn add @react-native-picker/picker
-
 const { width, height } = Dimensions.get("window");
 const responsiveWidth = (percentage: number) => (width * percentage) / 100;
 const responsiveHeight = (percentage: number) => (height * percentage) / 100;
@@ -38,6 +33,8 @@ const responsiveFontSize = (size: number) => {
   const scale = Math.min(width / 375, height / 812);
   return size * scale;
 };
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Address {
   street: string;
@@ -56,7 +53,13 @@ interface HoursOfOperation {
   close: string;
 }
 
-interface Service {
+// ✅ Now matches MyDryCleaners: array of { name, price }
+interface AdditionalService {
+  name: "zipper" | "button" | "wash/fold";
+  price: number;
+}
+
+interface ServiceForm {
   name: string;
   category:
     | "Shirts"
@@ -68,13 +71,14 @@ interface Service {
     | "Comforters"
     | "Curtains"
     | "Other";
-  strachLevel: number;
+  starchLevel: "low" | "medium" | "high";
   washOnly: boolean;
-  additionalservice: "zipper" | "button" | "wash/fold";
+  additionalservice: AdditionalService[]; // ✅ Array — same as MyDryCleaners
   price: number;
 }
 
-// Valid categories from backend enum
+// ─── Constants ────────────────────────────────────────────────────────────────
+
 const SERVICE_CATEGORIES = [
   "Shirts",
   "Pants",
@@ -87,6 +91,9 @@ const SERVICE_CATEGORIES = [
   "Other",
 ] as const;
 
+// ✅ Same options as MyDryCleaners
+const ADDITIONAL_OPTIONS = ["zipper", "button", "wash/fold"] as const;
+
 interface SelectedImage {
   uri: string;
   type: string;
@@ -97,6 +104,83 @@ interface Images {
   contactPersonImg: SelectedImage | null;
   shopImages: SelectedImage[];
 }
+
+// ─── AdditionalServicePicker ──────────────────────────────────────────────────
+// Replicates the exact chip + per-option price UI from MyDryCleaners > ServiceForm
+
+const AdditionalServicePicker: React.FC<{
+  value: AdditionalService[];
+  onChange: (updated: AdditionalService[]) => void;
+}> = ({ value, onChange }) => {
+  const isSelected = (opt: string) => value.some((s) => s.name === opt);
+
+  const toggle = (opt: (typeof ADDITIONAL_OPTIONS)[number]) => {
+    if (isSelected(opt)) {
+      onChange(value.filter((s) => s.name !== opt));
+    } else {
+      onChange([...value, { name: opt, price: 0 }]);
+    }
+  };
+
+  const updatePrice = (opt: string, priceStr: string) => {
+    onChange(
+      value.map((s) =>
+        s.name === opt ? { ...s, price: parseFloat(priceStr) || 0 } : s,
+      ),
+    );
+  };
+
+  return (
+    <View>
+      {/* Multi-select chips */}
+      <View style={styles.chipRow}>
+        {ADDITIONAL_OPTIONS.map((opt) => {
+          const selected = isSelected(opt);
+          return (
+            <TouchableOpacity
+              key={opt}
+              style={[styles.chip, selected && styles.chipActive]}
+              onPress={() => toggle(opt)}
+              activeOpacity={0.75}
+            >
+              <Text
+                style={[styles.chipText, selected && styles.chipTextActive]}
+              >
+                {selected ? `✓ ${opt}` : opt}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {/* Price input for each selected option */}
+      {value.map((additional) => (
+        <View key={additional.name} style={styles.additionalPriceRow}>
+          <View style={styles.additionalPriceLabel}>
+            <MaterialCommunityIcons
+              name="plus-circle-outline"
+              size={14}
+              color={colors.brandColor}
+            />
+            <Text style={styles.additionalPriceLabelText}>
+              Charge for "{additional.name}" ($)
+            </Text>
+          </View>
+          <TextInput
+            style={styles.input}
+            value={additional.price === 0 ? "" : String(additional.price)}
+            onChangeText={(t) => updatePrice(additional.name, t)}
+            keyboardType="decimal-pad"
+            placeholder="e.g. 1.50"
+            placeholderTextColor={colors.gray}
+          />
+        </View>
+      ))}
+    </View>
+  );
+};
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 
 const DryClean: React.FC = () => {
   const router = useRouter();
@@ -140,16 +224,17 @@ const DryClean: React.FC = () => {
       { day: "Saturday", open: "09:00", close: "17:00" },
       { day: "Sunday", open: "10:00", close: "16:00" },
     ],
+    // ✅ Default service now uses additionalservice: [] (array)
     services: [
       {
         name: "Shirt Cleaning",
-        category: "Shirts",
-        strachLevel: 3,
+        category: "Shirts" as const,
+        starchLevel: "medium" as const,
         washOnly: false,
-        additionalservice: "zipper" as const,
+        additionalservice: [] as AdditionalService[],
         price: 50,
       },
-    ],
+    ] as ServiceForm[],
   });
 
   const [images, setImages] = useState<Images>({
@@ -157,19 +242,14 @@ const DryClean: React.FC = () => {
     shopImages: [],
   });
 
-  // Get current location on component mount
   useEffect(() => {
     getCurrentLocation();
   }, []);
 
-  // Get current location
   const getCurrentLocation = async () => {
     try {
       setLocationLoading(true);
-
-      // Request permission
       let { status } = await Location.requestForegroundPermissionsAsync();
-
       if (status !== "granted") {
         Alert.alert(
           "Permission Denied",
@@ -180,46 +260,37 @@ const DryClean: React.FC = () => {
               text: "Open Settings",
               onPress: () => Location.getForegroundPermissionsAsync(),
             },
-          ]
+          ],
         );
         return;
       }
-
-      // Get current location
       const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
       });
-
       const { latitude, longitude } = location.coords;
       setCurrentLocation({ latitude, longitude });
       setSelectedLocation({ latitude, longitude });
-
-      // Reverse geocode to get address
       const address = await Location.reverseGeocodeAsync({
         latitude,
         longitude,
       });
-
-      if (address.length > 0) {
-        const addr = address[0];
-        updateAddressFromGeocode(addr, latitude, longitude);
-      }
+      if (address.length > 0)
+        updateAddressFromGeocode(address[0], latitude, longitude);
     } catch (error) {
       console.error("Error getting location:", error);
       Alert.alert(
         "Error",
-        "Failed to get your current location. Please try again or enter address manually."
+        "Failed to get your current location. Please try again or enter address manually.",
       );
     } finally {
       setLocationLoading(false);
     }
   };
 
-  // Update address from geocoding result
   const updateAddressFromGeocode = (
     geocode: Location.LocationGeocodedAddress,
     lat: number,
-    lng: number
+    lng: number,
   ) => {
     const street =
       [geocode.name, geocode.street].filter(Boolean).join(", ") || "";
@@ -227,11 +298,9 @@ const DryClean: React.FC = () => {
     const state = geocode.region || "";
     const zipCode = geocode.postalCode || "";
     const country = geocode.country || "";
-
     const formattedAddress = [street, city, state, zipCode, country]
       .filter(Boolean)
       .join(", ");
-
     setFormData((prev) => ({
       ...prev,
       address: {
@@ -247,42 +316,31 @@ const DryClean: React.FC = () => {
     }));
   };
 
-  // Search for address using Google Places API
   const searchAddress = async () => {
     if (!searchQuery.trim()) return;
-
     setIsSearching(true);
     try {
-      // Note: You need to add your Google Places API key here
-      const GOOGLE_API_KEY = "YOUR_GOOGLE_PLACES_API_KEY"; // Replace with your API key
-
+      const GOOGLE_API_KEY = "YOUR_GOOGLE_PLACES_API_KEY";
       const response = await fetch(
         `https://maps.googleapis.com/maps/api/place/findplacefromtext/json?input=${encodeURIComponent(
-          searchQuery
-        )}&inputtype=textquery&fields=formatted_address,name,geometry&key=${GOOGLE_API_KEY}`
+          searchQuery,
+        )}&inputtype=textquery&fields=formatted_address,name,geometry&key=${GOOGLE_API_KEY}`,
       );
-
       const data = await response.json();
-
       if (data.status === "OK" && data.candidates.length > 0) {
         const place = data.candidates[0];
         const { lat, lng } = place.geometry.location;
-
         setSelectedLocation({ latitude: lat, longitude: lng });
-
-        // Get detailed address information
         const geocodeResponse = await Location.reverseGeocodeAsync({
           latitude: lat,
           longitude: lng,
         });
-
-        if (geocodeResponse.length > 0) {
+        if (geocodeResponse.length > 0)
           updateAddressFromGeocode(geocodeResponse[0], lat, lng);
-        }
       } else {
         Alert.alert(
           "Location Not Found",
-          "Please try a different search term or select location on the map."
+          "Please try a different search term or select location on the map.",
         );
       }
     } catch (error) {
@@ -293,44 +351,33 @@ const DryClean: React.FC = () => {
     }
   };
 
-  // Handle map press to select location
   const handleMapPress = (event: any) => {
     const { coordinate } = event.nativeEvent;
     setSelectedLocation(coordinate);
-
-    // Reverse geocode the selected location
     reverseGeocodeLocation(coordinate.latitude, coordinate.longitude);
   };
 
-  // Reverse geocode selected location
   const reverseGeocodeLocation = async (lat: number, lng: number) => {
     try {
       const address = await Location.reverseGeocodeAsync({
         latitude: lat,
         longitude: lng,
       });
-
-      if (address.length > 0) {
-        updateAddressFromGeocode(address[0], lat, lng);
-      }
+      if (address.length > 0) updateAddressFromGeocode(address[0], lat, lng);
     } catch (error) {
       console.error("Error reverse geocoding:", error);
     }
   };
 
-  // Confirm location selection
   const confirmLocation = () => {
-    if (selectedLocation) {
-      setMapModalVisible(false);
-    } else {
+    if (selectedLocation) setMapModalVisible(false);
+    else
       Alert.alert(
         "No Location Selected",
-        "Please select a location on the map."
+        "Please select a location on the map.",
       );
-    }
   };
 
-  // Handle text input changes
   const handleInputChange = (field: string, value: string): void => {
     if (field.includes(".")) {
       const [parent, child] = field.split(".");
@@ -342,42 +389,37 @@ const DryClean: React.FC = () => {
         },
       }));
     } else {
-      setFormData((prev) => ({
-        ...prev,
-        [field]: value,
-      }));
+      setFormData((prev) => ({ ...prev, [field]: value }));
     }
   };
 
-  // Handle hours of operation changes
   const handleHoursChange = (
     index: number,
     field: keyof HoursOfOperation,
-    value: string
+    value: string,
   ): void => {
     setFormData((prev) => ({
       ...prev,
       hoursOfOperation: prev.hoursOfOperation.map((hour, i) =>
-        i === index ? { ...hour, [field]: value } : hour
+        i === index ? { ...hour, [field]: value } : hour,
       ),
     }));
   };
 
-  // Handle service changes
+  // ✅ Updated: handles both scalar fields AND the additionalservice array
   const handleServiceChange = (
     index: number,
-    field: keyof Service,
-    value: string | number | boolean
+    field: keyof ServiceForm,
+    value: string | number | boolean | AdditionalService[],
   ): void => {
     setFormData((prev) => ({
       ...prev,
       services: prev.services.map((service, i) =>
-        i === index ? { ...service, [field]: value } : service
+        i === index ? { ...service, [field]: value } : service,
       ),
     }));
   };
 
-  // Add new service
   const addService = (): void => {
     setFormData((prev) => ({
       ...prev,
@@ -386,16 +428,15 @@ const DryClean: React.FC = () => {
         {
           name: "",
           category: "Shirts" as const,
-          strachLevel: 3,
+          starchLevel: "medium" as const,
           washOnly: false,
-          additionalservice: "zipper" as const,
+          additionalservice: [] as AdditionalService[], // ✅ Start empty
           price: 0,
         },
       ],
     }));
   };
 
-  // Remove service
   const removeService = (index: number): void => {
     setFormData((prev) => ({
       ...prev,
@@ -403,58 +444,67 @@ const DryClean: React.FC = () => {
     }));
   };
 
-  // Handle contact person image selection
   const handleContactImagePick = async (): Promise<void> => {
-  try {
-    // 🚫 Removed requestMediaLibraryPermissionsAsync (not allowed by Google Play)
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-
-    if (!result.canceled && result.assets?.length > 0) {
-      const uri = result.assets[0].uri;
-      // Do your state update here (you didn't show it)
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+      if (!result.canceled && result.assets?.length > 0) {
+        const asset = result.assets[0];
+        const ext = asset.uri.split(".").pop() || "jpg";
+        setImages((prev) => ({
+          ...prev,
+          contactPersonImg: {
+            uri: asset.uri,
+            type: `image/${ext}`,
+            fileName: asset.fileName || `contact_${Date.now()}.${ext}`,
+          },
+        }));
+      }
+    } catch (error) {
+      Alert.alert("Error", "Failed to select image. Please try again.");
     }
-  } catch (error) {
-    console.error("ImagePicker Error:", error);
-    Alert.alert("Error", "Failed to select image. Please try again.");
-  }
-};
+  };
 
-
-  // Handle shop images selection
- const handleShopImagesPick = async (): Promise<void> => {
-  try {
-    // 🚫 Removed requestMediaLibraryPermissionsAsync (Google Play rejects this)
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsMultipleSelection: true,
-      selectionLimit: 4,
-      quality: 0.8,
-    });
-
-    if (!result.canceled && result.assets?.length > 0) {
-      const uris = result.assets.map(a => a.uri);
-      // Update your state here (you didn't include it in the snippet)
+  const handleShopImagesPick = async (): Promise<void> => {
+    try {
+      const remaining = 4 - images.shopImages.length;
+      if (remaining <= 0) {
+        Alert.alert("Limit Reached", "You can only add up to 4 shop images.");
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsMultipleSelection: true,
+        selectionLimit: remaining,
+        quality: 0.8,
+      });
+      if (!result.canceled && result.assets?.length > 0) {
+        const picked = result.assets.map((asset) => {
+          const ext = asset.uri.split(".").pop() || "jpg";
+          return {
+            uri: asset.uri,
+            type: `image/${ext}`,
+            fileName: asset.fileName || `shop_${Date.now()}.${ext}`,
+          };
+        });
+        setImages((prev) => ({
+          ...prev,
+          shopImages: [...prev.shopImages, ...picked].slice(0, 4),
+        }));
+      }
+    } catch (error) {
+      Alert.alert("Error", "Failed to select images. Please try again.");
     }
-  } catch (error) {
-    console.error("ImagePicker Error:", error);
-    Alert.alert("Error", "Failed to select images. Please try again.");
-  }
-};
+  };
 
-
-  // Submit form
   const handleSubmit = async (): Promise<void> => {
     try {
       setLoading(true);
 
-      // Validate required fields
       if (
         !formData.shopname ||
         !formData.contactPerson ||
@@ -464,172 +514,111 @@ const DryClean: React.FC = () => {
         setLoading(false);
         return;
       }
-
-      // Validate address
       if (!formData.address.latitude || !formData.address.longitude) {
         Alert.alert("Error", "Please select your shop location using the map");
         setLoading(false);
         return;
       }
-
-      // Ensure address has all required fields
       if (!formData.address.street || !formData.address.city) {
         Alert.alert(
           "Incomplete Address",
-          "Please ensure all address fields are filled. Try selecting the location on the map again."
+          "Please ensure all address fields are filled.",
         );
         setLoading(false);
         return;
       }
 
-      // Validate services
       const hasValidService = formData.services.some(
-        (service) => service.name && service.category && service.price > 0
+        (service) => service.name && service.category && service.price > 0,
       );
-
       if (!hasValidService) {
         Alert.alert(
           "Invalid Services",
-          "Please add at least one service with name, category, and price."
+          "Please add at least one service with name, category, and price.",
         );
         setLoading(false);
         return;
       }
 
-      console.log("📤 Starting form submission...");
+      // ✅ Build services payload: include additionalservice array (omit if empty)
+      const servicesPayload = formData.services.map((s) => ({
+        name: s.name,
+        category: s.category,
+        starchLevel: s.starchLevel || "medium",
+        washOnly: s.washOnly,
+        // Matches MyDryCleaners: send array when non-empty, omit when empty
+        ...(s.additionalservice.length > 0
+          ? { additionalservice: s.additionalservice }
+          : {}),
+        price: s.price,
+      }));
 
-      // Log the data being sent for debugging
-      const dataToSend = {
-        shopname: formData.shopname,
-        contactPerson: formData.contactPerson,
-        phoneNumber: formData.phoneNumber,
-        about: formData.about,
-        address: formData.address,
-        hoursOfOperation: formData.hoursOfOperation,
-        services: formData.services,
-      };
-
-      console.log("Form Data to send:", JSON.stringify(dataToSend, null, 2));
-
-      // Create FormData
       const submitData = new FormData();
-
-      // Add text fields (matching backend schema)
       submitData.append("shopname", formData.shopname);
       submitData.append("contactPerson", formData.contactPerson);
       submitData.append("phoneNumber", formData.phoneNumber);
       submitData.append("about", formData.about || "");
-
-      // Address as JSON string (backend will parse it)
       submitData.append("address", JSON.stringify(formData.address));
-
-      // Hours of operation as JSON string
       submitData.append(
         "hoursOfOperation",
-        JSON.stringify(formData.hoursOfOperation)
+        JSON.stringify(formData.hoursOfOperation),
       );
+      submitData.append("services", JSON.stringify(servicesPayload));
 
-      // Services as JSON string
-      submitData.append("services", JSON.stringify(formData.services));
-
-      // Add contact person image
       if (images.contactPersonImg) {
         const { uri, type, fileName } = images.contactPersonImg;
-        const imageName = fileName || `contact_${Date.now()}.jpg`;
-        const imageType = type || "image/jpeg";
-
-        const imageFile = {
-          uri: uri,
-          type: imageType,
-          name: imageName,
-        };
-
-        console.log("📷 Adding contact image:", imageName);
-        submitData.append("contactPersonImg", imageFile as any);
+        submitData.append("contactPersonImg", {
+          uri,
+          type: type || "image/jpeg",
+          name: fileName || `contact_${Date.now()}.jpg`,
+        } as any);
       }
-
-      // Add shop images
       if (images.shopImages.length > 0) {
         images.shopImages.forEach((image, index) => {
           const { uri, type, fileName } = image;
-          const imageName = fileName || `shop_${Date.now()}_${index}.jpg`;
-          const imageType = type || "image/jpeg";
-
-          const imageFile = {
-            uri: uri,
-            type: imageType,
-            name: imageName,
-          };
-
-          console.log(`📷 Adding shop image ${index + 1}:`, imageName);
-          submitData.append("shopimage", imageFile as any);
+          submitData.append("shopimage", {
+            uri,
+            type: type || "image/jpeg",
+            name: fileName || `shop_${Date.now()}_${index}.jpg`,
+          } as any);
         });
       }
-
-      console.log("🚀 Sending request to server...");
 
       const response = await fetch(
         "https://vervoer-backend2.onrender.com/api/users/dry-cleaner",
         {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${authToken}`,
-            // Don't set Content-Type for FormData - let fetch set it automatically with boundary
-          },
+          headers: { Authorization: `Bearer ${authToken}` },
           body: submitData,
-        }
+        },
       );
 
-      console.log("📡 Response status:", response.status);
-
-      let result;
       const responseText = await response.text();
-      console.log("📥 Response text:", responseText.substring(0, 500));
-
+      let result;
       try {
         result = JSON.parse(responseText);
-      } catch (parseError) {
-        console.error("❌ JSON parse error:", parseError);
+      } catch {
         throw new Error(
-          `Server returned invalid response: ${responseText.substring(0, 100)}`
+          `Server returned invalid response: ${responseText.substring(0, 100)}`,
         );
       }
 
       if (response.ok) {
-        console.log("✅ Registration successful!");
-        console.log("Response data:", result);
-
-        // Update token if provided
-        if (result.data?.token) {
-          console.log("🔑 New token received");
-          // You might want to update Redux store here with new token
-        }
-
         Alert.alert("Success", "Dry Cleaner registered successfully!", [
           { text: "OK", onPress: () => router.back() },
         ]);
       } else {
-        console.error("❌ Registration failed:", result);
-
-        // More detailed error message
-        let errorMessage = "Registration failed";
-        if (result.message) {
-          errorMessage = result.message;
-        } else if (result.error) {
-          errorMessage = result.error;
-        } else if (result.errors && Array.isArray(result.errors)) {
-          // Handle Zod validation errors
+        let errorMessage =
+          result.message || result.error || "Registration failed";
+        if (result.errors && Array.isArray(result.errors))
           errorMessage = result.errors.map((e: any) => e.message).join("\n");
-        }
-
         Alert.alert("Registration Failed", errorMessage);
       }
     } catch (error: any) {
-      console.error("❌ Registration error:", error);
       Alert.alert(
         "Error",
         error.message ||
-          "Something went wrong. Please check your connection and try again."
+          "Something went wrong. Please check your connection and try again.",
       );
     } finally {
       setLoading(false);
@@ -700,7 +689,6 @@ const DryClean: React.FC = () => {
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Shop Location *</Text>
 
-          {/* Location Selection Buttons */}
           <View style={styles.locationButtons}>
             <TouchableOpacity
               style={styles.locationButton}
@@ -728,7 +716,6 @@ const DryClean: React.FC = () => {
             </TouchableOpacity>
           </View>
 
-          {/* Selected Location Display */}
           {formData.address.formattedAddress ? (
             <View style={styles.selectedLocation}>
               <View style={styles.locationInfo}>
@@ -747,7 +734,6 @@ const DryClean: React.FC = () => {
             </Text>
           )}
 
-          {/* Address Fields */}
           <Text style={styles.label}>Street Address</Text>
           <TextInput
             style={styles.input}
@@ -755,7 +741,6 @@ const DryClean: React.FC = () => {
             onChangeText={(value) => handleInputChange("address.street", value)}
             placeholder="Street address will be filled from map selection"
             placeholderTextColor={colors.gray}
-            editable={true}
           />
 
           <View style={styles.row}>
@@ -769,7 +754,6 @@ const DryClean: React.FC = () => {
                 }
                 placeholder="City"
                 placeholderTextColor={colors.gray}
-                editable={true}
               />
             </View>
             <View style={styles.halfInput}>
@@ -782,7 +766,6 @@ const DryClean: React.FC = () => {
                 }
                 placeholder="State"
                 placeholderTextColor={colors.gray}
-                editable={true}
               />
             </View>
           </View>
@@ -798,7 +781,7 @@ const DryClean: React.FC = () => {
                 }
                 placeholder="Zip Code"
                 placeholderTextColor={colors.gray}
-                editable={true}
+                keyboardType="numeric"
               />
             </View>
             <View style={styles.halfInput}>
@@ -811,20 +794,18 @@ const DryClean: React.FC = () => {
                 }
                 placeholder="Country"
                 placeholderTextColor={colors.gray}
-                editable={true}
               />
             </View>
           </View>
 
-          {/* Coordinates */}
           {formData.address.latitude !== 0 &&
             formData.address.longitude !== 0 && (
               <View style={styles.coordinates}>
                 <Text style={styles.coordinateText}>
-                  Latitude: {formData.address.latitude.toFixed(6)}
+                  Latitude: {formData.address.latitude!.toFixed(6)}
                 </Text>
                 <Text style={styles.coordinateText}>
-                  Longitude: {formData.address.longitude.toFixed(6)}
+                  Longitude: {formData.address.longitude!.toFixed(6)}
                 </Text>
               </View>
             )}
@@ -865,9 +846,7 @@ const DryClean: React.FC = () => {
             />
             <Text style={styles.buttonText}>
               {images.shopImages.length > 0
-                ? `${images.shopImages.length} Shop Image${
-                    images.shopImages.length > 1 ? "s" : ""
-                  } Selected`
+                ? `${images.shopImages.length} Shop Image${images.shopImages.length > 1 ? "s" : ""} Selected`
                 : "Select Shop Images (Max 4)"}
             </Text>
           </TouchableOpacity>
@@ -981,23 +960,33 @@ const DryClean: React.FC = () => {
                   />
                 </View>
                 <View style={styles.halfInput}>
-                  <Text style={styles.label}>Starch Level (1-5)</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={service.strachLevel?.toString()}
-                    onChangeText={(value) =>
-                      handleServiceChange(
-                        index,
-                        "strachLevel",
-                        parseInt(value) || 3
-                      )
-                    }
-                    placeholder="3"
-                    keyboardType="numeric"
-                    placeholderTextColor={colors.gray}
-                  />
+                  <Text style={styles.label}>Starch Level</Text>
+                  <View style={styles.pickerContainer}>
+                    <Picker
+                      selectedValue={service.starchLevel}
+                      onValueChange={(value) =>
+                        handleServiceChange(index, "starchLevel", value)
+                      }
+                      style={styles.picker}
+                    >
+                      <Picker.Item label="Low" value="low" />
+                      <Picker.Item label="Medium" value="medium" />
+                      <Picker.Item label="High" value="high" />
+                    </Picker>
+                  </View>
                 </View>
               </View>
+
+              {/* ✅ Multi-select Additional Services — matches MyDryCleaners exactly */}
+              <Text style={styles.label}>
+                Additional Services (select all that apply)
+              </Text>
+              <AdditionalServicePicker
+                value={service.additionalservice}
+                onChange={(updated) =>
+                  handleServiceChange(index, "additionalservice", updated)
+                }
+              />
             </View>
           ))}
         </View>
@@ -1031,7 +1020,6 @@ const DryClean: React.FC = () => {
         onRequestClose={() => setMapModalVisible(false)}
       >
         <View style={styles.modalContainer}>
-          {/* Map Modal Header */}
           <View style={styles.modalHeader}>
             <TouchableOpacity onPress={() => setMapModalVisible(false)}>
               <Ionicons name="arrow-back" size={30} color={colors.brandColor} />
@@ -1045,7 +1033,6 @@ const DryClean: React.FC = () => {
             </TouchableOpacity>
           </View>
 
-          {/* Search Bar */}
           <View style={styles.searchContainer}>
             <View style={styles.searchInputContainer}>
               <Ionicons
@@ -1081,7 +1068,6 @@ const DryClean: React.FC = () => {
             </TouchableOpacity>
           </View>
 
-          {/* Map View */}
           {currentLocation && (
             <MapView
               style={styles.map}
@@ -1106,7 +1092,6 @@ const DryClean: React.FC = () => {
             </MapView>
           )}
 
-          {/* Map Controls */}
           <View style={styles.mapControls}>
             <TouchableOpacity
               style={styles.mapControlButton}
@@ -1126,18 +1111,12 @@ const DryClean: React.FC = () => {
   );
 };
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#FAFAFA",
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    paddingTop: 10,
-    paddingBottom: 40,
-  },
+  container: { flex: 1, backgroundColor: "#FAFAFA" },
+  scrollView: { flex: 1 },
+  scrollContent: { paddingTop: 10, paddingBottom: 40 },
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -1197,22 +1176,10 @@ const styles = StyleSheet.create({
     fontSize: responsiveFontSize(14),
     color: colors.black,
   },
-  textArea: {
-    height: responsiveHeight(10),
-    textAlignVertical: "top",
-  },
-  row: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  halfInput: {
-    width: "48%",
-  },
-  locationButtons: {
-    flexDirection: "row",
-    gap: 10,
-    marginBottom: 15,
-  },
+  textArea: { height: responsiveHeight(10), textAlignVertical: "top" },
+  row: { flexDirection: "row", justifyContent: "space-between" },
+  halfInput: { width: "48%" },
+  locationButtons: { flexDirection: "row", gap: 10, marginBottom: 15 },
   locationButton: {
     flex: 1,
     backgroundColor: "#4CAF50",
@@ -1252,12 +1219,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  locationInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    flex: 1,
-    gap: 8,
-  },
+  locationInfo: { flexDirection: "row", alignItems: "center", flex: 1, gap: 8 },
   locationText: {
     fontSize: responsiveFontSize(13),
     color: colors.black,
@@ -1281,10 +1243,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "#F0F0F0",
   },
-  coordinateText: {
-    fontSize: responsiveFontSize(12),
-    color: colors.gray,
-  },
+  coordinateText: { fontSize: responsiveFontSize(12), color: colors.gray },
   imageButton: {
     backgroundColor: colors.brandColor,
     flexDirection: "row",
@@ -1395,10 +1354,50 @@ const styles = StyleSheet.create({
     borderColor: colors.lightGray,
     overflow: "hidden",
   },
-  picker: {
-    height: 50,
-    width: "100%",
+  picker: { height: 50, width: "100%" },
+
+  // ✅ Chip styles — matches MyDryCleaners
+  chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 4 },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: colors.lightGray,
+    backgroundColor: "#FFFFFF",
   },
+  chipActive: {
+    borderColor: colors.brandColor,
+    backgroundColor: "#FFF3E6",
+  },
+  chipText: {
+    fontSize: responsiveFontSize(13),
+    color: colors.gray,
+    fontWeight: "500",
+  },
+  chipTextActive: { color: colors.brandColor, fontWeight: "700" },
+
+  // ✅ Per-option price row — matches MyDryCleaners
+  additionalPriceRow: {
+    marginTop: 10,
+    padding: 12,
+    backgroundColor: "#FFF3E6",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#FFE5C8",
+  },
+  additionalPriceLabel: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 8,
+  },
+  additionalPriceLabelText: {
+    fontSize: responsiveFontSize(13),
+    fontWeight: "600",
+    color: colors.black,
+  },
+
   submitButton: {
     backgroundColor: colors.brandColor,
     flexDirection: "row",
@@ -1421,13 +1420,8 @@ const styles = StyleSheet.create({
     fontSize: responsiveFontSize(16),
     fontWeight: "bold",
   },
-  disabledButton: {
-    opacity: 0.6,
-  },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-  },
+  disabledButton: { opacity: 0.6 },
+  modalContainer: { flex: 1, backgroundColor: "#FFFFFF" },
   modalHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -1439,22 +1433,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#F0F0F0",
   },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: colors.black,
-  },
+  modalTitle: { fontSize: 18, fontWeight: "bold", color: colors.black },
   confirmButton: {
     backgroundColor: colors.brandColor,
     paddingHorizontal: 15,
     paddingVertical: 8,
     borderRadius: 8,
   },
-  confirmButtonText: {
-    color: "#FFF",
-    fontSize: 14,
-    fontWeight: "600",
-  },
+  confirmButtonText: { color: "#FFF", fontSize: 14, fontWeight: "600" },
   searchContainer: {
     padding: 15,
     backgroundColor: "#FFFFFF",
@@ -1469,9 +1455,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     marginBottom: 10,
   },
-  searchIcon: {
-    marginRight: 8,
-  },
+  searchIcon: { marginRight: 8 },
   searchInput: {
     flex: 1,
     paddingVertical: 12,
@@ -1484,20 +1468,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     alignItems: "center",
   },
-  searchButtonText: {
-    color: "#FFF",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  map: {
-    flex: 1,
-    width: "100%",
-  },
-  mapControls: {
-    position: "absolute",
-    bottom: 30,
-    right: 20,
-  },
+  searchButtonText: { color: "#FFF", fontSize: 16, fontWeight: "600" },
+  map: { flex: 1, width: "100%" },
+  mapControls: { position: "absolute", bottom: 30, right: 20 },
   mapControlButton: {
     width: 50,
     height: 50,

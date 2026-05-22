@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React from "react";
 import {
   StatusBar,
   StyleSheet,
@@ -33,7 +33,7 @@ export default function OnboardingScreen() {
         backgroundColor="transparent"
       />
 
-      {/* V LOGO */}
+      {/* LOGO */}
       <View style={styles.logoContainer}>
         <Image
           source={images.Vlogo}
@@ -56,6 +56,16 @@ export default function OnboardingScreen() {
         />
       </View>
 
+      {/* GET STARTED BUTTON (CENTERED BELOW CAR) */}
+      <TouchableOpacity
+        onPress={handleGetStarted}
+        style={styles.getStartedButton}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.getStartedText}>Get Started</Text>
+        <Text style={styles.arrow}>›</Text>
+      </TouchableOpacity>
+
       {/* CURVE DESIGN */}
       <View style={styles.curveContainer}>
         <Image
@@ -64,18 +74,6 @@ export default function OnboardingScreen() {
           resizeMode="contain"
         />
       </View>
-
-      {/* GET STARTED BUTTON */}
-      <TouchableOpacity
-        onPress={handleGetStarted}
-        style={styles.getStartedButton}
-        activeOpacity={0.7}
-      >
-        <View>
-          <Text style={styles.getStartedText}>Get Started</Text>
-        </View>
-        <Text style={styles.arrow}>›</Text>
-      </TouchableOpacity>
     </View>
   );
 }
@@ -118,28 +116,19 @@ const styles = StyleSheet.create({
     height: "100%",
   },
 
-  // Curve design
-  curveContainer: {
-    width: responsiveWidth(95),
-    alignSelf: "flex-end",
-    height: responsiveHeight(30),
-    position: "absolute",
-    bottom: -30,
-    zIndex: 2,
-  },
-  curveImage: {
-    width: "100%",
-    height: "100%",
-    resizeMode: "contain",
-  },
-
-  // Get Started button
+  // Get Started button (CENTERED)
   getStartedButton: {
     flexDirection: "row",
-    position: "absolute",
-    bottom: responsiveHeight(4),
-    right: responsiveWidth(5),
     alignItems: "center",
+    justifyContent: "center",
+
+    marginTop: responsiveHeight(0),
+    alignSelf: "center",
+
+    backgroundColor: "#FF9401",
+    paddingVertical: responsiveHeight(1.5),
+    paddingHorizontal: responsiveWidth(8),
+    borderRadius: 30,
 
     zIndex: 5,
   },
@@ -154,5 +143,19 @@ const styles = StyleSheet.create({
     fontSize: responsiveFontSize(2.5),
     color: colors.white,
     marginLeft: 5,
+  },
+
+  // Curve design
+  curveContainer: {
+    width: responsiveWidth(95),
+    alignSelf: "flex-end",
+    height: responsiveHeight(30),
+    position: "absolute",
+    bottom: -30,
+    zIndex: 2,
+  },
+  curveImage: {
+    width: "100%",
+    height: "100%",
   },
 });

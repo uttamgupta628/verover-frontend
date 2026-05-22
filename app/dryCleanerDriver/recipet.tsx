@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  Image,
   TouchableOpacity,
   Dimensions,
   Alert,
@@ -18,497 +17,170 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSelector } from 'react-redux';
-import * as Print from 'expo-print';
-import * as Sharing from 'expo-sharing';
-import { captureRef } from 'react-native-view-shot';
 import QRCode from 'react-native-qrcode-svg';
-import { images } from '../../assets/images/images';
 import colors from '../../assets/color';
-import axiosInstance from '../../api/axios';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
+// ── Helpers ────────────────────────────────────────────────────────────────
+const formatCurrency = (val: any) => `$${parseFloat(String(val || 0)).toFixed(2)}`;
+
+const formatDate = (d?: string) => {
+  if (!d) return new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
+
+const formatTime = (d?: string) => {
+  if (!d) return new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+  return new Date(d).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+};
+
+// ════════════════════════════════════════════════════════════════════════════
 const DriverReceipt = () => {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const receiptRef = useRef<View>(null);
-  const qrCodeRef = useRef<any>(null);
-  
-  // Redux auth state
   const { user, token, isAuthenticated } = useSelector((state: any) => state.auth);
-  
-  // Parse booking data
-  const [bookingData, setBookingData] = useState<any>(null);
-  const [receiptData, setReceiptData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [isSharing, setIsSharing] = useState(false);
-  const [isPrinting, setIsPrinting] = useState(false);
-  const [showQRModal, setShowQRModal] = useState(false);
-  const [qrDataUrl, setQrDataUrl] = useState<string>('');
 
+  const [receipt, setReceipt] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [showQRModal, setShowQRModal] = useState(false);
+  const [isSharing, setIsSharing] = useState(false);
+
+  // ── Parse & build receipt from params ────────────────────────────────────
   useEffect(() => {
     try {
+      let data: any = null;
       if (params.bookingData && typeof params.bookingData === 'string') {
-        const parsed = JSON.parse(params.bookingData);
-        console.log('📦 Parsed booking data:', parsed);
-        setBookingData(parsed);
-      } else if (params.bookingData && typeof params.bookingData === 'object') {
-        setBookingData(params.bookingData);
+        data = JSON.parse(params.bookingData);
+      } else if (params.bookingData) {
+        data = params.bookingData;
       }
-    } catch (error) {
-      console.error('❌ Error parsing booking data:', error);
+
+      if (!data) { Alert.alert('Error', 'No receipt data found'); return; }
+
+      const driverName =
+        data.driver?.name ||
+        `${user?.firstName || ''} ${user?.lastName || ''}`.trim() ||
+        user?.fullName ||
+        'Driver';
+
+      const deliveryCharge = parseFloat(String(
+        data.deliveryCharge ?? data.pricing?.deliveryCharge ?? data.price ?? 0,
+      ));
+      const tip = parseFloat(String(
+        data.estimatedTip ?? data.pricing?.estimatedTip ?? data.tip ?? 5,
+      ));
+      const platformFee = parseFloat(String(data.platformFee ?? 0));
+      const tax = parseFloat(String(data.tax ?? 0));
+      const total = deliveryCharge + tip + tax - platformFee;
+
+      const receiptNumber = `RCP-${Date.now().toString().slice(-8)}`;
+
+      setReceipt({
+        receiptNumber,
+        bookingId: data.id || data._id,
+        orderNumber: data.orderNumber || 'N/A',
+        trackingId: data.Tracking_ID || data.trackingId || 'N/A',
+        completedAt: data.completedAt || new Date().toISOString(),
+
+        driver: {
+          name: driverName,
+          id: data.driver?.id || user?._id || 'N/A',
+          phone: data.driver?.phone || user?.phoneNumber || user?.phone || 'N/A',
+          email: data.driver?.email || user?.email || 'N/A',
+        },
+
+        customer: {
+          name: data.user?.name ||
+            `${data.user?.firstName || ''} ${data.user?.lastName || ''}`.trim() ||
+            'Customer',
+          phone: data.user?.phone || data.user?.phoneNumber || 'N/A',
+        },
+
+        service: {
+          provider: data.dryCleaner?.shopname || data.dryCleaner?.name || data.name || 'Dry Cleaning Service',
+          type: 'Dry Clean Pickup & Delivery',
+        },
+
+        route: {
+          pickup: data.pickupAddress || 'N/A',
+          dropoff: data.dropoffAddress || data.dropOff || 'N/A',
+          distance: data.calculatedDistance || data.distance || data.routeDistance || 'N/A',
+          duration: data.calculatedDuration || data.time || data.routeDuration || 'N/A',
+        },
+
+        payment: {
+          deliveryCharge,
+          tip,
+          tax,
+          platformFee,
+          total,
+        },
+
+        timeline: {
+          accepted: data.acceptedAt,
+          pickedUp: data.pickedUpAt || data.pickupCompletedAt,
+          droppedAtCenter: data.dropoffCompletedAt,
+          completed: data.completedAt || new Date().toISOString(),
+        },
+      });
+    } catch (err) {
       Alert.alert('Error', 'Failed to load receipt data');
+    } finally {
+      setLoading(false);
     }
   }, [params.bookingData]);
 
-  // Fetch receipt details from backend
-  useEffect(() => {
-    const fetchReceiptData = async () => {
-      if (!bookingData?.id && !bookingData?._id) return;
-      
-      try {
-        setLoading(true);
-        const bookingId = bookingData.id || bookingData._id;
-        
-        console.log('📡 Fetching receipt from backend:', bookingId);
-        
-        const response = await axiosInstance.get(`/users/receipts/driver/${bookingId}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        
-        if (response.data.success) {
-          console.log('✅ Receipt fetched:', response.data.data);
-          setReceiptData(response.data.data);
-        } else {
-          // Use local data as fallback
-          console.log('⚠️ Using local booking data');
-          setReceiptData(generateLocalReceipt(bookingData));
-        }
-      } catch (error: any) {
-        console.error('❌ Error fetching receipt:', error);
-        // Generate receipt from local data
-        setReceiptData(generateLocalReceipt(bookingData));
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (bookingData) {
-      fetchReceiptData();
-    }
-  }, [bookingData, token]);
-
-  // Generate receipt from local data
-  const generateLocalReceipt = (data: any) => {
-    const now = new Date();
-    return {
-      receiptNumber: `RCP-${Date.now()}`,
-      bookingId: data.id || data._id,
-      orderNumber: data.orderNumber || 'N/A',
-      date: now.toLocaleDateString(),
-      time: now.toLocaleTimeString(),
-      
-      driver: {
-        name: data.driver?.name || `${user.firstName} ${user.lastName}`.trim() || user.fullName || 'Driver',
-        id: data.driver?.id || user._id,
-        phone: data.driver?.phone || user.phone || 'N/A',
-      },
-      
-      customer: {
-        name: data.customerName || data.user?.name || 'Customer',
-        phone: data.customerPhone || 'N/A',
-      },
-      
-      service: {
-        provider: data.dryCleaner?.shopname || 'Dry Cleaning Service',
-        type: 'Pickup & Delivery',
-      },
-      
-      route: {
-        pickupAddress: data.pickupAddress || 'N/A',
-        dropoffAddress: data.dropoffAddress || data.dropOff || 'N/A',
-        distance: data.calculatedDistance || data.distanceInKm || data.routeDistance || 'N/A',
-        duration: data.calculatedDuration || data.routeDuration || 'N/A',
-      },
-      
-      payment: {
-        deliveryCharge: parseFloat(data.deliveryCharge || data.pricing?.deliveryCharge || 0),
-        tip: parseFloat(data.estimatedTip || data.tip || data.pricing?.estimatedTip || 0),
-        tax: parseFloat(data.tax || 0),
-        platformFee: parseFloat(data.platformFee || 0),
-        total: 0, // Will calculate
-      },
-      
-      timeline: {
-        accepted: data.acceptedAt || now.toISOString(),
-        pickedUp: data.pickedUpAt || now.toISOString(),
-        delivered: data.deliveredAt || data.dropoffCompletedAt || now.toISOString(),
-      },
-      
-      status: data.status || 'completed',
-    };
-  };
-
-  // Calculate totals
-  useEffect(() => {
-    if (receiptData?.payment) {
-      const { deliveryCharge, tip, tax, platformFee } = receiptData.payment;
-      const total = deliveryCharge + tip + tax - platformFee;
-      setReceiptData((prev: any) => ({
-        ...prev,
-        payment: {
-          ...prev.payment,
-          total: total,
-          earnings: total,
-        }
-      }));
-    }
-  }, [receiptData?.payment?.deliveryCharge]);
-
-  // Generate QR Code Data
-  const generateQRData = () => {
-    if (!receiptData) return '';
-    
-    const qrData = {
-      receiptNumber: receiptData.receiptNumber,
-      bookingId: receiptData.bookingId,
-      orderNumber: receiptData.orderNumber,
-      driver: {
-        name: receiptData.driver?.name,
-        id: receiptData.driver?.id,
-      },
-      service: receiptData.service?.provider,
-      date: receiptData.date,
-      time: receiptData.time,
-      total: receiptData.payment?.total || 0,
-      status: receiptData.status,
-      // Add verification URL
-      verifyUrl: `https://yourapp.com/verify/${receiptData.receiptNumber}`,
-    };
-    
-    return JSON.stringify(qrData);
-  };
-
-  // Handle QR Code generation callback
-  const handleQRCodeGenerated = (dataUrl: string) => {
-    setQrDataUrl(dataUrl);
-  };
-
-  // Format currency
-  const formatCurrency = (amount: number) => {
-    return `$${amount.toFixed(2)}`;
-  };
-
-  // Format date and time
-  const formatDateTime = (dateString: string) => {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
-    return {
-      date: date.toLocaleDateString('en-US', { 
-        month: 'short', 
-        day: 'numeric', 
-        year: 'numeric' 
-      }),
-      time: date.toLocaleTimeString('en-US', { 
-        hour: '2-digit', 
-        minute: '2-digit' 
+  // ── QR payload ────────────────────────────────────────────────────────────
+  const qrValue = receipt
+    ? JSON.stringify({
+        receiptNumber: receipt.receiptNumber,
+        bookingId: receipt.bookingId,
+        orderNumber: receipt.orderNumber,
+        driver: { name: receipt.driver.name, id: receipt.driver.id },
+        total: receipt.payment.total,
+        date: formatDate(receipt.completedAt),
+        status: 'completed',
       })
-    };
-  };
+    : 'no-data';
 
-  // Share receipt as image
-  const handleShareReceipt = async () => {
+  // ── Share ─────────────────────────────────────────────────────────────────
+  const handleShare = async () => {
+    if (!receipt) return;
+    setIsSharing(true);
     try {
-      setIsSharing(true);
-      
-      if (Platform.OS === 'web') {
-        const shareData = {
-          title: 'Delivery Receipt',
-          text: `Receipt #${receiptData?.receiptNumber}\nTotal Earnings: ${formatCurrency(receiptData?.payment?.total || 0)}`,
-        };
-        
-        if (navigator.share) {
-          await navigator.share(shareData);
-        } else {
-          Alert.alert('Success', 'Receipt link copied to clipboard');
-        }
-      } else {
-        if (receiptRef.current) {
-          const uri = await captureRef(receiptRef, {
-            format: 'png',
-            quality: 1,
-          });
-          
-          await Sharing.shareAsync(uri, {
-            mimeType: 'image/png',
-            dialogTitle: 'Share Receipt',
-          });
-        }
-      }
-    } catch (error) {
-      console.error('❌ Share error:', error);
-      Alert.alert('Error', 'Failed to share receipt');
-    } finally {
-      setIsSharing(false);
-    }
-  };
-
-  // Print receipt as PDF
-  const handlePrintReceipt = async () => {
-    try {
-      setIsPrinting(true);
-      
-      const htmlContent = generateReceiptHTML();
-      
-      const { uri } = await Print.printToFileAsync({
-        html: htmlContent,
-        base64: false,
+      await Share.share({
+        title: 'Delivery Receipt',
+        message:
+          `🧾 Delivery Receipt\n` +
+          `Receipt: #${receipt.receiptNumber}\n` +
+          `Order: ${receipt.orderNumber}\n` +
+          `Date: ${formatDate(receipt.completedAt)}\n` +
+          `Service: ${receipt.service.provider}\n` +
+          `Distance: ${receipt.route.distance}\n` +
+          `Duration: ${receipt.route.duration}\n\n` +
+          `💰 Earnings\n` +
+          `Delivery Charge: ${formatCurrency(receipt.payment.deliveryCharge)}\n` +
+          `Tip: ${formatCurrency(receipt.payment.tip)}\n` +
+          (receipt.payment.platformFee > 0 ? `Platform Fee: -${formatCurrency(receipt.payment.platformFee)}\n` : '') +
+          `Total Earnings: ${formatCurrency(receipt.payment.total)}\n\n` +
+          `Pickup: ${receipt.route.pickup}\n` +
+          `Dropoff: ${receipt.route.dropoff}`,
       });
-      
-      await Sharing.shareAsync(uri, {
-        mimeType: 'application/pdf',
-        dialogTitle: 'Save Receipt PDF',
-      });
-      
-      Alert.alert('Success', 'Receipt PDF generated successfully');
-    } catch (error) {
-      console.error('❌ Print error:', error);
-      Alert.alert('Error', 'Failed to generate PDF');
-    } finally {
-      setIsPrinting(false);
-    }
+    } catch { /* user cancelled */ }
+    setIsSharing(false);
   };
 
-  // Generate HTML for PDF
-  const generateReceiptHTML = () => {
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="UTF-8">
-        <style>
-          body {
-            font-family: 'Helvetica', 'Arial', sans-serif;
-            padding: 40px;
-            color: #333;
-          }
-          .header {
-            text-align: center;
-            margin-bottom: 30px;
-            border-bottom: 3px solid #FF8C00;
-            padding-bottom: 20px;
-          }
-          .header h1 {
-            color: #FF8C00;
-            margin: 0;
-            font-size: 32px;
-          }
-          .header p {
-            margin: 5px 0;
-            color: #666;
-          }
-          .qr-container {
-            text-align: center;
-            margin: 20px 0;
-            padding: 20px;
-            background: #f9f9f9;
-            border-radius: 8px;
-          }
-          .qr-container img {
-            width: 150px;
-            height: 150px;
-          }
-          .section {
-            margin: 20px 0;
-            padding: 15px;
-            background: #f9f9f9;
-            border-radius: 8px;
-          }
-          .section-title {
-            font-weight: bold;
-            font-size: 18px;
-            color: #FF8C00;
-            margin-bottom: 10px;
-            border-bottom: 2px solid #FF8C00;
-            padding-bottom: 5px;
-          }
-          .row {
-            display: flex;
-            justify-content: space-between;
-            padding: 8px 0;
-          }
-          .row.total {
-            border-top: 2px solid #333;
-            margin-top: 10px;
-            padding-top: 10px;
-            font-weight: bold;
-            font-size: 20px;
-            color: #4CAF50;
-          }
-          .label {
-            color: #666;
-          }
-          .value {
-            font-weight: 500;
-            text-align: right;
-          }
-          .footer {
-            margin-top: 40px;
-            text-align: center;
-            color: #999;
-            font-size: 12px;
-            border-top: 1px solid #ddd;
-            padding-top: 20px;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="header">
-          <h1>🚗 Delivery Receipt</h1>
-          <p>Receipt #${receiptData?.receiptNumber || 'N/A'}</p>
-          <p>${receiptData?.date || 'N/A'} at ${receiptData?.time || 'N/A'}</p>
-        </div>
+  const handleGoHome = () => router.replace('/dryCleanerDriver/orderRequest');
 
-        <div class="qr-container">
-          <img src="${qrDataUrl}" alt="QR Code" />
-          <p style="margin-top: 10px; color: #666; font-size: 12px;">
-            Scan to verify receipt details
-          </p>
-        </div>
-
-        <div class="section">
-          <div class="section-title">Driver Information</div>
-          <div class="row">
-            <span class="label">Name:</span>
-            <span class="value">${receiptData?.driver?.name || 'N/A'}</span>
-          </div>
-          <div class="row">
-            <span class="label">Driver ID:</span>
-            <span class="value">${receiptData?.driver?.id || 'N/A'}</span>
-          </div>
-          <div class="row">
-            <span class="label">Phone:</span>
-            <span class="value">${receiptData?.driver?.phone || 'N/A'}</span>
-          </div>
-        </div>
-
-        <div class="section">
-          <div class="section-title">Service Details</div>
-          <div class="row">
-            <span class="label">Order Number:</span>
-            <span class="value">${receiptData?.orderNumber || 'N/A'}</span>
-          </div>
-          <div class="row">
-            <span class="label">Service Provider:</span>
-            <span class="value">${receiptData?.service?.provider || 'N/A'}</span>
-          </div>
-          <div class="row">
-            <span class="label">Service Type:</span>
-            <span class="value">${receiptData?.service?.type || 'N/A'}</span>
-          </div>
-        </div>
-
-        <div class="section">
-          <div class="section-title">Route Information</div>
-          <div class="row">
-            <span class="label">Pickup:</span>
-            <span class="value">${receiptData?.route?.pickupAddress || 'N/A'}</span>
-          </div>
-          <div class="row">
-            <span class="label">Dropoff:</span>
-            <span class="value">${receiptData?.route?.dropoffAddress || 'N/A'}</span>
-          </div>
-          <div class="row">
-            <span class="label">Distance:</span>
-            <span class="value">${receiptData?.route?.distance || 'N/A'}</span>
-          </div>
-          <div class="row">
-            <span class="label">Duration:</span>
-            <span class="value">${receiptData?.route?.duration || 'N/A'}</span>
-          </div>
-        </div>
-
-        <div class="section">
-          <div class="section-title">Payment Breakdown</div>
-          <div class="row">
-            <span class="label">Delivery Charge:</span>
-            <span class="value">${formatCurrency(receiptData?.payment?.deliveryCharge || 0)}</span>
-          </div>
-          <div class="row">
-            <span class="label">Tip:</span>
-            <span class="value">${formatCurrency(receiptData?.payment?.tip || 0)}</span>
-          </div>
-          <div class="row">
-            <span class="label">Tax:</span>
-            <span class="value">${formatCurrency(receiptData?.payment?.tax || 0)}</span>
-          </div>
-          <div class="row">
-            <span class="label">Platform Fee:</span>
-            <span class="value">-${formatCurrency(receiptData?.payment?.platformFee || 0)}</span>
-          </div>
-          <div class="row total">
-            <span class="label">Total Earnings:</span>
-            <span class="value">${formatCurrency(receiptData?.payment?.total || 0)}</span>
-          </div>
-        </div>
-
-        <div class="footer">
-          <p>Thank you for your service!</p>
-          <p>This is a computer-generated receipt</p>
-        </div>
-      </body>
-      </html>
-    `;
-  };
-
-  // Send receipt via email
-  const handleEmailReceipt = async () => {
-    try {
-      const response = await axiosInstance.post('/users/receipts/send-email', {
-        receiptId: receiptData?.receiptNumber,
-        driverEmail: user.email,
-        bookingId: receiptData?.bookingId,
-      }, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (response.data.success) {
-        Alert.alert('Success', 'Receipt sent to your email');
-      } else {
-        throw new Error('Failed to send email');
-      }
-    } catch (error) {
-      console.error('❌ Email error:', error);
-      Alert.alert('Error', 'Failed to send receipt email');
-    }
-  };
-
-  // Navigate to home
-  const handleGoHome = () => {
-    router.replace('/driverHome'); 
-  };
-
-  // Show QR Code Modal
-  const handleShowQR = () => {
-    setShowQRModal(true);
-  };
-
+  // ── Guards ────────────────────────────────────────────────────────────────
   if (!isAuthenticated || !token) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.headerContainer}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <MaterialIcons name="arrow-back" size={35} color={colors.brandColor} />
-          </TouchableOpacity>
+        <View style={styles.header}>
           <Text style={styles.headerTitle}>Receipt</Text>
         </View>
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>Authentication required</Text>
-        </View>
+        <View style={styles.center}><Text style={styles.errorText}>Authentication required</Text></View>
       </SafeAreaView>
     );
   }
@@ -516,849 +188,410 @@ const DriverReceipt = () => {
   if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.headerContainer}>
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <MaterialIcons name="arrow-back" size={35} color={colors.brandColor} />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Receipt</Text>
-        </View>
-        <View style={styles.loadingContainer}>
+        <View style={styles.header}><Text style={styles.headerTitle}>Receipt</Text></View>
+        <View style={styles.center}>
           <ActivityIndicator size="large" color="#FF8C00" />
-          <Text style={styles.loadingText}>Loading receipt...</Text>
+          <Text style={styles.loadingText}>Building receipt...</Text>
         </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!receipt) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}><Text style={styles.headerTitle}>Receipt</Text></View>
+        <View style={styles.center}><Text style={styles.errorText}>No receipt data found</Text></View>
       </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header */}
-      <View style={styles.headerContainer}>
-        <TouchableOpacity style={styles.backButton} onPress={handleGoHome}>
-          <MaterialIcons name="home" size={35} color={colors.brandColor} />
+      {/* ── Header ─────────────────────────────────────────────────────────── */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.iconBtn} onPress={handleGoHome}>
+          <MaterialIcons name="home" size={26} color={colors.brandColor} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Receipt</Text>
-        <TouchableOpacity 
-          style={styles.headerButton}
-          onPress={handleShowQR}
-        >
-          <MaterialIcons name="qr-code-2" size={24} color={colors.brandColor} />
+        <Text style={styles.headerTitle}>Delivery Receipt</Text>
+        <TouchableOpacity style={styles.iconBtn} onPress={() => setShowQRModal(true)}>
+          <MaterialIcons name="qr-code-2" size={26} color={colors.brandColor} />
         </TouchableOpacity>
       </View>
 
-      <ScrollView 
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Receipt Card */}
-        <View style={styles.receiptCard} ref={receiptRef}>
-          {/* Receipt Header */}
-          <View style={styles.receiptHeader}>
-            <View style={styles.receiptIconContainer}>
-              <MaterialIcons name="receipt-long" size={40} color="#FFFFFF" />
-            </View>
-            <Text style={styles.receiptTitle}>Delivery Receipt</Text>
-            <Text style={styles.receiptNumber}>#{receiptData?.receiptNumber}</Text>
-            <View style={styles.statusBadge}>
-              <MaterialIcons name="check-circle" size={16} color="#FFFFFF" />
-              <Text style={styles.statusText}>COMPLETED</Text>
-            </View>
+      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+
+        {/* ── Success banner ─────────────────────────────────────────────── */}
+        <View style={styles.successBanner}>
+          <View style={styles.successIconRing}>
+            <MaterialIcons name="check-circle" size={52} color="#FFFFFF" />
           </View>
-
-          {/* QR Code Section */}
-          <View style={styles.qrSection}>
-            <TouchableOpacity 
-              style={styles.qrCodeContainer}
-              onPress={handleShowQR}
-              activeOpacity={0.8}
-            >
-              <QRCode
-                value={generateQRData()}
-                size={120}
-                color="#000000"
-                backgroundColor="#FFFFFF"
-                getRef={(ref) => (qrCodeRef.current = ref)}
-                onLoad={handleQRCodeGenerated}
-              />
-            </TouchableOpacity>
-            <Text style={styles.qrLabel}>Tap to view QR Code</Text>
-            <Text style={styles.qrSubLabel}>Scan to verify receipt</Text>
-          </View>
-
-          {/* Date & Time */}
-          <View style={styles.dateTimeContainer}>
-            <View style={styles.dateTimeItem}>
-              <MaterialIcons name="calendar-today" size={18} color="#666" />
-              <Text style={styles.dateTimeText}>{receiptData?.date}</Text>
-            </View>
-            <View style={styles.dateTimeItem}>
-              <MaterialIcons name="access-time" size={18} color="#666" />
-              <Text style={styles.dateTimeText}>{receiptData?.time}</Text>
-            </View>
-          </View>
-
-          {/* Divider */}
-          <View style={styles.sectionDivider} />
-
-          {/* Driver Info */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Driver Information</Text>
-            <View style={styles.infoRow}>
-              <MaterialIcons name="person" size={20} color="#666" />
-              <Text style={styles.infoLabel}>Name</Text>
-              <Text style={styles.infoValue}>{receiptData?.driver?.name}</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <MaterialIcons name="badge" size={20} color="#666" />
-              <Text style={styles.infoLabel}>Driver ID</Text>
-              <Text style={styles.infoValue}>{receiptData?.driver?.id?.substring(0, 8)}...</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <MaterialIcons name="phone" size={20} color="#666" />
-              <Text style={styles.infoLabel}>Phone</Text>
-              <Text style={styles.infoValue}>{receiptData?.driver?.phone}</Text>
-            </View>
-          </View>
-
-          {/* Service Details */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Service Details</Text>
-            <View style={styles.infoRow}>
-              <MaterialIcons name="shopping-bag" size={20} color="#666" />
-              <Text style={styles.infoLabel}>Order #</Text>
-              <Text style={styles.infoValue}>{receiptData?.orderNumber}</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <MaterialIcons name="store" size={20} color="#666" />
-              <Text style={styles.infoLabel}>Provider</Text>
-              <Text style={styles.infoValue}>{receiptData?.service?.provider}</Text>
-            </View>
-            <View style={styles.infoRow}>
-              <MaterialIcons name="local-laundry-service" size={20} color="#666" />
-              <Text style={styles.infoLabel}>Service</Text>
-              <Text style={styles.infoValue}>{receiptData?.service?.type}</Text>
-            </View>
-          </View>
-
-          {/* Route Information */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Route Information</Text>
-            <View style={styles.routeContainer}>
-              <View style={styles.routePoint}>
-                <View style={styles.greenDot} />
-                <View style={styles.routeDetails}>
-                  <Text style={styles.routeLabel}>Pickup Location</Text>
-                  <Text style={styles.routeAddress}>{receiptData?.route?.pickupAddress}</Text>
-                </View>
-              </View>
-              
-              <View style={styles.routeLine} />
-              
-              <View style={styles.routePoint}>
-                <View style={styles.orangeDot} />
-                <View style={styles.routeDetails}>
-                  <Text style={styles.routeLabel}>Dropoff Location</Text>
-                  <Text style={styles.routeAddress}>{receiptData?.route?.dropoffAddress}</Text>
-                </View>
-              </View>
-            </View>
-            
-            <View style={styles.routeStats}>
-              <View style={styles.routeStatItem}>
-                <MaterialIcons name="straighten" size={20} color="#FF8C00" />
-                <Text style={styles.routeStatValue}>{receiptData?.route?.distance}</Text>
-              </View>
-              <View style={styles.routeStatItem}>
-                <MaterialIcons name="timer" size={20} color="#FF8C00" />
-                <Text style={styles.routeStatValue}>{receiptData?.route?.duration}</Text>
-              </View>
-            </View>
-          </View>
-
-          {/* Timeline */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Delivery Timeline</Text>
-            {receiptData?.timeline?.accepted && (
-              <View style={styles.timelineItem}>
-                <MaterialIcons name="check-circle" size={20} color="#4CAF50" />
-                <View style={styles.timelineContent}>
-                  <Text style={styles.timelineLabel}>Booking Accepted</Text>
-                  <Text style={styles.timelineTime}>
-                    {formatDateTime(receiptData.timeline.accepted).time}
-                  </Text>
-                </View>
-              </View>
-            )}
-            {receiptData?.timeline?.pickedUp && (
-              <View style={styles.timelineItem}>
-                <MaterialIcons name="local-shipping" size={20} color="#2196F3" />
-                <View style={styles.timelineContent}>
-                  <Text style={styles.timelineLabel}>Items Picked Up</Text>
-                  <Text style={styles.timelineTime}>
-                    {formatDateTime(receiptData.timeline.pickedUp).time}
-                  </Text>
-                </View>
-              </View>
-            )}
-            {receiptData?.timeline?.delivered && (
-              <View style={styles.timelineItem}>
-                <MaterialIcons name="done-all" size={20} color="#4CAF50" />
-                <View style={styles.timelineContent}>
-                  <Text style={styles.timelineLabel}>Delivered to Center</Text>
-                  <Text style={styles.timelineTime}>
-                    {formatDateTime(receiptData.timeline.delivered).time}
-                  </Text>
-                </View>
-              </View>
-            )}
-          </View>
-
-          {/* Payment Breakdown */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Payment Breakdown</Text>
-            <View style={styles.paymentRow}>
-              <Text style={styles.paymentLabel}>Delivery Charge</Text>
-              <Text style={styles.paymentValue}>
-                {formatCurrency(receiptData?.payment?.deliveryCharge || 0)}
-              </Text>
-            </View>
-            <View style={styles.paymentRow}>
-              <Text style={styles.paymentLabel}>Customer Tip</Text>
-              <Text style={[styles.paymentValue, styles.tipValue]}>
-                {formatCurrency(receiptData?.payment?.tip || 0)}
-              </Text>
-            </View>
-            {receiptData?.payment?.tax > 0 && (
-              <View style={styles.paymentRow}>
-                <Text style={styles.paymentLabel}>Tax</Text>
-                <Text style={styles.paymentValue}>
-                  {formatCurrency(receiptData.payment.tax)}
-                </Text>
-              </View>
-            )}
-            {receiptData?.payment?.platformFee > 0 && (
-              <View style={styles.paymentRow}>
-                <Text style={styles.paymentLabel}>Platform Fee</Text>
-                <Text style={[styles.paymentValue, styles.feeValue]}>
-                  -{formatCurrency(receiptData.payment.platformFee)}
-                </Text>
-              </View>
-            )}
-            
-            <View style={styles.totalDivider} />
-            
-            <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>Total Earnings</Text>
-              <Text style={styles.totalValue}>
-                {formatCurrency(receiptData?.payment?.total || 0)}
-              </Text>
-            </View>
-          </View>
-
-          {/* Footer Note */}
-          <View style={styles.footerNote}>
-            <MaterialIcons name="info-outline" size={18} color="#999" />
-            <Text style={styles.footerText}>
-              Earnings will be deposited to your account within 2-3 business days
-            </Text>
+          <Text style={styles.successTitle}>Delivery Complete! 🎉</Text>
+          <Text style={styles.successSub}>Great job! Your earnings have been recorded.</Text>
+          <View style={styles.bigEarnings}>
+            <Text style={styles.bigEarningsLabel}>Total Earnings</Text>
+            <Text style={styles.bigEarningsValue}>{formatCurrency(receipt.payment.total)}</Text>
           </View>
         </View>
+
+        {/* ── Receipt meta ───────────────────────────────────────────────── */}
+        <View style={styles.metaRow}>
+          <View style={styles.metaItem}>
+            <Text style={styles.metaLabel}>Receipt No.</Text>
+            <Text style={styles.metaValue}>#{receipt.receiptNumber}</Text>
+          </View>
+          <View style={styles.metaDivider} />
+          <View style={styles.metaItem}>
+            <Text style={styles.metaLabel}>Order No.</Text>
+            <Text style={styles.metaValue}>{receipt.orderNumber}</Text>
+          </View>
+          <View style={styles.metaDivider} />
+          <View style={styles.metaItem}>
+            <Text style={styles.metaLabel}>Date</Text>
+            <Text style={styles.metaValue}>{formatDate(receipt.completedAt)}</Text>
+          </View>
+        </View>
+
+        {/* ── QR Code preview ────────────────────────────────────────────── */}
+        <TouchableOpacity style={styles.qrCard} onPress={() => setShowQRModal(true)} activeOpacity={0.8}>
+          <View style={styles.qrBox}>
+            <QRCode value={qrValue} size={110} color="#000" backgroundColor="#fff" />
+          </View>
+          <View style={styles.qrInfo}>
+            <Text style={styles.qrTitle}>Scan to Verify</Text>
+            <Text style={styles.qrSub}>Tap to view full QR code</Text>
+            <View style={styles.completedBadge}>
+              <MaterialIcons name="verified" size={14} color="#fff" />
+              <Text style={styles.completedBadgeText}>COMPLETED</Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+
+        {/* ── Payment Breakdown ──────────────────────────────────────────── */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <MaterialIcons name="attach-money" size={20} color="#FF8C00" />
+            <Text style={styles.cardTitle}>Payment Breakdown</Text>
+          </View>
+          <View style={styles.payRow}>
+            <Text style={styles.payLabel}>Delivery Charge</Text>
+            <Text style={styles.payVal}>{formatCurrency(receipt.payment.deliveryCharge)}</Text>
+          </View>
+          <View style={styles.payRow}>
+            <Text style={styles.payLabel}>Customer Tip</Text>
+            <Text style={[styles.payVal, { color: '#4CAF50' }]}>{formatCurrency(receipt.payment.tip)}</Text>
+          </View>
+          {receipt.payment.tax > 0 && (
+            <View style={styles.payRow}>
+              <Text style={styles.payLabel}>Tax</Text>
+              <Text style={styles.payVal}>{formatCurrency(receipt.payment.tax)}</Text>
+            </View>
+          )}
+          {receipt.payment.platformFee > 0 && (
+            <View style={styles.payRow}>
+              <Text style={styles.payLabel}>Platform Fee</Text>
+              <Text style={[styles.payVal, { color: '#F44336' }]}>-{formatCurrency(receipt.payment.platformFee)}</Text>
+            </View>
+          )}
+          <View style={styles.totalDivider} />
+          <View style={styles.payRow}>
+            <Text style={styles.totalLabel}>Total Earnings</Text>
+            <Text style={styles.totalVal}>{formatCurrency(receipt.payment.total)}</Text>
+          </View>
+          <View style={styles.depositNote}>
+            <MaterialIcons name="info-outline" size={14} color="#999" />
+            <Text style={styles.depositText}>Earnings deposited within 2–3 business days</Text>
+          </View>
+        </View>
+
+        {/* ── Driver Info ────────────────────────────────────────────────── */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <MaterialIcons name="person" size={20} color="#FF8C00" />
+            <Text style={styles.cardTitle}>Driver Information</Text>
+          </View>
+          <InfoRow icon="badge" label="Name" value={receipt.driver.name} />
+          <InfoRow icon="phone" label="Phone" value={receipt.driver.phone} />
+          <InfoRow icon="email" label="Email" value={receipt.driver.email} />
+        </View>
+
+        {/* ── Customer Info ───────────────────────────────────────────────── */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <MaterialIcons name="account-circle" size={20} color="#FF8C00" />
+            <Text style={styles.cardTitle}>Customer Information</Text>
+          </View>
+          <InfoRow icon="person" label="Name" value={receipt.customer.name} />
+          <InfoRow icon="phone" label="Phone" value={receipt.customer.phone} />
+        </View>
+
+        {/* ── Service Details ─────────────────────────────────────────────── */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <MaterialIcons name="local-laundry-service" size={20} color="#FF8C00" />
+            <Text style={styles.cardTitle}>Service Details</Text>
+          </View>
+          <InfoRow icon="store" label="Provider" value={receipt.service.provider} />
+          <InfoRow icon="category" label="Service" value={receipt.service.type} />
+          <InfoRow icon="confirmation-number" label="Order #" value={receipt.orderNumber} />
+        </View>
+
+        {/* ── Route ──────────────────────────────────────────────────────── */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <MaterialIcons name="route" size={20} color="#FF8C00" />
+            <Text style={styles.cardTitle}>Route Information</Text>
+          </View>
+          <View style={styles.routeBlock}>
+            <View style={styles.routeRow}>
+              <View style={styles.greenDot} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.routeType}>Pickup</Text>
+                <Text style={styles.routeAddr}>{receipt.route.pickup}</Text>
+              </View>
+            </View>
+            <View style={styles.routeLine} />
+            <View style={styles.routeRow}>
+              <View style={styles.orangeDot} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.routeType}>Dropoff</Text>
+                <Text style={styles.routeAddr}>{receipt.route.dropoff}</Text>
+              </View>
+            </View>
+          </View>
+          <View style={styles.routeStats}>
+            <View style={styles.routeStat}>
+              <MaterialIcons name="straighten" size={18} color="#FF8C00" />
+              <Text style={styles.routeStatText}>{receipt.route.distance}</Text>
+            </View>
+            <View style={styles.routeStat}>
+              <MaterialIcons name="timer" size={18} color="#FF8C00" />
+              <Text style={styles.routeStatText}>{receipt.route.duration}</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* ── Timeline ───────────────────────────────────────────────────── */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <MaterialIcons name="timeline" size={20} color="#FF8C00" />
+            <Text style={styles.cardTitle}>Delivery Timeline</Text>
+          </View>
+          {receipt.timeline.accepted && (
+            <TimelineRow icon="assignment-turned-in" color="#FF8C00" label="Booking Accepted" time={receipt.timeline.accepted} />
+          )}
+          {receipt.timeline.pickedUp && (
+            <TimelineRow icon="local-shipping" color="#2196F3" label="Items Picked Up" time={receipt.timeline.pickedUp} />
+          )}
+          {receipt.timeline.droppedAtCenter && (
+            <TimelineRow icon="store" color="#9C27B0" label="Dropped at Dry Cleaner" time={receipt.timeline.droppedAtCenter} />
+          )}
+          {receipt.timeline.completed && (
+            <TimelineRow icon="done-all" color="#4CAF50" label="Delivery Completed" time={receipt.timeline.completed} />
+          )}
+        </View>
+
+        <View style={{ height: 120 }} />
       </ScrollView>
 
-      {/* QR Code Modal */}
-      <Modal
-        visible={showQRModal}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={() => setShowQRModal(false)}
-      >
+      {/* ── QR Modal ───────────────────────────────────────────────────────── */}
+      <Modal visible={showQRModal} transparent animationType="fade" onRequestClose={() => setShowQRModal(false)}>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Receipt QR Code</Text>
-              <TouchableOpacity 
-                onPress={() => setShowQRModal(false)}
-                style={styles.closeButton}
-              >
-                <MaterialIcons name="close" size={28} color="#666" />
+              <TouchableOpacity onPress={() => setShowQRModal(false)} style={styles.closeBtn}>
+                <MaterialIcons name="close" size={24} color="#666" />
               </TouchableOpacity>
             </View>
-            
-            <View style={styles.modalQRContainer}>
-              <View style={styles.qrWrapper}>
-                <QRCode
-                  value={generateQRData()}
-                  size={250}
-                  color="#000000"
-                  backgroundColor="#FFFFFF"
-                />
-              </View>
-              <Text style={styles.modalQRLabel}>Scan to verify receipt details</Text>
-              <Text style={styles.modalReceiptNumber}>#{receiptData?.receiptNumber}</Text>
+            <View style={styles.modalQR}>
+              <QRCode value={qrValue} size={240} color="#000" backgroundColor="#fff" />
             </View>
-            
-            <TouchableOpacity 
-              style={styles.modalButton}
-              onPress={() => setShowQRModal(false)}
-            >
-              <Text style={styles.modalButtonText}>Close</Text>
+            <Text style={styles.modalQRLabel}>Scan to verify delivery</Text>
+            <Text style={styles.modalReceiptNo}>#{receipt.receiptNumber}</Text>
+            <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setShowQRModal(false)}>
+              <Text style={styles.modalCloseBtnText}>Close</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* Action Buttons */}
-      <View style={styles.actionButtonsContainer}>
-        <View style={styles.actionButtons}>
-          <TouchableOpacity 
-            style={styles.shareButton}
-            onPress={handleShareReceipt}
-            disabled={isSharing}
-          >
-            {isSharing ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : (
-              <>
-                <MaterialIcons name="share" size={20} color="#FFFFFF" />
-                <Text style={styles.shareButtonText}>Share</Text>
-              </>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.downloadButton}
-            onPress={handlePrintReceipt}
-            disabled={isPrinting}
-          >
-            {isPrinting ? (
-              <ActivityIndicator color="#FFFFFF" size="small" />
-            ) : (
-              <>
-                <MaterialIcons name="download" size={20} color="#FFFFFF" />
-                <Text style={styles.downloadButtonText}>Download PDF</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        {/* Back to Home Button */}
-        <View style={styles.homeButtonContainer}>
-          <TouchableOpacity 
-            style={styles.homeButton}
-            onPress={handleGoHome}
-          >
-            <MaterialIcons name="home" size={24} color="#FFFFFF" />
-            <Text style={styles.homeButtonText}>Back to Home</Text>
-          </TouchableOpacity>
-        </View>
+      {/* ── Bottom action bar ─────────────────────────────────────────────── */}
+      <View style={styles.bottomBar}>
+        <TouchableOpacity style={styles.shareBtn} onPress={handleShare} disabled={isSharing}>
+          {isSharing
+            ? <ActivityIndicator color="#fff" size="small" />
+            : <>
+                <MaterialIcons name="share" size={20} color="#fff" />
+                <Text style={styles.shareBtnText}>Share Receipt</Text>
+              </>}
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.homeBtn} onPress={handleGoHome}>
+          <MaterialIcons name="home" size={22} color="#fff" />
+          <Text style={styles.homeBtnText}>Back to Orders</Text>
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
 };
 
+// ── Small helper components ────────────────────────────────────────────────
+const InfoRow = ({ icon, label, value }: { icon: any; label: string; value: string }) => (
+  <View style={styles.infoRow}>
+    <MaterialIcons name={icon} size={18} color="#999" />
+    <Text style={styles.infoLabel}>{label}</Text>
+    <Text style={styles.infoValue} numberOfLines={1}>{value}</Text>
+  </View>
+);
+
+const TimelineRow = ({ icon, color, label, time }: { icon: any; color: string; label: string; time: string }) => (
+  <View style={styles.timelineRow}>
+    <MaterialIcons name={icon} size={22} color={color} />
+    <View style={{ flex: 1 }}>
+      <Text style={styles.timelineLabel}>{label}</Text>
+      <Text style={styles.timelineTime}>{formatDate(time)} • {formatTime(time)}</Text>
+    </View>
+  </View>
+);
+
+// ── Styles ────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F5F5F5',
-  },
-  headerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  container: { flex: 1, backgroundColor: '#F4F5F7' },
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingTop: Platform.OS === 'ios' ? 10 : (StatusBar.currentHeight || 0),
-    paddingBottom: 10,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
-    zIndex: 100,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    marginTop: -60,
-  },
-  backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F8F8F8',
-  },
-  headerButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F8F8F8',
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#000000',
-    flex: 1,
-    textAlign: 'center',
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 180,
-  },
-  receiptCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  receiptHeader: {
-    backgroundColor: '#FF8C00',
-    padding: 24,
-    alignItems: 'center',
-  },
-  receiptIconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  receiptTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#FFFFFF',
-    marginBottom: 8,
-  },
-  receiptNumber: {
-    fontSize: 16,
-    color: 'rgba(255, 255, 255, 0.9)',
-    marginBottom: 12,
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#4CAF50',
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 20,
-    gap: 6,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#FFFFFF',
-    letterSpacing: 0.5,
-  },
-  qrSection: {
-    alignItems: 'center',
-    paddingVertical: 20,
-    backgroundColor: '#FAFAFA',
-  },
-  qrCodeContainer: {
-    padding: 16,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  qrLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginTop: 12,
-  },
-  qrSubLabel: {
-    fontSize: 12,
-    color: '#999',
-    marginTop: 4,
-  },
-  dateTimeContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    backgroundColor: '#F8F8F8',
-  },
-  dateTimeItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  dateTimeText: {
-    fontSize: 14,
-    color: '#666',
-    fontWeight: '500',
-  },
-  sectionDivider: {
-    height: 1,
-    backgroundColor: '#E0E0E0',
-    marginHorizontal: 20,
-  },
-  section: {
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#000000',
-    marginBottom: 16,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    gap: 12,
-  },
-  infoLabel: {
-    fontSize: 14,
-    color: '#666',
-    flex: 1,
-  },
-  infoValue: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#000000',
-    textAlign: 'right',
-  },
-  routeContainer: {
-    marginBottom: 16,
-  },
-  routePoint: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 8,
-  },
-  greenDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#4CAF50',
-    marginTop: 4,
-    marginRight: 12,
-  },
-  orangeDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#FF8C00',
-    marginTop: 4,
-    marginRight: 12,
-  },
-  routeDetails: {
-    flex: 1,
-  },
-  routeLabel: {
-    fontSize: 12,
-    color: '#999',
-    marginBottom: 4,
-  },
-  routeAddress: {
-    fontSize: 14,
-    color: '#000000',
-    lineHeight: 20,
-  },
-  routeLine: {
-    width: 2,
-    height: 24,
-    backgroundColor: '#DDD',
-    marginLeft: 5,
-    marginVertical: -8,
-  },
-  routeStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    backgroundColor: '#F8F8F8',
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 8,
-  },
-  routeStatItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  routeStatValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#000000',
-  },
-  timelineItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    gap: 12,
-  },
-  timelineContent: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  timelineLabel: {
-    fontSize: 14,
-    color: '#000000',
-    fontWeight: '500',
-  },
-  timelineTime: {
-    fontSize: 13,
-    color: '#666',
-  },
-  paymentRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  paymentLabel: {
-    fontSize: 14,
-    color: '#666',
-  },
-  paymentValue: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#000000',
-  },
-  tipValue: {
-    color: '#4CAF50',
-  },
-  feeValue: {
-    color: '#FF5252',
-  },
-  totalDivider: {
-    height: 2,
-    backgroundColor: '#FF8C00',
-    marginVertical: 12,
-  },
-  totalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
-  },
-  totalLabel: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#000000',
-  },
-  totalValue: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#4CAF50',
-  },
-  footerNote: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#F8F8F8',
-    gap: 8,
-  },
-  footerText: {
-    fontSize: 12,
-    color: '#999',
-    flex: 1,
-    lineHeight: 18,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  modalContent: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 24,
-    width: '100%',
-    maxWidth: 400,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 10,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  modalTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#000000',
-  },
-  closeButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F5F5F5',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalQRContainer: {
-    alignItems: 'center',
-  },
-  qrWrapper: {
-    padding: 20,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: '#FF8C00',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  modalQRLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginTop: 20,
-    textAlign: 'center',
-  },
-  modalReceiptNumber: {
-    fontSize: 14,
-    color: '#FF8C00',
-    marginTop: 8,
-    fontWeight: '600',
-  },
-  modalButton: {
-    backgroundColor: '#FF8C00',
-    paddingVertical: 14,
-    borderRadius: 12,
-    marginTop: 24,
-    alignItems: 'center',
-  },
-  modalButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  actionButtonsContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#FFFFFF',
-    paddingBottom: Platform.OS === 'ios' ? 30 : 20,
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 10,
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    gap: 12,
-  },
-  shareButton: {
-    flex: 1,
-    flexDirection: 'row',
-    height: 50,
-    backgroundColor: '#2196F3',
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    shadowColor: '#2196F3',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  shareButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  downloadButton: {
-    flex: 1,
-    flexDirection: 'row',
-    height: 50,
-    backgroundColor: '#4CAF50',
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    shadowColor: '#4CAF50',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  downloadButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  homeButtonContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 12,
-  },
-  homeButton: {
-    flexDirection: 'row',
-    height: 56,
-    backgroundColor: '#FF8C00',
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-    shadowColor: '#FF8C00',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  homeButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#666',
-    fontWeight: '500',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  errorText: {
-    fontSize: 16,
-    color: '#FF5252',
-    textAlign: 'center',
-  },
+    paddingTop: Platform.OS === 'ios' ? 10 : (StatusBar.currentHeight || 0) + 4,
+    paddingBottom: 12, backgroundColor: '#fff',
+    borderBottomWidth: 1, borderBottomColor: '#F0F0F0',
+    elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08, shadowRadius: 3, marginTop: -60,
+  },
+  headerTitle: { fontSize: 18, fontWeight: '700', color: '#111' },
+  iconBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#F8F8F8', justifyContent: 'center', alignItems: 'center' },
+  scroll: { paddingBottom: 20 },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
+  loadingText: { marginTop: 12, fontSize: 15, color: '#666' },
+  errorText: { fontSize: 16, color: '#F44336', textAlign: 'center' },
+
+  // ── Success banner ──────────────────────────────────────────────────────
+  successBanner: {
+    backgroundColor: '#FF8C00', padding: 28, alignItems: 'center',
+    paddingTop: 36, paddingBottom: 32,
+  },
+  successIconRing: {
+    width: 90, height: 90, borderRadius: 45,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center', alignItems: 'center', marginBottom: 16,
+  },
+  successTitle: { fontSize: 26, fontWeight: '700', color: '#fff', marginBottom: 6 },
+  successSub: { fontSize: 14, color: 'rgba(255,255,255,0.85)', marginBottom: 20 },
+  bigEarnings: {
+    backgroundColor: 'rgba(255,255,255,0.2)', paddingHorizontal: 32, paddingVertical: 14,
+    borderRadius: 16, alignItems: 'center',
+  },
+  bigEarningsLabel: { fontSize: 13, color: 'rgba(255,255,255,0.85)', marginBottom: 4 },
+  bigEarningsValue: { fontSize: 36, fontWeight: '800', color: '#fff' },
+
+  // ── Meta row ────────────────────────────────────────────────────────────
+  metaRow: {
+    flexDirection: 'row', backgroundColor: '#fff', marginHorizontal: 16, marginTop: 16,
+    borderRadius: 14, padding: 16, elevation: 2,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3,
+  },
+  metaItem: { flex: 1, alignItems: 'center' },
+  metaLabel: { fontSize: 11, color: '#999', marginBottom: 4 },
+  metaValue: { fontSize: 13, fontWeight: '600', color: '#111', textAlign: 'center' },
+  metaDivider: { width: 1, backgroundColor: '#E8E8E8', marginVertical: 4 },
+
+  // ── QR card ─────────────────────────────────────────────────────────────
+  qrCard: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
+    marginHorizontal: 16, marginTop: 12, borderRadius: 14, padding: 16, gap: 16,
+    elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3,
+    borderWidth: 2, borderColor: '#FF8C00',
+  },
+  qrBox: { padding: 8, backgroundColor: '#fff', borderRadius: 8 },
+  qrInfo: { flex: 1 },
+  qrTitle: { fontSize: 16, fontWeight: '700', color: '#111', marginBottom: 4 },
+  qrSub: { fontSize: 13, color: '#666', marginBottom: 10 },
+  completedBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#4CAF50', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, alignSelf: 'flex-start',
+  },
+  completedBadgeText: { fontSize: 10, fontWeight: '700', color: '#fff' },
+
+  // ── Generic card ────────────────────────────────────────────────────────
+  card: {
+    backgroundColor: '#fff', marginHorizontal: 16, marginTop: 12, borderRadius: 14, padding: 16,
+    elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3,
+  },
+  cardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14 },
+  cardTitle: { fontSize: 15, fontWeight: '700', color: '#111' },
+
+  // ── Payment ─────────────────────────────────────────────────────────────
+  payRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  payLabel: { fontSize: 14, color: '#666' },
+  payVal: { fontSize: 14, fontWeight: '600', color: '#111' },
+  totalDivider: { height: 2, backgroundColor: '#FF8C00', marginVertical: 10, borderRadius: 1 },
+  totalLabel: { fontSize: 17, fontWeight: '700', color: '#111' },
+  totalVal: { fontSize: 20, fontWeight: '800', color: '#4CAF50' },
+  depositNote: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 12 },
+  depositText: { fontSize: 12, color: '#999', flex: 1 },
+
+  // ── Info rows ───────────────────────────────────────────────────────────
+  infoRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 10 },
+  infoLabel: { fontSize: 13, color: '#999', width: 60 },
+  infoValue: { fontSize: 13, fontWeight: '600', color: '#111', flex: 1, textAlign: 'right' },
+
+  // ── Route ───────────────────────────────────────────────────────────────
+  routeBlock: { marginBottom: 12 },
+  routeRow: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 6, gap: 12 },
+  greenDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#4CAF50', marginTop: 4 },
+  orangeDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#FF8C00', marginTop: 4 },
+  routeLine: { width: 2, height: 20, backgroundColor: '#DDD', marginLeft: 5, marginVertical: -4 },
+  routeType: { fontSize: 11, color: '#999', marginBottom: 2 },
+  routeAddr: { fontSize: 13, fontWeight: '500', color: '#111', lineHeight: 18 },
+  routeStats: { flexDirection: 'row', justifyContent: 'space-around', backgroundColor: '#FFF8EE', padding: 12, borderRadius: 10 },
+  routeStat: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  routeStatText: { fontSize: 14, fontWeight: '600', color: '#111' },
+
+  // ── Timeline ────────────────────────────────────────────────────────────
+  timelineRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginBottom: 12 },
+  timelineLabel: { fontSize: 14, fontWeight: '600', color: '#111', marginBottom: 2 },
+  timelineTime: { fontSize: 12, color: '#999' },
+
+  // ── QR Modal ────────────────────────────────────────────────────────────
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  modalCard: { backgroundColor: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 380, alignItems: 'center' },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', marginBottom: 20 },
+  modalTitle: { fontSize: 20, fontWeight: '700', color: '#111' },
+  closeBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#F5F5F5', justifyContent: 'center', alignItems: 'center' },
+  modalQR: { padding: 16, backgroundColor: '#fff', borderRadius: 16, borderWidth: 2, borderColor: '#FF8C00', marginBottom: 16 },
+  modalQRLabel: { fontSize: 15, fontWeight: '600', color: '#333', marginBottom: 4 },
+  modalReceiptNo: { fontSize: 13, color: '#FF8C00', fontWeight: '600', marginBottom: 20 },
+  modalCloseBtn: { backgroundColor: '#FF8C00', paddingVertical: 14, paddingHorizontal: 40, borderRadius: 12 },
+  modalCloseBtnText: { fontSize: 16, fontWeight: '600', color: '#fff' },
+
+  // ── Bottom bar ───────────────────────────────────────────────────────────
+  bottomBar: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: '#fff', padding: 16, paddingBottom: Platform.OS === 'ios' ? 32 : 20,
+    gap: 10,
+    borderTopWidth: 1, borderTopColor: '#F0F0F0',
+    elevation: 10, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.08, shadowRadius: 4,
+  },
+  shareBtn: {
+    flexDirection: 'row', height: 50, backgroundColor: '#2196F3', borderRadius: 12,
+    justifyContent: 'center', alignItems: 'center', gap: 8,
+    elevation: 3, shadowColor: '#2196F3', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4,
+  },
+  shareBtnText: { fontSize: 15, fontWeight: '600', color: '#fff' },
+  homeBtn: {
+    flexDirection: 'row', height: 52, backgroundColor: '#FF8C00', borderRadius: 12,
+    justifyContent: 'center', alignItems: 'center', gap: 8,
+    elevation: 3, shadowColor: '#FF8C00', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4,
+  },
+  homeBtnText: { fontSize: 16, fontWeight: '600', color: '#fff' },
 });
 
 export default DriverReceipt;

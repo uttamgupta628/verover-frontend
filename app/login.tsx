@@ -174,7 +174,8 @@ export default function Login() {
             {
               text: "OK",
               onPress: () => {
-                // Redirect based on user type
+                // router.replace clears the navigation stack so the user
+                // cannot go back to the login screen or the other home screen
                 if (data.userType === "merchant") {
                   router.replace("/merchantHome");
                 } else if (data.userType === "driver") {

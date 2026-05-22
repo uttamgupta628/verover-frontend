@@ -17,30 +17,111 @@ import axiosInstance from '../../api/axios';
 import QRCode from 'react-native-qrcode-svg';
 import ViewShot from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
-// import * as MediaLibrary from 'expo-media-library';
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Returns the effective per-unit price for an item (base + selected add-ons). */
+const resolveEffectivePrice = (item: any): number => {
+  if (typeof item.effectivePrice === 'number' && item.effectivePrice > 0) {
+    return item.effectivePrice;
+  }
+  const base = parseFloat(String(item.price || 0));
+  const addOns = (item.additionalservice || [])
+    .filter((s: any) =>
+      (item.selectedAdditionals || item.options?.selectedAdditionals || []).includes(s.name),
+    )
+    .reduce((sum: number, s: any) => sum + (s.price || 0), 0);
+  return base + addOns;
+};
+
+/** Formats a starch level string (low/medium/high or numeric) into a readable label. */
+const formatStarch = (level: string | number | undefined): string => {
+  if (!level) return 'Low';
+  if (typeof level === 'string') return level.charAt(0).toUpperCase() + level.slice(1);
+  const map: Record<number, string> = { 1: 'Low', 2: 'Low', 3: 'Medium', 4: 'High', 5: 'High' };
+  return map[level as number] || 'Medium';
+};
+
+/** Formats an address object or string. */
+const formatAddress = (address: any): string => {
+  if (!address) return 'Not specified';
+  if (typeof address === 'string') return address.trim() || 'Not specified';
+  if (address.fullAddress) return address.fullAddress.trim() || 'Not specified';
+  const parts = [address.street, address.city, address.state, address.country].filter(Boolean);
+  return parts.join(', ') || 'Not specified';
+};
+
+/** Formats an ISO datetime string or scheduling fields into a readable line. */
+const formatScheduleSlot = (
+  isoDate: string | undefined,
+  fallbackDate: string | undefined,
+  fallbackMonth: string | undefined,
+  fallbackTime: string | undefined,
+): string => {
+  if (isoDate) {
+    return new Date(isoDate).toLocaleString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+  if (fallbackDate && fallbackMonth && fallbackTime)
+    return `${fallbackDate} ${fallbackMonth} at ${fallbackTime}`;
+  return 'Not specified';
+};
+
+// ─── Divider ──────────────────────────────────────────────────────────────────
+const Divider = () => <View style={styles.divider} />;
+
+// ─── Row ──────────────────────────────────────────────────────────────────────
+const Row = ({
+  label,
+  value,
+  accent,
+  bold,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+  bold?: boolean;
+}) => (
+  <View style={styles.detailRow}>
+    <Text style={styles.detailLabel}>{label}</Text>
+    <Text
+      style={[
+        styles.detailValue,
+        accent && styles.detailValueAccent,
+        bold && styles.detailValueBold,
+      ]}
+    >
+      {value}
+    </Text>
+  </View>
+);
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 export default function OrderReceiptPage() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const dispatch = useDispatch();
   const viewShotRef = useRef<ViewShot>(null);
-  
+
   const [loading, setLoading] = useState(true);
   const [orderData, setOrderData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
-  const [showQR, setShowQR] = useState(false);
-  const [downloading, setDownloading] = useState(false);
-  
-  const orderId = params.orderId as string;
+  const [showDetails, setShowDetails] = useState(false);
+
+  const orderId     = params.orderId     as string;
   const orderNumber = params.orderNumber as string;
-  const trackingId = params.trackingId as string;
+  const trackingId  = params.trackingId  as string;
   const totalAmount = params.totalAmount ? parseFloat(params.totalAmount as string) : 0;
-  
+
   const passedOrderData = useMemo(() => {
     try {
       return params.orderData ? JSON.parse(params.orderData as string) : null;
-    } catch (e) {
-      console.error('Failed to parse orderData:', e);
+    } catch {
       return null;
     }
   }, [params.orderData]);
@@ -49,40 +130,32 @@ export default function OrderReceiptPage() {
     try {
       setLoading(true);
       setError(null);
-      
+
       if (passedOrderData && orderNumber) {
-        console.log('Using passed order data instead of API call');
         setOrderData({
-          _id: orderId,
+          _id:        orderId,
           orderNumber,
           trackingId,
           totalAmount,
-          items: passedOrderData.items || [],
-          cleaner: passedOrderData.cleaner,
-          addresses: passedOrderData.addresses,
+          items:      passedOrderData.items      || [],
+          cleaner:    passedOrderData.cleaner,
+          addresses:  passedOrderData.addresses,
           scheduling: passedOrderData.scheduling,
-          createdAt: new Date().toISOString(),
+          createdAt:  new Date().toISOString(),
         });
         setLoading(false);
         return;
       }
 
-      if (!orderId) {
-        throw new Error('No order ID or order data available');
-      }
+      if (!orderId) throw new Error('No order ID or order data available');
 
-      console.log('Fetching receipt for orderId:', orderId);
-      
       const response = await axiosInstance.get(`/users/orders/${orderId}/receipt`);
-      
       if (response.data.success && response.data.data) {
         setOrderData(response.data.data);
       } else {
         throw new Error('Invalid response format');
       }
-
     } catch (err: any) {
-      console.error('Fetch error:', err);
       setError(err.message || 'Failed to load receipt');
     } finally {
       setLoading(false);
@@ -95,10 +168,8 @@ export default function OrderReceiptPage() {
 
   const handleBack = useCallback(() => {
     dispatch(clearOrderAfterPlacement());
-    router.replace('/userHome'); 
+    router.replace('/userHome');
   }, [router, dispatch]);
-
-  
 
   const handleShareReceipt = async () => {
     try {
@@ -106,74 +177,21 @@ export default function OrderReceiptPage() {
         Alert.alert('Error', 'Unable to capture receipt');
         return;
       }
-
-      // Capture the view as image
       const uri = await viewShotRef.current.capture();
-      
       const isAvailable = await Sharing.isAvailableAsync();
-      
       if (isAvailable) {
-        await Sharing.shareAsync(uri, {
-          mimeType: 'image/png',
-          dialogTitle: 'Share Order Receipt',
-        });
+        await Sharing.shareAsync(uri, { mimeType: 'image/png', dialogTitle: 'Share Order Receipt' });
       } else {
         Alert.alert('Info', 'Sharing not available on this device');
       }
-    } catch (error) {
-      console.error('Error sharing receipt:', error);
+    } catch {
       Alert.alert('Error', 'Failed to share receipt');
     }
   };
 
-//  const handleDownloadReceipt = async () => {
-//   try {
-//     setDownloading(true);
-
-//     if (!viewShotRef.current) {
-//       Alert.alert('Error', 'Unable to capture receipt');
-//       return;
-//     }
-//     const permission = await MediaLibrary.requestPermissionsAsync();
-
-//     if (permission.status !== 'granted') {
-//       Alert.alert(
-//         'Permission Required',
-//         'Please allow photo access to save the receipt'
-//       );
-//       return;
-//     }
-
-//     const uri = await viewShotRef.current.capture({
-//       format: 'png',
-//       quality: 0.9,
-//     });
-
-//     const asset = await MediaLibrary.createAssetAsync(uri);
-
-//     try {
-//       const album = await MediaLibrary.getAlbumAsync('Vervoer Receipts');
-//       if (!album) {
-//         await MediaLibrary.createAlbumAsync('Vervoer Receipts', asset, false);
-//       } else {
-//         await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
-//       }
-//     } catch {
-//     }
-
-//     Alert.alert('Success', 'Receipt saved to gallery successfully!');
-//   } catch (error: any) {
-//     console.error('Error downloading receipt:', error);
-//     Alert.alert('Error', error.message || 'Failed to save receipt');
-//   } finally {
-//     setDownloading(false);
-//   }
-// };
-
-
-
   const qrCodeValue = orderId || orderNumber || trackingId || 'N/A';
 
+  // ── Loading ────────────────────────────────────────────────────────────────
   if (loading) {
     return (
       <View style={styles.container}>
@@ -186,35 +204,28 @@ export default function OrderReceiptPage() {
     );
   }
 
-  // Error state
+  // ── Error ──────────────────────────────────────────────────────────────────
   if (error && !orderData) {
     return (
       <View style={styles.container}>
         <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-        
-        {/* Header */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButtonContainer} onPress={handleBack}>
             <MaterialIcons name="arrow-back" size={24} color="#000" />
           </TouchableOpacity>
           <View style={styles.headerCenter}>
-            <View style={styles.logo}>
-              <Text style={styles.logoText}>V</Text>
-            </View>
+            <View style={styles.logo}><Text style={styles.logoText}>V</Text></View>
             <Text style={styles.brandName}>ervoer</Text>
           </View>
           <View style={styles.headerRight} />
         </View>
-
         <View style={styles.errorContainer}>
           <MaterialIcons name="error-outline" size={64} color="#FF8C00" />
           <Text style={styles.errorTitle}>Unable to Load Receipt</Text>
           <Text style={styles.errorText}>{error}</Text>
-          
           <TouchableOpacity style={styles.retryButton} onPress={fetchOrderReceipt}>
             <Text style={styles.retryButtonText}>Retry</Text>
           </TouchableOpacity>
-          
           <TouchableOpacity style={styles.backButton} onPress={handleBack}>
             <Text style={styles.backButtonText}>Go Back</Text>
           </TouchableOpacity>
@@ -223,20 +234,30 @@ export default function OrderReceiptPage() {
     );
   }
 
-  // Success state - Receipt UI
+  // ── Computed values ────────────────────────────────────────────────────────
+  const items: any[]    = orderData?.items      || [];
+  const cleaner: any    = orderData?.cleaner;
+  const scheduling: any = orderData?.scheduling;
+  const addresses: any  = orderData?.addresses;
+
+  // Recalculate totals from items so the receipt always matches the summary screen
+  const subtotal = items.reduce(
+    (sum, item) => sum + resolveEffectivePrice(item) * parseInt(String(item.quantity || 0), 10),
+    0,
+  );
+
+  // ── Success ────────────────────────────────────────────────────────────────
   return (
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      
+
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity style={styles.backButtonContainer} onPress={handleBack}>
           <MaterialIcons name="arrow-back" size={24} color="#000" />
         </TouchableOpacity>
         <View style={styles.headerCenter}>
-          <View style={styles.logo}>
-            <Text style={styles.logoText}>V</Text>
-          </View>
+          <View style={styles.logo}><Text style={styles.logoText}>V</Text></View>
           <Text style={styles.brandName}>ervoer</Text>
         </View>
         <TouchableOpacity style={styles.shareButton} onPress={handleShareReceipt}>
@@ -245,12 +266,12 @@ export default function OrderReceiptPage() {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        <ViewShot 
-          ref={viewShotRef} 
+        <ViewShot
+          ref={viewShotRef}
           options={{ format: 'png', quality: 0.9 }}
           style={{ backgroundColor: '#F5F5F5' }}
         >
-          {/* Success Icon */}
+          {/* ── Success banner ── */}
           <View style={styles.successContainer}>
             <View style={styles.successIcon}>
               <MaterialIcons name="check" size={40} color="#fff" />
@@ -261,179 +282,267 @@ export default function OrderReceiptPage() {
             </Text>
           </View>
 
-          {/* QR Code Section */}
+          {/* ── QR Code ── */}
           <View style={styles.qrCard}>
             <Text style={styles.qrTitle}>Order QR Code</Text>
             <Text style={styles.qrSubtitle}>Show this QR code for quick access</Text>
-            
             <View style={styles.qrContainer}>
-              <QRCode
-                value={qrCodeValue}
-                size={180}
-                backgroundColor="white"
-                color="#000"
-              />
+              <QRCode value={qrCodeValue} size={180} backgroundColor="white" color="#000" />
             </View>
-            
             <Text style={styles.qrOrderNumber}>#{orderData?.orderNumber || orderNumber || 'N/A'}</Text>
-            
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.toggleQRButton}
-              onPress={() => setShowQR(!showQR)}
+              onPress={() => setShowDetails(!showDetails)}
             >
-              <MaterialIcons 
-                name={showQR ? "visibility-off" : "visibility"} 
-                size={20} 
-                color="#FF8C00" 
+              <MaterialIcons
+                name={showDetails ? 'visibility-off' : 'visibility'}
+                size={20}
+                color="#FF8C00"
               />
               <Text style={styles.toggleQRText}>
-                {showQR ? 'Hide Details' : 'Show Full Details'}
+                {showDetails ? 'Hide Details' : 'Show Full Details'}
               </Text>
             </TouchableOpacity>
           </View>
 
-          {/* Order Details Card */}
-          {showQR && (
+          {showDetails && (
             <>
+              {/* ── Order Details ── */}
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>Order Details</Text>
-                
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Order Number:</Text>
-                  <Text style={styles.detailValue}>#{orderData?.orderNumber || orderNumber || 'N/A'}</Text>
-                </View>
-                
-                {(orderData?.trackingId || trackingId) && (
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>Tracking ID:</Text>
-                    <Text style={styles.detailValue}>{orderData?.trackingId || trackingId}</Text>
-                  </View>
-                )}
-                
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Total Amount:</Text>
-                  <Text style={styles.detailValue}>
-                    ${(orderData?.totalAmount || totalAmount || 0).toFixed(2)}
-                  </Text>
-                </View>
-                
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Order Date:</Text>
-                  <Text style={styles.detailValue}>
-                    {new Date(orderData?.createdAt || Date.now()).toLocaleDateString()}
-                  </Text>
-                </View>
+                <Row label="Order Number" value={`#${orderData?.orderNumber || orderNumber || 'N/A'}`} />
+                <Row label="Tracking ID"  value={orderData?.trackingId || trackingId || 'N/A'} />
+                <Row
+                  label="Order Date"
+                  value={new Date(orderData?.createdAt || Date.now()).toLocaleDateString('en-US', {
+                    month: 'short', day: 'numeric', year: 'numeric',
+                  })}
+                />
+                <Row label="Payment Method" value={orderData?.paymentMethod || 'Card'} />
               </View>
 
-              {/* Items Card */}
-              {orderData?.items && orderData.items.length > 0 && (
+              {/* ── Items ── */}
+              {items.length > 0 && (
                 <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Items ({orderData.items.length})</Text>
-                  {orderData.items.map((item: any, index: number) => (
-                    <View key={index} style={styles.itemRow}>
-                      <View style={styles.itemInfo}>
-                        <Text style={styles.itemName}>{item.name}</Text>
-                        <Text style={styles.itemDetails}>
-                          Qty: {item.quantity} × ${parseFloat(item.price || 0).toFixed(2)}
-                        </Text>
+                  <Text style={styles.cardTitle}>Items ({items.length})</Text>
+
+                  {items.map((item: any, index: number) => {
+                    const basePrice      = parseFloat(String(item.price || 0));
+                    const effectivePrice = resolveEffectivePrice(item);
+                    const qty            = parseInt(String(item.quantity || 0), 10);
+                    const lineTotal      = effectivePrice * qty;
+                    const addOnTotal     = effectivePrice - basePrice;
+                    const addOns: string[] =
+                      item.selectedAdditionals ||
+                      item.options?.selectedAdditionals ||
+                      [];
+                    const hasWashAndFold = item.options?.washAndFold;
+                    const hasZipper      = item.options?.zipper;
+                    const hasButton      = item.options?.button;
+
+                    return (
+                      <View key={index} style={styles.itemBlock}>
+                        {/* Item name + line total */}
+                        <View style={styles.itemHeaderRow}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.itemName}>{item.name || 'Unknown Item'}</Text>
+                            <Text style={styles.itemCategory}>{item.category}</Text>
+                          </View>
+                          <Text style={styles.itemLineTotal}>${lineTotal.toFixed(2)}</Text>
+                        </View>
+
+                        {/* Price breakdown */}
+                        <View style={styles.itemMeta}>
+                          <Text style={styles.itemMetaText}>
+                            {qty} × ${basePrice.toFixed(2)}
+                            {addOnTotal > 0 ? ` + $${addOnTotal.toFixed(2)} add-ons` : ''}
+                            {' = '}
+                            <Text style={styles.itemMetaAccent}>
+                              ${effectivePrice.toFixed(2)} each
+                            </Text>
+                          </Text>
+                        </View>
+
+                        {/* Service options row */}
+                        <View style={styles.optionPillRow}>
+                          {item.washOnly && (
+                            <View style={styles.optionPill}>
+                              <Text style={styles.optionPillText}>Wash Only</Text>
+                            </View>
+                          )}
+                          {hasWashAndFold && (
+                            <View style={styles.optionPill}>
+                              <Text style={styles.optionPillText}>Wash & Fold</Text>
+                            </View>
+                          )}
+                          {hasZipper && (
+                            <View style={styles.optionPill}>
+                              <Text style={styles.optionPillText}>Zipper</Text>
+                            </View>
+                          )}
+                          {hasButton && (
+                            <View style={styles.optionPill}>
+                              <Text style={styles.optionPillText}>Button</Text>
+                            </View>
+                          )}
+                          <View style={styles.optionPillStarch}>
+                            <Text style={styles.optionPillStarchText}>
+                              Starch: {formatStarch(item.starchLevel)}
+                            </Text>
+                          </View>
+                        </View>
+
+                        {/* Add-ons (from additionalservice) */}
+                        {addOns.length > 0 && (
+                          <View style={styles.addOnsBlock}>
+                            <Text style={styles.addOnsLabel}>Add-ons:</Text>
+                            <View style={styles.addOnPillRow}>
+                              {addOns.map((name: string) => {
+                                const svc = (item.additionalservice || []).find(
+                                  (s: any) => s.name === name,
+                                );
+                                return (
+                                  <View key={name} style={styles.addOnPill}>
+                                    <Text style={styles.addOnPillText}>
+                                      {name}
+                                      {svc?.price > 0 ? ` +$${Number(svc.price).toFixed(2)}` : ''}
+                                    </Text>
+                                  </View>
+                                );
+                              })}
+                            </View>
+                          </View>
+                        )}
+
+                        {index < items.length - 1 && <Divider />}
                       </View>
-                      <Text style={styles.itemTotal}>
-                        ${(parseFloat(item.price || 0) * parseInt(item.quantity || 0)).toFixed(2)}
-                      </Text>
-                    </View>
-                  ))}
+                    );
+                  })}
                 </View>
               )}
 
-              {/* Cleaner Info */}
-              {orderData?.cleaner && (
+              {/* ── Pricing breakdown ── */}
+              <View style={styles.card}>
+                <Text style={styles.cardTitle}>Payment Summary</Text>
+                <Row label="Subtotal" value={`$${subtotal.toFixed(2)}`} />
+                {orderData?.pricing?.serviceFees != null && (
+                  <Row label="Taxes / Service Fee" value={`$${Number(orderData.pricing.serviceFees).toFixed(2)}`} />
+                )}
+                {orderData?.pricing?.deliveryCharge != null && (
+                  <Row label="Delivery Charge" value={`$${Number(orderData.pricing.deliveryCharge).toFixed(2)}`} />
+                )}
+                {orderData?.pricing?.tip != null && Number(orderData.pricing.tip) > 0 && (
+                  <Row label="Tip" value={`$${Number(orderData.pricing.tip).toFixed(2)}`} />
+                )}
+                {orderData?.pricing?.platformFee != null && (
+                  <Row label="Platform Fee" value={`$${Number(orderData.pricing.platformFee).toFixed(2)}`} />
+                )}
+                <Divider />
+                <Row
+                  label="Total Paid"
+                  value={`$${Number(orderData?.totalAmount || orderData?.pricing?.totalAmount || totalAmount || 0).toFixed(2)}`}
+                  accent
+                  bold
+                />
+              </View>
+
+              {/* ── Dry Cleaner ── */}
+              {cleaner && (
                 <View style={styles.card}>
                   <Text style={styles.cardTitle}>Dry Cleaner</Text>
-                  <Text style={styles.cleanerName}>{orderData.cleaner.shopname}</Text>
-                  {orderData.cleaner.address && (
-                    <Text style={styles.cleanerAddress}>
-                      {typeof orderData.cleaner.address === 'string' 
-                        ? orderData.cleaner.address 
-                        : `${orderData.cleaner.address.street}, ${orderData.cleaner.address.city}, ${orderData.cleaner.address.state}`
-                      }
-                    </Text>
+                  <Text style={styles.cleanerName}>{cleaner.shopname || 'N/A'}</Text>
+                  {cleaner.address && (
+                    <Text style={styles.cleanerAddress}>{formatAddress(cleaner.address)}</Text>
+                  )}
+                  {cleaner.phoneNumber && (
+                    <Text style={styles.cleanerPhone}>{cleaner.phoneNumber}</Text>
+                  )}
+                  {typeof cleaner.rating === 'number' && (
+                    <Text style={styles.cleanerRating}>{'★'.repeat(Math.round(cleaner.rating))} ({cleaner.rating})</Text>
                   )}
                 </View>
               )}
 
-              {/* Scheduling Info */}
-              {orderData?.scheduling && (
+              {/* ── Addresses ── */}
+              {addresses && (
                 <View style={styles.card}>
-                  <Text style={styles.cardTitle}>Schedule</Text>
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>Pickup:</Text>
-                    <Text style={styles.detailValue}>
-                      {orderData.scheduling.pickupDate} {orderData.scheduling.pickupMonth} at {orderData.scheduling.pickupTime}
-                    </Text>
-                  </View>
-                  <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>Delivery:</Text>
-                    <Text style={styles.detailValue}>
-                      {orderData.scheduling.deliveryDate} {orderData.scheduling.deliveryMonth} at {orderData.scheduling.deliveryTime}
-                    </Text>
-                  </View>
+                  <Text style={styles.cardTitle}>Addresses</Text>
+                  {addresses.home?.fullAddress && (
+                    <View style={styles.addressBlock}>
+                      <Text style={styles.addressType}>Home</Text>
+                      <Text style={styles.addressText}>{addresses.home.fullAddress}</Text>
+                    </View>
+                  )}
+                  {addresses.office?.fullAddress && (
+                    <View style={styles.addressBlock}>
+                      <Text style={styles.addressType}>Office</Text>
+                      <Text style={styles.addressText}>{addresses.office.fullAddress}</Text>
+                    </View>
+                  )}
+                  {/* Fallback when addresses is a plain string */}
+                  {typeof addresses === 'string' && (
+                    <Text style={styles.addressText}>{addresses}</Text>
+                  )}
                 </View>
               )}
 
-              {/* Next Steps */}
+              {/* ── Schedule ── */}
+              {scheduling && (
+                <View style={styles.card}>
+                  <Text style={styles.cardTitle}>Schedule</Text>
+                  <Row
+                    label="Pickup"
+                    value={formatScheduleSlot(
+                      scheduling.scheduledPickupDateTime,
+                      scheduling.pickupDate,
+                      scheduling.pickupMonth,
+                      scheduling.pickupTime,
+                    )}
+                  />
+                  <Row
+                    label="Delivery"
+                    value={formatScheduleSlot(
+                      scheduling.scheduledDeliveryDateTime,
+                      scheduling.deliveryDate,
+                      scheduling.deliveryMonth,
+                      scheduling.deliveryTime,
+                    )}
+                  />
+                </View>
+              )}
+
+              {/* ── What's Next ── */}
               <View style={styles.card}>
                 <Text style={styles.cardTitle}>What's Next?</Text>
                 <Text style={styles.nextStepText}>
-                  • Track your order status in the Orders section{'\n'}
-                  • Your items will be ready as per the agreed timeline{'\n'}
-                  • You'll receive notifications about your order status{'\n'}
-                  • Show this QR code for quick verification
+                  {'• Track your order status in the Orders section\n'}
+                  {'• Your items will be ready as per the agreed timeline\n'}
+                  {'• You\'ll receive notifications about your order status\n'}
+                  {'• Show this QR code for quick verification'}
                 </Text>
               </View>
             </>
           )}
         </ViewShot>
 
-        {/* Action Buttons */}
+        {/* Share button */}
         <View style={styles.actionButtonsContainer}>
-          {/* <TouchableOpacity 
-            style={[styles.actionButton, downloading && styles.actionButtonDisabled]}
-            onPress={handleDownloadReceipt}
-            disabled={downloading}
-          >
-            {downloading ? (
-              <ActivityIndicator size="small" color="#FF8C00" />
-            ) : (
-              <>
-                <MaterialIcons name="download" size={20} color="#FF8C00" />
-                <Text style={styles.actionButtonText}>Download</Text>
-              </>
-            )}
-          </TouchableOpacity> */}
-
-          <TouchableOpacity 
-            style={styles.actionButton}
-            onPress={handleShareReceipt}
-          >
+          <TouchableOpacity style={styles.actionButton} onPress={handleShareReceipt}>
             <MaterialIcons name="share" size={20} color="#FF8C00" />
-            <Text style={styles.actionButtonText}>Share</Text>
+            <Text style={styles.actionButtonText}>Share Receipt</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
 
       {/* Bottom Actions */}
       <View style={styles.bottomActions}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.secondaryButton}
-          onPress={() => router.push('/orders')}
+          onPress={() => router.push('./myOrder')}
         >
           <Text style={styles.secondaryButtonText}>View Orders</Text>
         </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.trackButton} 
-          onPress={handleBack}
-        >
+        <TouchableOpacity style={styles.trackButton} onPress={handleBack}>
           <Text style={styles.trackButtonText}>Continue Shopping</Text>
         </TouchableOpacity>
       </View>
@@ -441,6 +550,7 @@ export default function OrderReceiptPage() {
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -461,12 +571,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 2,
   },
-  backButtonContainer: {
-    padding: 8,
-  },
-  shareButton: {
-    padding: 8,
-  },
+  backButtonContainer: { padding: 8 },
+  shareButton:         { padding: 8 },
   headerCenter: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -482,27 +588,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 6,
   },
-  logoText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  brandName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#000',
-  },
-  headerRight: {
-    width: 40,
-  },
-  content: {
-    flex: 1,
-    padding: 16,
-  },
+  logoText:  { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  brandName: { fontSize: 18, fontWeight: '600', color: '#000' },
+  headerRight: { width: 40 },
+
+  content: { flex: 1, padding: 16 },
+
   successContainer: {
     alignItems: 'center',
-    marginBottom: 24,
-    paddingVertical: 20,
+    marginBottom: 16,
+    paddingVertical: 24,
     backgroundColor: '#fff',
     borderRadius: 12,
     elevation: 2,
@@ -520,18 +615,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 16,
   },
-  successTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#000',
-    marginBottom: 8,
-  },
-  successSubtitle: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-    paddingHorizontal: 20,
-  },
+  successTitle:    { fontSize: 24, fontWeight: 'bold', color: '#000', marginBottom: 8 },
+  successSubtitle: { fontSize: 15, color: '#666', textAlign: 'center', paddingHorizontal: 20 },
+
   qrCard: {
     backgroundColor: '#fff',
     borderRadius: 12,
@@ -544,18 +630,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 2,
   },
-  qrTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#000',
-    marginBottom: 4,
-  },
-  qrSubtitle: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 20,
-    textAlign: 'center',
-  },
+  qrTitle:    { fontSize: 20, fontWeight: 'bold', color: '#000', marginBottom: 4 },
+  qrSubtitle: { fontSize: 14, color: '#666', marginBottom: 20, textAlign: 'center' },
   qrContainer: {
     padding: 20,
     backgroundColor: '#fff',
@@ -564,12 +640,7 @@ const styles = StyleSheet.create({
     borderColor: '#FF8C00',
     marginBottom: 15,
   },
-  qrOrderNumber: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#000',
-    marginBottom: 15,
-  },
+  qrOrderNumber: { fontSize: 16, fontWeight: '600', color: '#000', marginBottom: 15 },
   toggleQRButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -579,11 +650,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF5E6',
     gap: 8,
   },
-  toggleQRText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FF8C00',
-  },
+  toggleQRText: { fontSize: 14, fontWeight: '600', color: '#FF8C00' },
+
   card: {
     backgroundColor: '#fff',
     borderRadius: 12,
@@ -595,12 +663,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 2,
   },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#000',
-    marginBottom: 12,
-  },
+  cardTitle: { fontSize: 18, fontWeight: 'bold', color: '#000', marginBottom: 12 },
+
+  divider: { height: 1, backgroundColor: '#f0f0f0', marginVertical: 12 },
+
   detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -609,65 +675,69 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
-  detailLabel: {
-    fontSize: 14,
-    color: '#666',
-    flex: 1,
+  detailLabel:      { fontSize: 14, color: '#666', flex: 1 },
+  detailValue:      { fontSize: 14, fontWeight: '600', color: '#000', flex: 1, textAlign: 'right' },
+  detailValueAccent:{ color: '#FF8C00' },
+  detailValueBold:  { fontSize: 16 },
+
+  // ── Item block ──
+  itemBlock:    { marginBottom: 4 },
+  itemHeaderRow:{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 },
+  itemName:     { fontSize: 16, fontWeight: '600', color: '#000', marginBottom: 2 },
+  itemCategory: { fontSize: 12, color: '#999', fontWeight: '500' },
+  itemLineTotal:{ fontSize: 16, fontWeight: 'bold', color: '#FF8C00', marginLeft: 8 },
+
+  itemMeta:       { marginBottom: 8 },
+  itemMetaText:   { fontSize: 13, color: '#666' },
+  itemMetaAccent: { color: '#FF8C00', fontWeight: '600' },
+
+  // ── Option pills ──
+  optionPillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 8 },
+  optionPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: '#F0F0F0',
+    borderRadius: 20,
   },
-  detailValue: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#000',
-    flex: 1,
-    textAlign: 'right',
+  optionPillText: { fontSize: 12, color: '#444', fontWeight: '500' },
+  optionPillStarch: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: '#FFF3E0',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#FFD699',
   },
-  itemRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+  optionPillStarchText: { fontSize: 12, color: '#FF8C00', fontWeight: '600' },
+
+  // ── Add-ons block ──
+  addOnsBlock:  { marginBottom: 4 },
+  addOnsLabel:  { fontSize: 12, color: '#FF8C00', fontWeight: '700', marginBottom: 4 },
+  addOnPillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  addOnPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: '#FF8C001A',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#FFD699',
   },
-  itemInfo: {
-    flex: 1,
-  },
-  itemName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#000',
-    marginBottom: 4,
-  },
-  itemDetails: {
-    fontSize: 14,
-    color: '#666',
-  },
-  itemTotal: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#FF8C00',
-  },
-  cleanerName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#000',
-    marginBottom: 4,
-  },
-  cleanerAddress: {
-    fontSize: 14,
-    color: '#666',
-    lineHeight: 20,
-  },
-  nextStepText: {
-    fontSize: 14,
-    color: '#666',
-    lineHeight: 22,
-  },
-  actionButtonsContainer: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 16,
-  },
+  addOnPillText: { fontSize: 12, color: '#FF8C00', fontWeight: '600' },
+
+  // ── Cleaner ──
+  cleanerName:    { fontSize: 16, fontWeight: '600', color: '#000', marginBottom: 4 },
+  cleanerAddress: { fontSize: 14, color: '#666', lineHeight: 20, marginBottom: 4 },
+  cleanerPhone:   { fontSize: 14, color: '#666', marginBottom: 4 },
+  cleanerRating:  { fontSize: 14, color: '#FF8C00', fontWeight: '500' },
+
+  // ── Addresses ──
+  addressBlock: { marginBottom: 10 },
+  addressType:  { fontSize: 12, fontWeight: '700', color: '#FF8C00', marginBottom: 2, textTransform: 'uppercase' },
+  addressText:  { fontSize: 14, color: '#444', lineHeight: 20 },
+
+  nextStepText: { fontSize: 14, color: '#666', lineHeight: 22 },
+
+  actionButtonsContainer: { flexDirection: 'row', gap: 12, marginBottom: 16 },
   actionButton: {
     flex: 1,
     flexDirection: 'row',
@@ -683,14 +753,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 2,
   },
-  actionButtonDisabled: {
-    opacity: 0.6,
-  },
-  actionButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FF8C00',
-  },
+  actionButtonText: { fontSize: 14, fontWeight: '600', color: '#FF8C00' },
+
   bottomActions: {
     flexDirection: 'row',
     padding: 16,
@@ -711,11 +775,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#FF8C00',
   },
-  secondaryButtonText: {
-    color: '#FF8C00',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
+  secondaryButtonText: { color: '#FF8C00', fontSize: 16, fontWeight: 'bold' },
   trackButton: {
     flex: 1,
     backgroundColor: '#FF8C00',
@@ -723,41 +783,14 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
   },
-  trackButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#666',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 32,
-  },
-  errorTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#000',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  errorText: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 22,
-  },
+  trackButtonText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 16, fontSize: 16, color: '#666' },
+
+  errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
+  errorTitle: { fontSize: 20, fontWeight: 'bold', color: '#000', marginTop: 16, marginBottom: 8 },
+  errorText: { fontSize: 16, color: '#666', textAlign: 'center', marginBottom: 24, lineHeight: 22 },
   retryButton: {
     backgroundColor: '#FF8C00',
     paddingHorizontal: 32,
@@ -765,16 +798,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginBottom: 12,
   },
-  retryButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  backButton: {
-    paddingVertical: 12,
-  },
-  backButtonText: {
-    color: '#666',
-    fontSize: 16,
-  },
+  retryButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  backButton: { paddingVertical: 12 },
+  backButtonText: { color: '#666', fontSize: 16 },
 });

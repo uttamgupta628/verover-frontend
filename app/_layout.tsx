@@ -100,9 +100,12 @@ function RootLayoutNav() {
     "onboarding",
     "index",
     "splash",
+    "(tabs)",
   ];
 
-  const shouldShowHeader = !hideHeaderScreens.includes(segments[0] as string);
+  const shouldShowHeader = 
+  segments.length > 0 && 
+  !hideHeaderScreens.includes(segments[0] as string);
 
   return (
     <View style={{ flex: 1 }}>

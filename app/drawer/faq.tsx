@@ -19,7 +19,6 @@ import colors from "../../assets/color";
 
 const FAQ = () => {
   const navigation = useNavigation();
-
   const [expandedFAQ, setExpandedFAQ] = useState<number | null>(null);
 
   const toggleFAQ = (index: number) => {
@@ -28,21 +27,59 @@ const FAQ = () => {
 
   const faqs = [
     {
-      question: "Plug and play networks?",
+      question: "How do I book a parking slot?",
       answer:
-        "Lorem Ipsum Dolor Sit Amet, Consetetur Sadipscing Elitr, Sed Diam Nonumy Eirmod Tempor Invidunt Ut Labore Et Dolore Magna Aliquyam Erat, Sed Diam Voluptua.",
+        "Open the app, select 'Parking' from the home screen, and browse available parking slots near you. Choose your preferred slot, select your duration, and confirm your booking. You'll receive a QR code to access the parking spot.",
     },
     {
-      question: "Collaboratively Empowered Markets?",
-      answer: "Lorem Ipsum Dolor Sit Amet, Consetetur Sadipscing Elitr.",
+      question: "What is Residence Parking?",
+      answer:
+        "Residence Parking lets residents and homeowners list their private parking spaces for others to rent. You can book a verified residential parking spot on an hourly or daily basis — perfect for overnight stays or long-term needs.",
     },
     {
-      question: "Visualize Customer Directed",
-      answer: "Lorem Ipsum Dolor Sit Amet, Consetetur Sadipscing Elitr.",
+      question: "What is Garage Parking?",
+      answer:
+        "Garage Parking gives you access to secured, covered parking in registered garages. These are ideal for longer durations and offer added security for your vehicle. Browse garages by location, availability, and price.",
     },
     {
-      question: "Efficiently Unleash Cross-Media?",
-      answer: "Lorem Ipsum Dolor Sit Amet, Consetetur Sadipscing Elitr.",
+      question: "How does the Dry Cleaning service work?",
+      answer:
+        "Book a dry cleaning pickup from the app. A verified driver will come to your address and collect your clothes. Your garments are delivered to the dry cleaning merchant. Once cleaning is done, the merchant books a driver to deliver your clothes back to you — all trackable in real time.",
+    },
+    {
+      question: "Can I track my dry cleaning order?",
+      answer:
+        "Yes! Every step of your dry cleaning order is fully trackable in the app. You can follow your clothes from pickup, to the merchant, and back to delivery — with live driver location and status updates at each stage.",
+    },
+    {
+      question: "How do I cancel a booking?",
+      answer:
+        "Go to 'My Bookings' in the app, select the booking you want to cancel, and tap 'Cancel Booking'. Cancellation policies vary by service type and timing. Please review the cancellation terms shown during booking.",
+    },
+    {
+      question: "Are the parking spots verified?",
+      answer:
+        "Yes. All parking slots — whether public lots, residential, or garages — are verified by our team before being listed on the platform. You can also view ratings and reviews from other users.",
+    },
+    {
+      question: "How do I pay for my bookings?",
+      answer:
+        "Vervoer supports secure in-app payments. You can pay using your linked wallet, debit/credit card, or other available payment methods. All transactions are encrypted and receipts are stored in your booking history.",
+    },
+  ];
+
+  const tips = [
+    {
+      icon: "car-multiple",
+      title: "Parking Made Easy",
+      description:
+        "Find and book parking slots, residential spaces, and secured garages near you — all in one place. No more circling the block.",
+    },
+    {
+      icon: "tshirt-crew",
+      title: "Doorstep Dry Cleaning",
+      description:
+        "Schedule a pickup and a driver will collect your clothes, deliver them to the merchant, and bring them back clean — fully tracked from start to finish.",
     },
   ];
 
@@ -61,62 +98,70 @@ const FAQ = () => {
           <TouchableOpacity onPress={() => navigation.goBack()}>
             <Icon source="arrow-left" size={35} color={colors.brandColor} />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Featured Tips</Text>
+          <Text style={styles.headerTitle}>Help & FAQ</Text>
         </View>
 
         {/* Featured Tips */}
-        <View style={styles.tipContainer}>
-          <Text style={styles.tipTitle}>
-            Lorem ipsum dolor sit amet, consetetur
-          </Text>
-          <Text style={styles.tipDescription}>
-            Lorem Ipsum Dolor Sit Amet, Consetetur Sadipscing Elitr, Sed Diam
-            Nonumy Eirmod Tempor Invidunt Ut Labore Et Dolore Magna Aliquyam
-            Erat, Sed Diam Voluptua.
-          </Text>
-        </View>
-
-        <View style={styles.tipContainer}>
-          <Text style={styles.tipTitle}>
-            Lorem ipsum dolor sit amet, consetetur
-          </Text>
-          <Text style={styles.tipDescription}>
-            Lorem Ipsum Dolor Sit Amet, Consetetur Sadipscing Elitr.
-          </Text>
-        </View>
+        {tips.map((tip, index) => (
+          <View key={index} style={styles.tipContainer}>
+            <View style={styles.tipIconRow}>
+              <Icon source={tip.icon} size={26} color={colors.brandColor} />
+              <Text style={styles.tipTitle}>{tip.title}</Text>
+            </View>
+            <Text style={styles.tipDescription}>{tip.description}</Text>
+          </View>
+        ))}
 
         {/* Guides */}
         <Text style={styles.sectionTitle}>Guides</Text>
 
         <View style={styles.guideContainer}>
-          <Text style={styles.guideTitle}>Beginner’s Guide</Text>
+          <Text style={styles.guideTitle}>Parking Guide</Text>
           <TouchableOpacity>
-            <Text style={styles.linkText}>How to use Vervoer Website?</Text>
+            <Text style={styles.linkText}>
+              How to book a parking slot on Vervoer?
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity>
+            <Text style={styles.linkText}>
+              How does Residence & Garage Parking work?
+            </Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.guideContainer}>
-          <Text style={styles.guideTitle}>Android App Guide</Text>
+          <Text style={styles.guideTitle}>Dry Cleaning Guide</Text>
           <TouchableOpacity>
-            <Text style={styles.linkText}>How to use Vervoer Android App?</Text>
+            <Text style={styles.linkText}>
+              How to schedule a dry cleaning pickup?
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity>
+            <Text style={styles.linkText}>
+              How to track my dry cleaning order?
+            </Text>
           </TouchableOpacity>
         </View>
 
         <View style={styles.guideContainer}>
-          <Text style={styles.guideTitle}>iOS App Guide</Text>
+          <Text style={styles.guideTitle}>Payments & Wallet</Text>
           <TouchableOpacity>
-            <Text style={styles.linkText}>How to use Vervoer iOS App?</Text>
+            <Text style={styles.linkText}>How to add money to my wallet?</Text>
+          </TouchableOpacity>
+          <TouchableOpacity>
+            <Text style={styles.linkText}>How to view my booking receipts?</Text>
           </TouchableOpacity>
         </View>
 
         {/* FAQ */}
-        <Text style={styles.sectionTitle}>FAQ</Text>
+        <Text style={styles.sectionTitle}>Frequently Asked Questions</Text>
 
         {faqs.map((faq, index) => (
           <TouchableOpacity
             key={index}
             style={styles.faqContainer}
             onPress={() => toggleFAQ(index)}
+            activeOpacity={0.8}
           >
             <View style={styles.faqHeader}>
               <Text style={styles.faqQuestion}>{faq.question}</Text>
@@ -133,26 +178,24 @@ const FAQ = () => {
           </TouchableOpacity>
         ))}
 
-        {/* Unsafe Stations */}
-        <Text style={styles.sectionTitle}>
-          Issue Related Unsafe Bus & Train Stations?
-        </Text>
+        {/* Report Issues */}
+        <Text style={styles.sectionTitle}>Report an Issue</Text>
 
         <View style={styles.issueContainer}>
           <TouchableOpacity
             style={styles.issueCard}
-            onPress={() => navigation.navigate("drawer/unsafe")}
+            onPress={() => navigation.navigate("drawer/unsafe" as never)}
           >
-            <Icon source="bus-alert" size={40} color={colors.brandColor} />
-            <Text style={styles.issueText}>Unsafe Train Stops</Text>
+            <Icon source="car-off" size={40} color={colors.brandColor} />
+            <Text style={styles.issueText}>Parking Issue</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.issueCard}
-            onPress={() => navigation.navigate("drawer/unsafe")}
+            onPress={() => navigation.navigate("drawer/unsafe" as never)}
           >
-            <Icon source="bus-stop" size={40} color={colors.brandColor} />
-            <Text style={styles.issueText}>Unsafe Bus Stops</Text>
+            <Icon source="hanger" size={40} color={colors.brandColor} />
+            <Text style={styles.issueText}>Dry Cleaning Issue</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -171,11 +214,12 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
-    width: responsiveWidth(45),
+    width: responsiveWidth(55),
     justifyContent: "space-between",
-    marginTop: "0%",
     alignSelf: "flex-start",
     marginLeft: "5%",
+    marginTop: responsiveHeight(1),
+    marginBottom: responsiveHeight(1),
   },
   headerTitle: {
     fontSize: responsiveFontSize(2.5),
@@ -188,20 +232,29 @@ const styles = StyleSheet.create({
     marginHorizontal: responsiveWidth(5),
     marginVertical: responsiveHeight(1),
   },
+  tipIconRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: responsiveHeight(0.8),
+  },
   tipTitle: {
     fontSize: responsiveFontSize(2),
     color: colors.black,
+    fontWeight: "600",
+    marginLeft: responsiveWidth(2),
   },
   tipDescription: {
     fontSize: responsiveFontSize(1.8),
     color: colors.gray,
-    marginTop: responsiveHeight(1),
+    lineHeight: responsiveFontSize(3),
   },
   sectionTitle: {
     fontSize: responsiveFontSize(2.8),
     color: colors.black,
     marginHorizontal: responsiveWidth(5),
     marginTop: responsiveHeight(3),
+    marginBottom: responsiveHeight(0.5),
   },
   guideContainer: {
     backgroundColor: "#FFFFFF",
@@ -209,46 +262,53 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginHorizontal: responsiveWidth(5),
     marginVertical: responsiveHeight(1),
+    gap: responsiveHeight(0.8),
   },
   guideTitle: {
-    fontSize: responsiveFontSize(1.8),
+    fontSize: responsiveFontSize(1.9),
     color: colors.black,
+    fontWeight: "600",
+    marginBottom: responsiveHeight(0.3),
   },
   linkText: {
     fontSize: responsiveFontSize(1.8),
     color: colors.brandColor,
-    marginTop: responsiveHeight(0.5),
   },
   faqContainer: {
     backgroundColor: "#FFFFFF",
     padding: responsiveWidth(4),
     borderRadius: 12,
     marginHorizontal: responsiveWidth(5),
-    marginVertical: responsiveHeight(1),
+    marginVertical: responsiveHeight(0.6),
   },
   faqHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "flex-start",
   },
   faqQuestion: {
-    fontSize: responsiveFontSize(2),
+    fontSize: responsiveFontSize(1.9),
     color: colors.black,
+    flex: 1,
+    paddingRight: responsiveWidth(2),
   },
   faqAnswer: {
     fontSize: responsiveFontSize(1.7),
     color: colors.gray,
     marginTop: responsiveHeight(1),
+    lineHeight: responsiveFontSize(3),
   },
   issueContainer: {
     flexDirection: "row",
     justifyContent: "space-evenly",
-    marginTop: responsiveHeight(5),
+    marginTop: responsiveHeight(2),
+    marginBottom: responsiveHeight(2),
   },
   issueCard: {
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: colors.white,
-    width: responsiveWidth(45),
+    width: responsiveWidth(40),
     height: responsiveHeight(13),
     borderRadius: 20,
     shadowColor: "#000",
@@ -260,6 +320,8 @@ const styles = StyleSheet.create({
   issueText: {
     fontSize: responsiveFontSize(1.8),
     marginTop: responsiveHeight(1),
+    textAlign: "center",
+    color: colors.black,
   },
 });
 

@@ -105,7 +105,7 @@ const VehicleInfoScreen: React.FC = () => {
 
   // Redux state
   const { token, user, isAuthenticated } = useSelector(
-    (state: RootState) => state.auth
+    (state: RootState) => state.auth,
   );
 
   // State for vehicle info
@@ -216,11 +216,10 @@ const VehicleInfoScreen: React.FC = () => {
   // Request permissions for image picker
   useEffect(() => {}, []);
 
-
   // API helper function
   const makeApiRequest = async (
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
   ) => {
     // Replace with your actual API URL
     const API_BASE_URL = "https://vervoer-backend2.onrender.com/api";
@@ -256,7 +255,7 @@ const VehicleInfoScreen: React.FC = () => {
 
       if (!response.ok) {
         throw new Error(
-          data.message || `HTTP ${response.status}: ${response.statusText}`
+          data.message || `HTTP ${response.status}: ${response.statusText}`,
         );
       }
 
@@ -270,7 +269,7 @@ const VehicleInfoScreen: React.FC = () => {
   // Handle input changes
   const handleInputChange = (
     field: keyof VehicleInfo,
-    value: string | number
+    value: string | number,
   ) => {
     setVehicleInfo((prev) => ({
       ...prev,
@@ -280,29 +279,28 @@ const VehicleInfoScreen: React.FC = () => {
 
   // Handle image picking with Expo ImagePicker
   const handleImagePick = async (type: keyof UploadedImages) => {
-  try {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-      base64: false,
-    });
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+        base64: false,
+      });
 
-    if (!result.canceled && result.assets && result.assets.length > 0) {
-      const asset = result.assets[0];
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const asset = result.assets[0];
 
-      setUploadedImages((prev) => ({
-        ...prev,
-        [type]: [asset.uri],
-      }));
+        setUploadedImages((prev) => ({
+          ...prev,
+          [type]: [asset.uri],
+        }));
+      }
+    } catch (error) {
+      console.error("ImagePicker Error:", error);
+      Alert.alert("Error", "Failed to select image. Please try again.");
     }
-  } catch (error) {
-    console.error("ImagePicker Error:", error);
-    Alert.alert("Error", "Failed to select image. Please try again.");
-  }
-};
-
+  };
 
   // Handle image deletion
   const handleDeleteImage = (type: keyof UploadedImages, index: number) => {
@@ -341,7 +339,7 @@ const VehicleInfoScreen: React.FC = () => {
       ) {
         Alert.alert(
           "Missing Information",
-          `Please fill in the ${label} field.`
+          `Please fill in the ${label} field.`,
         );
         return false;
       }
@@ -350,7 +348,7 @@ const VehicleInfoScreen: React.FC = () => {
     if (uploadedImages.inspection.length === 0) {
       Alert.alert(
         "Missing Document",
-        "Please upload vehicle inspection document."
+        "Please upload vehicle inspection document.",
       );
       return false;
     }
@@ -358,7 +356,7 @@ const VehicleInfoScreen: React.FC = () => {
     if (uploadedImages.insurance.length === 0) {
       Alert.alert(
         "Missing Document",
-        "Please upload driver insurance document."
+        "Please upload driver insurance document.",
       );
       return false;
     }
@@ -495,7 +493,7 @@ const VehicleInfoScreen: React.FC = () => {
   const renderUploadSection = (
     title: string,
     type: keyof UploadedImages,
-    required: boolean = false
+    required: boolean = false,
   ) => (
     <View style={styles.uploadSection}>
       <Text style={styles.uploadTitle}>
@@ -667,7 +665,7 @@ const VehicleInfoScreen: React.FC = () => {
           {renderUploadSection(
             "Upload Vehicle's Inspection",
             "inspection",
-            true
+            true,
           )}
           {renderUploadSection("Upload Driver's Insurance", "insurance", true)}
           {renderUploadSection("Local Certification", "certification")}

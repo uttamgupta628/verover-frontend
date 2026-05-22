@@ -1,4 +1,4 @@
-import React from 'react';
+import React from "react";
 import {
   View,
   Text,
@@ -6,12 +6,12 @@ import {
   ScrollView,
   TouchableOpacity,
   Dimensions,
-} from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
-import colors from '../assets/color';
+} from "react-native";
+import { useRouter, useLocalSearchParams } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
+import colors from "../assets/color";
 
-const { width, height } = Dimensions.get('window');
+const { width, height } = Dimensions.get("window");
 const responsiveWidth = (percentage: number) => (width * percentage) / 100;
 const responsiveHeight = (percentage: number) => (height * percentage) / 100;
 const responsiveFontSize = (size: number) => {
@@ -22,20 +22,17 @@ const responsiveFontSize = (size: number) => {
 export default function BookingDetails() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  
+
   // Parse the booking data
-  const bookingData = params.bookingData 
-    ? JSON.parse(params.bookingData as string) 
+  const bookingData = params.bookingData
+    ? JSON.parse(params.bookingData as string)
     : null;
 
   if (!bookingData) {
     return (
       <View style={styles.container}>
         <Text style={styles.errorText}>No booking data available</Text>
-        <TouchableOpacity
-          style={styles.button}
-          onPress={() => router.back()}
-        >
+        <TouchableOpacity style={styles.button} onPress={() => router.back()}>
           <Text style={styles.buttonText}>Go Back</Text>
         </TouchableOpacity>
       </View>
@@ -44,12 +41,12 @@ export default function BookingDetails() {
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
+    return date.toLocaleDateString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
     });
   };
 
@@ -67,7 +64,10 @@ export default function BookingDetails() {
         <View style={styles.placeholder} />
       </View>
 
-      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.scrollView}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Status Badge */}
         <View style={styles.statusContainer}>
           <View
@@ -75,16 +75,16 @@ export default function BookingDetails() {
               styles.statusBadge,
               {
                 backgroundColor:
-                  bookingData.status === 'completed'
-                    ? '#4CAF50'
-                    : bookingData.status === 'confirmed'
-                    ? '#2196F3'
-                    : '#FF9800',
+                  bookingData.status === "completed"
+                    ? "#4CAF50"
+                    : bookingData.status === "confirmed"
+                      ? "#2196F3"
+                      : "#FF9800",
               },
             ]}
           >
             <Text style={styles.statusText}>
-              {bookingData.status?.toUpperCase() || 'PENDING'}
+              {bookingData.status?.toUpperCase() || "PENDING"}
             </Text>
           </View>
         </View>
@@ -95,7 +95,10 @@ export default function BookingDetails() {
           <View style={styles.infoCard}>
             <InfoRow label="Garage Name" value={bookingData.garage?.name} />
             <InfoRow label="Address" value={bookingData.garage?.address} />
-            <InfoRow label="Contact" value={bookingData.garage?.contactNumber} />
+            <InfoRow
+              label="Contact"
+              value={bookingData.garage?.contactNumber}
+            />
             <View style={styles.divider} />
             <Text style={styles.subSectionTitle}>Owner Details</Text>
             <InfoRow label="Name" value={bookingData.garage?.owner?.name} />
@@ -128,7 +131,7 @@ export default function BookingDetails() {
               label="End Time"
               value={formatDate(bookingData.bookingPeriod?.endTime)}
             />
-            <InfoRow label="Price Rate" value={`₹${bookingData.priceRate}`} />
+            <InfoRow label="Price Rate" value={`$${bookingData.priceRate}`} />
           </View>
         </View>
 
@@ -138,16 +141,16 @@ export default function BookingDetails() {
           <View style={styles.infoCard}>
             <InfoRow
               label="Total Amount"
-              value={`₹${bookingData.paymentDetails?.totalAmount}`}
+              value={`$${bookingData.paymentDetails?.totalAmount}`}
               valueStyle={styles.amountText}
             />
             <InfoRow
               label="Amount Paid"
-              value={`₹${bookingData.paymentDetails?.amountPaid}`}
+              value={`$${bookingData.paymentDetails?.amountPaid}`}
             />
             <InfoRow
               label="Discount"
-              value={`₹${bookingData.paymentDetails?.discount || 0}`}
+              value={`$${bookingData.paymentDetails?.discount || 0}`}
             />
             <InfoRow
               label="Payment Status"
@@ -184,24 +187,24 @@ const InfoRow = ({
 }) => (
   <View style={styles.infoRow}>
     <Text style={styles.label}>{label}:</Text>
-    <Text style={[styles.value, valueStyle]}>{value || 'N/A'}</Text>
+    <Text style={[styles.value, valueStyle]}>{value || "N/A"}</Text>
   </View>
 );
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: "#F5F5F5",
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 20,
     paddingTop: 50,
     paddingBottom: 20,
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
+    backgroundColor: "#FFFFFF",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
@@ -212,7 +215,7 @@ const styles = StyleSheet.create({
   },
   headerText: {
     fontSize: responsiveFontSize(20),
-    fontWeight: '600',
+    fontWeight: "600",
     color: colors.black,
   },
   placeholder: {
@@ -222,7 +225,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   statusContainer: {
-    alignItems: 'center',
+    alignItems: "center",
     marginTop: 20,
     marginBottom: 10,
   },
@@ -232,9 +235,9 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   statusText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     fontSize: responsiveFontSize(14),
-    fontWeight: '700',
+    fontWeight: "700",
   },
   section: {
     marginTop: 20,
@@ -242,59 +245,59 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: responsiveFontSize(18),
-    fontWeight: '700',
+    fontWeight: "700",
     color: colors.black,
     marginBottom: 10,
   },
   subSectionTitle: {
     fontSize: responsiveFontSize(14),
-    fontWeight: '600',
+    fontWeight: "600",
     color: colors.brandColor,
     marginTop: 5,
     marginBottom: 10,
   },
   infoCard: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderRadius: 15,
     padding: 20,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
   },
   infoRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginBottom: 12,
   },
   label: {
     fontSize: responsiveFontSize(14),
-    color: '#666666',
-    fontWeight: '500',
+    color: "#666666",
+    fontWeight: "500",
     flex: 1,
   },
   value: {
     fontSize: responsiveFontSize(14),
     color: colors.black,
-    fontWeight: '600',
+    fontWeight: "600",
     flex: 1,
-    textAlign: 'right',
+    textAlign: "right",
   },
   amountText: {
     color: colors.brandColor,
     fontSize: responsiveFontSize(16),
-    fontWeight: '700',
+    fontWeight: "700",
   },
   divider: {
     height: 1,
-    backgroundColor: '#E0E0E0',
+    backgroundColor: "#E0E0E0",
     marginVertical: 15,
   },
   errorText: {
     fontSize: responsiveFontSize(16),
-    color: '#FF0000',
-    textAlign: 'center',
+    color: "#FF0000",
+    textAlign: "center",
     marginTop: 50,
   },
   button: {
@@ -303,12 +306,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 30,
     paddingVertical: 15,
     borderRadius: 10,
-    alignSelf: 'center',
+    alignSelf: "center",
   },
   buttonText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     fontSize: responsiveFontSize(16),
-    fontWeight: '600',
+    fontWeight: "600",
   },
   bottomSpace: {
     height: 30,

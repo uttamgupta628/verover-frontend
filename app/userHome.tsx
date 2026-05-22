@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
+  BackHandler,
   StatusBar,
   StyleSheet,
   Text,
@@ -22,6 +23,15 @@ import { images } from '../assets/images/images';
 
 export default function UserHome() {
   const router = useRouter();
+
+  // ── Block Android hardware back button ────────────────────────────────────
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener(
+      'hardwareBackPress',
+      () => true // returning true prevents going back
+    );
+    return () => backHandler.remove();
+  }, []);
 
   const services = [
     {

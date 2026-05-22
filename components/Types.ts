@@ -1,4 +1,4 @@
-// types/index.ts
+
 export interface BookingData {
   _id?: string;
   bookingId: string;
@@ -12,7 +12,8 @@ export interface BookingData {
     from: string;
     to: string;
   };
-  
+  monthlyChargeEnabled?: boolean;
+monthlyRate?: number;
   // Payment details
   paymentDetails: {
     status: 'PENDING' | 'SUCCESS' | 'CANCELLED' | 'FAILED' | 'REFUNDED';
